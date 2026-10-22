@@ -1,0 +1,116 @@
+// Relay settings from the environment. This is the app's own startup network check: BSV_NETWORK is the one
+// network switch (testnet unless set), anything other than testnet or mainnet refuses to start, and mainnet
+// prints a banner. No variable here ever holds a key: the relay signs nothing.
+
+export type Network = 'testnet' | 'mainnet'
+
+export interface ServerConfig {
+  network: Network
+  arcadeUrl: string
+  /** The wallet originator: the one origin serving the app, /manifest.json and /api. */
+  publicOrigin: string
+  port: number
+  dataDir: string
+  /** The creator's 33-byte compressed identity key (hex). Unset: the first wallet to claim the creator page. */
+  creatorIdentityKey?: string
+}
+
+export const DEFAULT_ARCADE: Record<Network, string> = {
+  testnet: 'https://arcade-testnet-us-1.bsvblockchain.tech',
+  mainnet: 'https://arcade-us-1.bsvblockchain.tech',
+}
+
+// Known public Arcade hosts per network, so an ARCADE_URL that belongs to the other network fails at boot.
+const KNOWN_HOSTS: Record<Network, string[]> = {
+  mainnet: [
+    'arcade-us-1.bsvblockchain.tech',
+    'arcade-eu-1.bsvblockchain.tech',
+    'arcade-ap-1.bsvblockchain.tech',
+    'arcade-v2-us-1.bsvblockchain.tech',
+    'arcade.gorillapool.io',
+  ],
+  testnet: ['arcade-testnet-us-1.bsvblockchain.tech', 'arcade-v2-testnet-us-1.bsvblockchain.tech'],
+}
+
+// Where `pnpm dev` serves the app (Vite's default port); the deployed origin comes from PUBLIC_ORIGIN.
+const DEV_ORIGIN = 'http://localhost:5173'
+
+const MAINNET_BANNER = [
+  '**************************************************',
+  '*** MAINNET: real money. BSV_NETWORK=mainnet ***',
+  '**************************************************',
+]
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value
+}
+
+/** Reads and validates the relay settings; throws on any invalid value. `log` receives the mainnet banner. */
+export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (line: string) => void = console.log): ServerConfig {
+  const raw = nonEmpty(env.BSV_NETWORK) ?? 'testnet'
+  if (raw !== 'testnet' && raw !== 'mainnet') {
+    throw new Error(`BSV_NETWORK must be "testnet" or "mainnet", got "${raw}"`)
+  }
+  const network: Network = raw
+  const arcadeUrl = nonEmpty(env.ARCADE_URL) ?? DEFAULT_ARCADE[network]
+  checkArcadeHost(network, arcadeUrl)
+
+  const cfg: ServerConfig = {
+    network,
+    arcadeUrl,
+    publicOrigin: readOrigin(env),
+    port: readPort(env.PORT),
+    dataDir: nonEmpty(env.DATA_DIR) ?? './data',
+  }
+  const creator = nonEmpty(env.CREATOR_IDENTITY_KEY)
+  if (creator !== undefined) {
+    if (!/^0[23][0-9a-f]{64}$/i.test(creator)) {
+      throw new Error('CREATOR_IDENTITY_KEY must be a 33-byte compressed public key in hex (66 characters, 02 or 03 first)')
+    }
+    cfg.creatorIdentityKey = creator.toLowerCase()
+  }
+
+  if (network === 'mainnet') MAINNET_BANNER.forEach(line => log(line))
+  return cfg
+}
+
+// Throws on an unparseable URL or a host known to belong to the other network.
+function checkArcadeHost(network: Network, arcadeUrl: string): void {
+  let host: string
+  try {
+    // Lowercase and drop trailing dots so a fully-qualified 'host.' cannot dodge the lists.
+    host = new URL(arcadeUrl).hostname.toLowerCase().replace(/\.+$/, '')
+  } catch {
+    throw new Error(`invalid ARCADE_URL: ${arcadeUrl}`)
+  }
+  const other: Network = network === 'mainnet' ? 'testnet' : 'mainnet'
+  if (KNOWN_HOSTS[other].includes(host)) {
+    throw new Error(`network/host mismatch: ${host} is a known ${other} Arcade host, but BSV_NETWORK is ${network}`)
+  }
+}
+
+function readOrigin(env: NodeJS.ProcessEnv): string {
+  const value = nonEmpty(env.PUBLIC_ORIGIN)
+  if (value === undefined) {
+    if (env.NODE_ENV === 'production') throw new Error('PUBLIC_ORIGIN is required in production (e.g. https://tipping.example.com)')
+    return DEV_ORIGIN
+  }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`PUBLIC_ORIGIN must be an origin such as https://tipping.example.com, got "${value}"`)
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(`PUBLIC_ORIGIN must be an http(s) origin, got "${value}"`)
+  }
+  return url.origin
+}
+
+function readPort(value: string | undefined): number {
+  const raw = nonEmpty(value)
+  if (raw === undefined) return 8080
+  const port = Number(raw)
+  if (!/^\d+$/.test(raw) || port < 1 || port > 65535) throw new Error(`PORT must be a whole number from 1 to 65535, got "${raw}"`)
+  return port
+}

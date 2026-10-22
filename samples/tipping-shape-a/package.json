@@ -1,0 +1,38 @@
+{
+  "name": "bsv-tipping-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BSV tipping demo: a shape-A web app (the user's wallet holds the keys) with a key-less relay on one origin",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,relay \"vite\" \"tsx watch server/index.ts\"",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "start": "bash scripts/network-guard.sh && node dist/server/index.js",
+    "test": "vitest run",
+    "gate": "tsx scripts/gate.ts",
+    "guardrails": "node ../../packages/mcp/build/cli/check-guardrails.js ."
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^22",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/supertest": "^6.0.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.0",
+    "supertest": "^7.1.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8",
+    "vite": "^7.0.0",
+    "vitest": "^4"
+  }
+}

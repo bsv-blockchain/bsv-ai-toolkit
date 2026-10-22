@@ -1,0 +1,26 @@
+{
+  "metanet": {
+    "groupPermissions": {
+      "spendingAuthorization": { "amount": 10000, "description": "Small monthly allowance for bsv tipping demo" },
+      "protocolPermissions": [
+        { "protocolID": [1, "bsv tipping demo tips"], "description": "Sign bsv tipping demo tips" },
+        { "protocolID": [2, "3241645161d8"], "counterparty": "self", "description": "BRC-29 payments" }
+      ],
+      "basketAccess": [
+        { "basket": "bsv tipping demo", "description": "bsv tipping demo outputs" }
+      ]
+    }
+  },
+  "babbage": {
+    "groupPermissions": {
+      "spendingAuthorization": { "amount": 10000, "description": "Small monthly allowance for bsv tipping demo" },
+      "protocolPermissions": [
+        { "protocolID": [1, "bsv tipping demo tips"], "description": "Sign bsv tipping demo tips" },
+        { "protocolID": [2, "3241645161d8"], "counterparty": "self", "description": "BRC-29 payments" }
+      ],
+      "basketAccess": [
+        { "basket": "bsv tipping demo", "description": "bsv tipping demo outputs" }
+      ]
+    }
+  }
+}
