@@ -31,13 +31,14 @@ interface Found {
 }
 
 /**
- * Checks every http(s) URL in the Markdown/YAML/JSON files under `contentDir` and `extraDirs` (each URL once,
- * attributed to the first file it appears in), and every `docs-index.yaml` id, which passes when any of
- * `<host><path>.md` or its `legacy` URL is a hit (same rule as `docs_url`); a failing id is reported once,
- * against its first host URL.
+ * Checks every http(s) URL in the Markdown/YAML/JSON files under `contentDir` and `extraDirs`, and in the files
+ * matching the `extraFiles` glob patterns (each URL once, attributed to the first file it appears in), and every
+ * `docs-index.yaml` id, which passes when any of `<host><path>.md` or its `legacy` URL is a hit (same rule as
+ * `docs_url`); a failing id is reported once, against its first host URL. A URL of a docs-index id found in any
+ * scanned file is judged by that id rule, not fetched as a page.
  * HEAD first, GET when HEAD fails or the body must be inspected; 10 s timeout; status 0 means no answer.
  */
-export async function checkLinks(contentDir: string, extraDirs: string[]): Promise<{ broken: BrokenLink[] }> {
+export async function checkLinks(contentDir: string, extraDirs: string[], extraFiles: string[] = []): Promise<{ broken: BrokenLink[] }> {
   const indexFile = join(contentDir, 'docs-index.yaml')
   const index = existsSync(indexFile) ? DocsIndexFile.parse(parseYaml(await readFile(indexFile, 'utf8'))) : { hosts: [], ids: {} }
   // Each id is one check: OK when any host URL (`<host><path>.md`) or its legacy URL is a hit.
@@ -49,16 +50,20 @@ export async function checkLinks(contentDir: string, extraDirs: string[]): Promi
   const idUrls = new Set(ids.flat())
   for (const entry of Object.values(index.ids)) for (const host of index.hosts) idUrls.add(`${host}${entry.path}`)
 
-  const found = new Map<string, Found>()
+  const files: string[] = []
   for (const dir of [contentDir, ...extraDirs]) {
     if (!existsSync(dir)) continue
+    // The docs index lists host prefixes, not pages; it is checked by id below.
     for (const rel of (await fg(SCANNED, { cwd: dir, onlyFiles: true })).sort()) {
-      const file = join(dir, rel)
-      // The docs index lists host prefixes, not pages; it is checked by id below.
-      if (basename(rel).startsWith('docs-index.')) continue
-      for (const f of extractUrls(await readFile(file, 'utf8'), file, rel.endsWith('.md'))) {
-        if (!idUrls.has(f.url) && !found.has(f.url)) found.set(f.url, f)
-      }
+      if (!basename(rel).startsWith('docs-index.')) files.push(join(dir, rel))
+    }
+  }
+  if (extraFiles.length) files.push(...(await fg(extraFiles, { onlyFiles: true })).sort())
+
+  const found = new Map<string, Found>()
+  for (const file of files) {
+    for (const f of extractUrls(await readFile(file, 'utf8'), file, file.endsWith('.md'))) {
+      if (!idUrls.has(f.url) && !found.has(f.url)) found.set(f.url, f)
     }
   }
 

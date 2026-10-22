@@ -1,12 +1,13 @@
 name: Sample image (bsv-tipping-demo)
 
 # Builds samples/tipping-shape-a into ghcr.io/bsv-blockchain/bsv-tipping-demo, modelled on the demos' ghcr.yml.
-# Only pushes to main (when the sample, the lockfile or this file changed) and v* tags; never a pull request,
-# so the push below never runs on code that has not been merged. Path filters do not apply to tag pushes.
+# Only pushes to main (when the sample, the workspace files the image build copies, or this file changed) and v*
+# tags on a commit that is on main; never a pull request, so the push below never runs on code that has not been
+# merged. Path filters do not apply to tag pushes.
 on:
   push:
     branches: [main]
-    paths: ['samples/tipping-shape-a/**', 'pnpm-lock.yaml', '.github/workflows/sample-ghcr.yml']
+    paths: ['samples/tipping-shape-a/**', 'pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.github/workflows/sample-ghcr.yml']
     tags: ['v*']
 
 permissions:
@@ -24,10 +25,22 @@ jobs:
       contents: read
       packages: write
     steps:
+      # fetch-depth 0 brings the history for the ancestry check; no token is left in .git/config.
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      # As release.yml: a v* tag pushed on a commit that never reached main publishes nothing.
+      - name: Tagged commit is on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$GITHUB_REF_NAME does not point to a commit on main"
+            exit 1
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

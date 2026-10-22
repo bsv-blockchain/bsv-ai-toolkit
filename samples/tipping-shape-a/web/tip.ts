@@ -219,12 +219,17 @@ export function tipDetails(record: PendingTip): string | undefined {
   return JSON.stringify({ txid: txid ?? null, derivationPrefix, derivationSuffix, recipient, satoshis, outputIndex, senderIdentityKey }, null, 2)
 }
 
-/** The question asked before a saved record is forgotten. */
+/**
+ * The question asked before a saved record is forgotten. It carries the record's details (tipDetails), so they are
+ * on screen before a yes deletes them; a record without a derivation has none, and the question says so.
+ */
 export function forgetQuestion(record: PendingTip): string {
   const which = record.txid === undefined ? `this ${record.satoshis}-sat tip` : `the tip in transaction ${record.txid}`
+  const details = tipDetails(record)
+  if (details === undefined) return `Forget ${which}? This record holds no details the creator could collect it with.`
   return (
     `Forget ${which}? If your wallet sent it, this record may be the only copy of the details the creator needs ` +
-    'to collect it. Use Copy details first to keep them.'
+    `to collect it. Use Copy details first to keep them. The details:\n\n${details}`
   )
 }
 

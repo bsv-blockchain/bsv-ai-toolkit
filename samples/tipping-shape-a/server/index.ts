@@ -5,7 +5,8 @@ import { Arcade } from './arcade.js'
 import { loadServerConfig, type ServerConfig } from './config.js'
 import { openDb, type Db } from './db.js'
 
-// Refuses to start on a bad BSV_NETWORK, a mismatched ARCADE_URL or a missing PUBLIC_ORIGIN in production.
+// Refuses to start on a bad BSV_NETWORK, a mismatched ARCADE_URL, or in production a missing, http: or loopback
+// PUBLIC_ORIGIN.
 let cfg: ServerConfig
 try {
   cfg = loadServerConfig()

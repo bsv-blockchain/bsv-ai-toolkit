@@ -39,7 +39,7 @@ import { TipList } from '../web/components/TipList'
 import type { AppConfig } from '../web/config'
 import { Creator } from '../web/pages/Creator'
 import { Tipper, Unfinished } from '../web/pages/Tipper'
-import { forgetTip, forgetWithConsent, pendingTips, postPending, resumableTips, sendTip, stuckTips, tipDetails, type KeyValueStore } from '../web/tip'
+import { forgetQuestion, forgetTip, forgetWithConsent, pendingTips, postPending, resumableTips, sendTip, stuckTips, tipDetails, type KeyValueStore } from '../web/tip'
 import { assertNetwork, login, TIPS_PROTOCOL } from '../web/wallet'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
@@ -535,6 +535,13 @@ describe('tip.ts', () => {
     expect(stuckTips('testnet', storage)).toHaveLength(1)
     expect(asked[0]).toContain('cd'.repeat(32))
     expect(asked[0]).toContain('Copy details')
+    // The question carries the details themselves, so a yes never loses them unseen.
+    expect(asked[0]).toContain(tipDetails(record)!)
+    // A record with no derivation has no details to keep: the question does not send the user to Copy details.
+    const bare = forgetQuestion({ ...record, derivationSuffix: '' })
+    expect(bare).toContain('cd'.repeat(32))
+    expect(bare).not.toContain('Copy details')
+    expect(bare).not.toContain(record.derivationPrefix)
 
     // The page wires both buttons to the record; a record with no derivation offers no Copy details.
     const forgot: string[] = []

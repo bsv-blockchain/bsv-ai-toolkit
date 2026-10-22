@@ -175,6 +175,14 @@ describe('env.example', () => {
     // CREATOR_IDENTITY_KEY is a public key and ships empty.
     expect(env).toMatch(/^CREATOR_IDENTITY_KEY=$/m)
   })
+
+  it('ships PUBLIC_ORIGIN empty, with a comment saying what to set', () => {
+    expect(env).toMatch(/^PUBLIC_ORIGIN=$/m)
+    const comment = env.split(/^PUBLIC_ORIGIN=/m)[0].trimEnd().split('\n').reverse()
+    const block = comment.slice(0, comment.findIndex(l => !l.startsWith('#'))).join('\n')
+    expect(block).toContain('https://')
+    expect(block).toMatch(/production/)
+  })
 })
 
 describe('GHCR workflow', () => {
@@ -184,7 +192,20 @@ describe('GHCR workflow', () => {
     expect(wf).not.toMatch(/pull_request/)
     expect(wf).toContain('branches: [main]')
     expect(wf).toContain("tags: ['v*']")
-    for (const p of ["'samples/tipping-shape-a/**'", "'pnpm-lock.yaml'", "'.github/workflows/sample-ghcr.yml'"]) expect(wf, p).toContain(p)
+    for (const p of ["'samples/tipping-shape-a/**'", "'pnpm-lock.yaml'", "'package.json'", "'pnpm-workspace.yaml'", "'.github/workflows/sample-ghcr.yml'"]) {
+      expect(wf, p).toContain(p)
+    }
+  })
+
+  it('pushes a v* tag only when the tagged commit is on main (as release.yml does)', () => {
+    expect(wf).toMatch(/fetch-depth: 0\n {10}persist-credentials: false/)
+    const step = wf.split('- name: ').find(s => s.startsWith('Tagged commit is on main'))
+    expect(step).toBeDefined()
+    expect(step).toContain("if: startsWith(github.ref, 'refs/tags/')")
+    expect(step).toContain('git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main')
+    expect(step).toContain('git merge-base --is-ancestor HEAD origin/main')
+    // Before the registry login and the push.
+    expect(wf.indexOf('Tagged commit is on main')).toBeLessThan(wf.indexOf('Log in to GHCR'))
   })
 
   it('pushes the image with least privilege', () => {

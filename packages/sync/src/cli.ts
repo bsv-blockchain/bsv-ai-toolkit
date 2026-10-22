@@ -10,6 +10,8 @@ const CONTENT_DIR = 'content'
 const MCP_OUT = 'packages/mcp/content'
 const SKILL_REFS_OUT = 'packages/skill/skills/bsv-dev/references'
 const SKILL_DIR = 'packages/skill/skills'
+// Each sample's README only: the rest of a sample (node_modules, build output) is not link-checked.
+const SAMPLE_READMES = 'samples/*/README.md'
 const USAGE = 'usage: cli.ts <sync [--check] | check:facts [--max-age-days N] | check:links>'
 
 /**
@@ -69,7 +71,7 @@ async function checkFacts(argv: string[]): Promise<number> {
 }
 
 async function links(): Promise<number> {
-  const { broken } = await checkLinks(CONTENT_DIR, [SKILL_DIR])
+  const { broken } = await checkLinks(CONTENT_DIR, [SKILL_DIR], [SAMPLE_READMES])
   for (const b of broken) console.error(`${b.file}: ${b.url} (${b.status === 0 ? 'no answer' : b.status < 400 ? `${b.status}, Page Not Found body` : b.status})`)
   if (broken.length) {
     console.error(`check:links: ${broken.length} broken`)

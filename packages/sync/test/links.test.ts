@@ -84,6 +84,29 @@ describe('checkLinks', () => {
     ])
     expect(calls.filter((c) => c.url === 'https://gone.test/x' && c.method === 'HEAD')).toHaveLength(1)
   })
+  it('scans the extra file patterns too, and only the files they match', async () => {
+    const d = contentDir({})
+    const samples = mkdtempSync(join(tmpdir(), 's-'))
+    mkdirSync(join(samples, 'one', 'node_modules', 'dep'), { recursive: true })
+    writeFileSync(join(samples, 'one', 'README.md'), '[gone](https://gone.test/readme)\n')
+    writeFileSync(join(samples, 'one', 'HOSTING.md'), 'https://gone.test/hosting\n')
+    writeFileSync(join(samples, 'one', 'node_modules', 'dep', 'README.md'), 'https://gone.test/dep\n')
+    mockFetch({})
+    const { broken } = await checkLinks(d, [], [join(samples, '*', 'README.md')])
+    expect(broken).toEqual([{ url: 'https://gone.test/readme', file: join(samples, 'one', 'README.md'), status: 404 }])
+  })
+  it('judges a docs-index URL in an extra file by the id rule, not as a literal page', async () => {
+    const d = indexDir()
+    const samples = mkdtempSync(join(tmpdir(), 's-'))
+    mkdirSync(join(samples, 'one'))
+    writeFileSync(join(samples, 'one', 'README.md'), '[One](https://a.test/docs/guides/one)\n')
+    const calls = mockFetch({
+      'https://b.test/docs/guides/one.md': { status: 200, type: 'text/markdown', body: '# One' },
+      'https://a.test/docs/guides/two.md': { status: 200, type: 'text/markdown', body: '# Two' },
+    })
+    expect((await checkLinks(d, [], [join(samples, '*', 'README.md')])).broken).toEqual([])
+    expect(calls.map((c) => c.url)).not.toContain('https://a.test/docs/guides/one')
+  })
   function indexDir(files: Record<string, string> = {}) {
     const d = contentDir(files)
     writeFileSync(join(d, 'docs-index.yaml'), [

@@ -130,6 +130,27 @@ describe('loadServerConfig', () => {
     expect(() => loadServerConfig({ CREATOR_IDENTITY_KEY: '04abcd' }, quiet)).toThrow(/CREATOR_IDENTITY_KEY/)
     expect(() => loadServerConfig({ PUBLIC_ORIGIN: 'tipping.example.com' }, quiet)).toThrow(/PUBLIC_ORIGIN/)
   })
+
+  it('refuses a loopback or http: PUBLIC_ORIGIN in production, and allows them in development', () => {
+    for (const origin of [
+      'http://localhost:8080',
+      'https://localhost',
+      'https://LOCALHOST.:8443',
+      'https://app.localhost',
+      'https://127.0.0.1:8443',
+      'https://127.1.2.3',
+      'https://[::1]:8443',
+      'http://tipping.example.com',
+    ]) {
+      expect(() => loadServerConfig({ NODE_ENV: 'production', PUBLIC_ORIGIN: origin }, quiet), origin).toThrow(/PUBLIC_ORIGIN/)
+    }
+    expect(loadServerConfig({ NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://tipping.example.com:8443' }, quiet).publicOrigin).toBe(
+      'https://tipping.example.com:8443',
+    )
+    // pnpm start and the gate's in-process relay run on loopback over http, outside production.
+    expect(loadServerConfig({ PUBLIC_ORIGIN: 'http://localhost:8080' }, quiet).publicOrigin).toBe('http://localhost:8080')
+    expect(loadServerConfig({ NODE_ENV: 'development', PUBLIC_ORIGIN: 'http://127.0.0.1:8080' }, quiet).publicOrigin).toBe('http://127.0.0.1:8080')
+  })
 })
 
 describe('boot guard', () => {

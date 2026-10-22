@@ -132,7 +132,19 @@ function readOrigin(env: NodeJS.ProcessEnv): string {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new Error(`PUBLIC_ORIGIN must be an http(s) origin, got "${value}"`)
   }
+  // In production the origin is the one people open: wallets need it secure, and a loopback origin would make
+  // every signature name a host nobody else reaches (a copied development .env, or the container's own address).
+  if (env.NODE_ENV === 'production') {
+    if (url.protocol !== 'https:') throw new Error(`PUBLIC_ORIGIN must be https:// in production, got "${value}"`)
+    if (isLoopback(url.hostname)) throw new Error(`PUBLIC_ORIGIN must be the public origin in production, not a loopback host: "${value}"`)
+  }
   return url.origin
+}
+
+// localhost and *.localhost, 127.0.0.0/8 (the URL parser normalizes short forms such as 127.1), and [::1].
+function isLoopback(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.+$/, '')
+  return host === 'localhost' || host.endsWith('.localhost') || /^127\.\d+\.\d+\.\d+$/.test(host) || host === '[::1]'
 }
 
 // 'true' / 'false', a hop count, or a comma-separated list of addresses, subnets or the names Express knows.
