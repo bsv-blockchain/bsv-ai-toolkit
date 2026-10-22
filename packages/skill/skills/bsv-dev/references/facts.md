@@ -460,3 +460,25 @@ Never use WoC as the source of truth for a txid you know, and never walk a trans
 - `/address/{a}/unspent` keeps listing coins that an unconfirmed transaction has already spent, until that transaction is mined. Expect `UTXO_SPENT` from Arcade if you try to spend one; check `/tx/{txid}/{vout}/spent` first.
 - Check that any hex WoC returns hashes to the txid you asked for before you use it.
 - WoC indexes an unconfirmed spend 6–12 s after broadcast (measured on testnet, Oct 2026). Arcade reports the same transaction within 0.5–2 s, so gate on Arcade.
+
+## Docs links
+
+Every docs page by stable id, on each docs host in order of preference (append `.md` for the Markdown form), plus its legacy URL where one exists. The `docs_url` tool picks the first that answers.
+
+- Set up your AI (`build-with-ai`): https://bsv.writedocs.io/docs/build-with-ai, https://docs.bsvblockchain.org/docs/build-with-ai
+- Give agents the docs in Markdown (`build-with-ai.llm-resources`): https://bsv.writedocs.io/docs/build-with-ai/llm-resources, https://docs.bsvblockchain.org/docs/build-with-ai/llm-resources
+- Send a payment with an AI agent (`build-with-ai.prompts`): https://bsv.writedocs.io/docs/build-with-ai/prompts, https://docs.bsvblockchain.org/docs/build-with-ai/prompts
+- Install the BSV agent skill (`build-with-ai.skill`): https://bsv.writedocs.io/docs/build-with-ai/skill, https://docs.bsvblockchain.org/docs/build-with-ai/skill
+- Start a project from a template (`get-started.project-starter`): https://bsv.writedocs.io/docs/get-started/project-starter, https://docs.bsvblockchain.org/docs/get-started/project-starter
+- Send a payment from a web app (`get-started.quick-start-browser`): https://bsv.writedocs.io/docs/get-started/quick-start-browser, https://docs.bsvblockchain.org/docs/get-started/quick-start-browser
+- Send a payment from a server (`get-started.quick-start-server`): https://bsv.writedocs.io/docs/get-started/quick-start-server, https://docs.bsvblockchain.org/docs/get-started/quick-start-server
+- Integrate BSV with web frameworks (`guides.app-frameworks`): https://bsv.writedocs.io/docs/guides/app-frameworks, https://docs.bsvblockchain.org/docs/guides/app-frameworks
+- Move your app to mainnet (`guides.go-to-mainnet`): https://bsv.writedocs.io/docs/guides/go-to-mainnet, https://docs.bsvblockchain.org/docs/guides/go-to-mainnet
+- Authenticate users with their wallet (`guides.identity-auth`): https://bsv.writedocs.io/docs/guides/identity-auth, https://docs.bsvblockchain.org/docs/guides/identity-auth
+- Gate an API behind payments (`guides.payments`): https://bsv.writedocs.io/docs/guides/payments, https://docs.bsvblockchain.org/docs/guides/payments
+- Broadcast transactions with Arcade (`guides.services.broadcasting`): https://bsv.writedocs.io/docs/guides/services/broadcasting, https://docs.bsvblockchain.org/docs/guides/services/broadcasting; legacy https://docs.bsvblockchain.org/broadcasting/arcade
+- Run a local test chain (`guides.services.local-stack`): https://bsv.writedocs.io/docs/guides/services/local-stack, https://docs.bsvblockchain.org/docs/guides/services/local-stack
+- Request permissions and organize outputs (`guides.wallet-aware-apps`): https://bsv.writedocs.io/docs/guides/wallet-aware-apps, https://docs.bsvblockchain.org/docs/guides/wallet-aware-apps
+- Network endpoints (`reference.networks`): https://bsv.writedocs.io/docs/reference/networks, https://docs.bsvblockchain.org/docs/reference/networks
+- Wallet API reference (createAction) (`reference.wallet-api`): https://bsv.writedocs.io/docs/reference/wallet-api, https://docs.bsvblockchain.org/docs/reference/wallet-api; legacy https://bsv.writedocs.io/reference/wallet-api/actions/post-createaction.md
+- BSV Desktop (`wallets.bsv-desktop`): https://bsv.writedocs.io/docs/wallets/bsv-desktop, https://docs.bsvblockchain.org/docs/wallets/bsv-desktop

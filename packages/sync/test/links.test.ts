@@ -84,8 +84,8 @@ describe('checkLinks', () => {
     ])
     expect(calls.filter((c) => c.url === 'https://gone.test/x' && c.method === 'HEAD')).toHaveLength(1)
   })
-  it('a docs-index id passes when any host serves <host><path>.md, and its legacy URL is checked', async () => {
-    const d = contentDir({})
+  function indexDir(files: Record<string, string> = {}) {
+    const d = contentDir(files)
     writeFileSync(join(d, 'docs-index.yaml'), [
       'hosts: ["https://a.test/docs/", "https://b.test/docs/"]',
       'ids:',
@@ -93,15 +93,35 @@ describe('checkLinks', () => {
       '  two: { path: guides/two, title: Two, legacy: "https://old.test/two" }',
       '',
     ].join('\n'))
+    return d
+  }
+  it('a docs-index id passes when any of its host URLs resolves (soft 404s do not count)', async () => {
+    const d = indexDir()
     mockFetch({
       'https://a.test/docs/guides/one.md': { status: 200, type: 'text/markdown', body: '# Page Not Found' },
+      'https://b.test/docs/guides/one.md': { status: 200, type: 'text/markdown', body: '# One' },
+      'https://a.test/docs/guides/two.md': { status: 200, type: 'text/markdown', body: '# Two' },
+    })
+    expect((await checkLinks(d, [])).broken).toEqual([])
+  })
+  it('a docs-index id passes on its legacy URL alone', async () => {
+    const d = indexDir()
+    mockFetch({
+      'https://b.test/docs/guides/one.md': { status: 200, type: 'text/markdown', body: '# One' },
+      'https://b.test/docs/guides/two.md': { status: 200, type: 'text/markdown', body: '# Page Not Found' },
+      'https://old.test/two': { status: 200 },
+    })
+    expect((await checkLinks(d, [])).broken).toEqual([])
+  })
+  it('a docs-index id is broken only when every host URL and its legacy URL fail, reported once against the first host', async () => {
+    const d = indexDir({ 'ref.md': 'See https://a.test/docs/guides/two and https://old.test/two.\n' })
+    mockFetch({
       'https://b.test/docs/guides/one.md': { status: 200, type: 'text/markdown', body: '# One' },
       'https://a.test/docs/guides/two.md': { status: 404 },
       'https://b.test/docs/guides/two.md': { status: 200, type: 'text/markdown', body: '# Page Not Found' },
       'https://old.test/two': { status: 404 },
     })
     expect((await checkLinks(d, [])).broken).toEqual([
-      { url: 'https://old.test/two', file: join(d, 'docs-index.yaml'), status: 404 },
       { url: 'https://a.test/docs/guides/two.md', file: join(d, 'docs-index.yaml'), status: 404 },
     ])
   })

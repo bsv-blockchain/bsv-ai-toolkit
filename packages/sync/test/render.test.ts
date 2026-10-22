@@ -48,7 +48,7 @@ describe('renderAll', () => {
     const out = await renderAll({ contentDir, mcpOut: 'm', skillRefsOut: 's', version: '2.0.0' })
     const facts = out.get('s/facts.md')!
     expect(facts.match(/^# /gm)).toHaveLength(1)
-    expect(facts.match(/^## /gm)).toHaveLength(9)
+    expect(facts.match(/^## /gm)).toHaveLength(10) // nine fact files plus Docs links
     expect(facts).toContain('## Arcade broadcaster\n\nverified: 2026-10-22\n')
     expect(facts).toContain('\n### Endpoints\n')
     expect(facts).not.toMatch(/^## Endpoints$/m)
@@ -77,6 +77,23 @@ describe('renderAll', () => {
     expect(stack).toMatch(/^## Services$/m)
     expect(stack).toContain('https://arcade-testnet-us-1.bsvblockchain.tech')
     expect(stack).toContain('verified: 2026-10-22')
+  })
+  it('guardrails.md carries the versions.json verified date under its title', async () => {
+    const out = await renderAll({ contentDir, mcpOut: 'm', skillRefsOut: 's', version: '2.0.0' })
+    expect(out.get('s/guardrails.md')!.startsWith(`${HEADER}\n# Guardrails\n\nverified: 2026-10-22\n`)).toBe(true)
+  })
+  it('facts.md closes with a Docs links section listing every docs-index id on every host, sorted by id', async () => {
+    const out = await renderAll({ contentDir, mcpOut: 'm', skillRefsOut: 's', version: '2.0.0' })
+    const facts = out.get('s/facts.md')!
+    const section = facts.slice(facts.indexOf('\n## Docs links\n'))
+    expect(section.length).toBeGreaterThan(0)
+    expect(section.slice(1).match(/^## /gm)).toHaveLength(1)
+    const index = parseYaml(readFileSync(join(contentDir, 'docs-index.yaml'), 'utf8')) as { hosts: string[]; ids: Record<string, { path: string; title: string; legacy?: string }> }
+    const lines = section.split('\n').filter((l) => l.startsWith('- '))
+    expect(lines).toHaveLength(Object.keys(index.ids).length)
+    expect(lines.map((l) => /`([^`]+)`/.exec(l)![1])).toEqual(Object.keys(index.ids).sort())
+    expect(section).toContain('- Gate an API behind payments (`guides.payments`): https://bsv.writedocs.io/docs/guides/payments, https://docs.bsvblockchain.org/docs/guides/payments\n')
+    expect(section).toContain('- Wallet API reference (createAction) (`reference.wallet-api`): https://bsv.writedocs.io/docs/reference/wallet-api, https://docs.bsvblockchain.org/docs/reference/wallet-api; legacy https://bsv.writedocs.io/reference/wallet-api/actions/post-createaction.md\n')
   })
   it('guardrails.md carries rule, why, detect, shape and refs for each rule', async () => {
     const out = await renderAll({ contentDir, mcpOut: 'm', skillRefsOut: 's', version: '2.0.0' })

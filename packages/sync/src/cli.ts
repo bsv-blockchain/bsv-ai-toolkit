@@ -12,9 +12,24 @@ const SKILL_REFS_OUT = 'packages/skill/skills/bsv-dev/references'
 const SKILL_DIR = 'packages/skill/skills'
 const USAGE = 'usage: cli.ts <sync [--check] | check:facts [--max-age-days N] | check:links>'
 
-function option(argv: string[], name: string): string | undefined {
-  const i = argv.indexOf(name)
-  return i === -1 ? undefined : argv[i + 1]
+/**
+ * Reads `--name N` or `--name=N` as a non-negative integer. Returns undefined when the flag is absent and
+ * null when it is present without a valid value (the caller prints usage).
+ */
+function intOption(argv: string[], name: string): number | undefined | null {
+  let raw: string | undefined
+  let present = false
+  argv.forEach((arg, i) => {
+    if (arg === name) {
+      present = true
+      raw = argv[i + 1]
+    } else if (arg.startsWith(`${name}=`)) {
+      present = true
+      raw = arg.slice(name.length + 1)
+    }
+  })
+  if (!present) return undefined
+  return raw !== undefined && /^\d+$/.test(raw) ? Number(raw) : null
 }
 
 async function sync(check: boolean): Promise<number> {
@@ -36,20 +51,20 @@ async function sync(check: boolean): Promise<number> {
 }
 
 async function checkFacts(argv: string[]): Promise<number> {
-  const maxAge = option(argv, '--max-age-days')
-  if (maxAge !== undefined && !/^\d+$/.test(maxAge)) {
+  const maxAge = intOption(argv, '--max-age-days')
+  if (maxAge === null) {
     console.error(USAGE)
     return 2
   }
   const { errors } = await lintContent(CONTENT_DIR)
   for (const error of errors) console.error(error)
-  const stale = maxAge === undefined ? [] : await staleVerified(CONTENT_DIR, Number(maxAge))
+  const stale = maxAge === undefined ? [] : await staleVerified(CONTENT_DIR, maxAge)
   for (const line of stale) console.error(line)
   if (errors.length || stale.length) {
     console.error(`content lint: ${errors.length} error(s), ${stale.length} stale date(s)`)
     return 1
   }
-  console.log('content lint: ok')
+  console.log(maxAge === undefined ? 'content lint: ok' : `content lint: ok (verified dates within ${maxAge} days)`)
   return 0
 }
 

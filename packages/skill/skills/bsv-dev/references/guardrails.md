@@ -2,6 +2,8 @@
 
 # Guardrails
 
+verified: 2026-10-22
+
 Rules G-01..G-34 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 wallet, shape B an app-side server wallet (see `custody-shapes.md`). Detect: `static` rules are flagged by the `check_guardrails` tool, `manual` rules are a review checklist, `contract` rules apply to contract code and are reviewed by hand.
 
 ## Rules
