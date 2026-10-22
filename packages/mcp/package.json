@@ -5,7 +5,8 @@
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "bsv-mcp": "build/index.js"
+    "bsv-mcp": "build/index.js",
+    "bsv-mcp-versions-check": "build/cli/versions-check.js"
   },
   "files": [
     "build",

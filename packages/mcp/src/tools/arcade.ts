@@ -5,6 +5,7 @@ import { ArcadeClient } from '../arcade/client.js'
 import { classify400, detectHexFormat, verdictOf } from '../arcade/classify.js'
 import { resolveNetwork, type Config } from '../config.js'
 import type { Network, StatusResult, SubmitResult, TransactionStatus, TxStatus } from '../types.js'
+import { respond } from './result.js'
 
 export interface SubmitInput {
   hex: string
@@ -263,17 +264,6 @@ export function arcadePolicy(input: UrlInput, cfg: Config, fetchImpl: typeof fet
 
 export function arcadeHealth(input: UrlInput, cfg: Config, fetchImpl: typeof fetch): Promise<any> {
   return readClient(input, cfg, fetchImpl).health()
-}
-
-type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
-
-async function respond(run: () => Promise<unknown>): Promise<ToolResult> {
-  try {
-    const result = await run()
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], structuredContent: result as Record<string, unknown> }
-  } catch (e) {
-    return { isError: true, content: [{ type: 'text', text: e instanceof Error ? e.message : String(e) }] }
-  }
 }
 
 const arcadeUrl = z.string().url().optional().describe('Arcade base URL; defaults to ARCADE_URL or the network default')

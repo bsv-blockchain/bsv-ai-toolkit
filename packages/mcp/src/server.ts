@@ -1,7 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Config } from './config.js'
 import { registerArcadeTools } from './tools/arcade.js'
+import { registerBrcTools } from './tools/brc.js'
+import { registerDocsTools } from './tools/docs.js'
 import { registerGuardrailTools } from './tools/guardrails.js'
+import { registerSearchTools } from './tools/search.js'
+import { registerVersionsTools } from './tools/versions.js'
 
 // Builds the server and registers every tool, resource and prompt. Transport is the caller's concern.
 export function createServer(cfg: Config, deps: { fetchImpl?: typeof fetch } = {}): McpServer {
@@ -9,5 +13,9 @@ export function createServer(cfg: Config, deps: { fetchImpl?: typeof fetch } = {
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch
   registerArcadeTools(server, cfg, fetchImpl)
   registerGuardrailTools(server, cfg)
+  registerBrcTools(server, cfg, fetchImpl)
+  registerDocsTools(server, fetchImpl)
+  registerVersionsTools(server, fetchImpl)
+  registerSearchTools(server, cfg)
   return server
 }

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { Config } from '../config.js'
 import { runGuardrails } from '../lint/engine.js'
 import type { GuardrailReport } from '../types.js'
+import { errorResult, textResult, type ToolResult } from './result.js'
 
 export interface CheckInput {
   path: string
@@ -62,8 +63,6 @@ function summarize(report: GuardrailReport, shape: CheckInput['shape'], skipped:
   return lines.join('\n')
 }
 
-type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
-
 export function registerGuardrailTools(server: McpServer, _cfg: Config): void {
   server.registerTool(
     'check_guardrails',
@@ -82,9 +81,9 @@ export function registerGuardrailTools(server: McpServer, _cfg: Config): void {
     async (input): Promise<ToolResult> => {
       try {
         const { report, summary } = await checkGuardrails(input)
-        return { content: [{ type: 'text', text: summary }], structuredContent: report as unknown as Record<string, unknown> }
+        return textResult(summary, report)
       } catch (e) {
-        return { isError: true, content: [{ type: 'text', text: e instanceof Error ? e.message : String(e) }] }
+        return errorResult(e)
       }
     },
   )
