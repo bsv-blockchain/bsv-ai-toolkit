@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { createApp } from './app.js'
 import { Arcade } from './arcade.js'
 import { loadServerConfig, type ServerConfig } from './config.js'
-import { openDb } from './db.js'
+import { openDb, type Db } from './db.js'
 
 // Refuses to start on a bad BSV_NETWORK, a mismatched ARCADE_URL or a missing PUBLIC_ORIGIN in production.
 let cfg: ServerConfig
@@ -15,7 +15,14 @@ try {
 }
 
 mkdirSync(cfg.dataDir, { recursive: true })
-const db = openDb(join(cfg.dataDir, 'tips.sqlite'))
+// Refuses a tips.sqlite of another schema version (nothing migrates it; the message says what to delete).
+let db: Db
+try {
+  db = openDb(join(cfg.dataDir, 'tips.sqlite'))
+} catch (e) {
+  console.error(`bsv-tipping-demo: ${e instanceof Error ? e.message : String(e)}`)
+  process.exit(1)
+}
 const server = createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl) }).listen(cfg.port, () => {
   console.log(`bsv-tipping-demo relay on :${cfg.port} network=${cfg.network} arcade=${cfg.arcadeUrl} origin=${cfg.publicOrigin}`)
 })

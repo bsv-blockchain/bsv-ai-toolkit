@@ -73,6 +73,11 @@ export interface Db {
    * candidate uses any more. Returns how many tips it deleted.
    */
   prune(opts: PruneOptions): number
+  /**
+   * True when storing this BEEF keeps the stored BEEF bytes within `budgetBytes` (a BEEF already stored costs
+   * nothing: it is kept once).
+   */
+  beefFits(beefHex: string, budgetBytes: number): boolean
   getSetting(key: string): string | undefined
   setSetting(key: string, value: string): void
   close(): void
@@ -92,7 +97,8 @@ CREATE TABLE IF NOT EXISTS tips (
 );
 CREATE INDEX IF NOT EXISTS tips_received ON tips (received_at);
 CREATE INDEX IF NOT EXISTS tips_verdict_updated ON tips (verdict, updated_at);
-CREATE TABLE IF NOT EXISTS beefs (sha256 TEXT PRIMARY KEY, beef_hex TEXT NOT NULL);
+-- size (bytes) comes before beef_hex so summing it never reads the BEEF's overflow pages.
+CREATE TABLE IF NOT EXISTS beefs (sha256 TEXT PRIMARY KEY, size INTEGER NOT NULL, beef_hex TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS remittances (
   txid TEXT NOT NULL REFERENCES tips (txid) ON DELETE CASCADE,
   beef_sha256 TEXT NOT NULL REFERENCES beefs (sha256),
@@ -130,20 +136,45 @@ interface RawRemittance {
   received_at: string
 }
 
+/**
+ * The schema's version, stamped in PRAGMA user_version. Nothing migrates: a file of another version (or one from
+ * before versioning) is refused at boot, and the developer deletes it.
+ */
+export const SCHEMA_VERSION = 1
+
 const TIP_COLUMNS = 'txid, tx_status, verdict, competing_json, extra_info, note, received_at, updated_at, internalized_at'
 
 /** Opens (creating if needed) the SQLite file; ':memory:' for tests. WAL mode so reads never block the writer. */
 export function openDb(file: string): Db {
   const db = new Database(file)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  db.exec(SCHEMA)
+  try {
+    db.pragma('journal_mode = WAL')
+    db.pragma('foreign_keys = ON')
+    db.transaction(() => {
+      const version = db.pragma('user_version', { simple: true }) as number
+      const tables = db.prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'").get()!.n
+      if (version === 0 && tables === 0) {
+        db.exec(SCHEMA)
+        db.pragma(`user_version = ${SCHEMA_VERSION}`)
+      } else if (version !== SCHEMA_VERSION) {
+        throw new Error(
+          `${file} has schema version ${version}; this relay needs ${SCHEMA_VERSION}. It is a database from an older ` +
+            `build and nothing migrates it: delete ${file} (and its -wal and -shm files), then start again.`,
+        )
+      }
+    })()
+  } catch (e) {
+    db.close()
+    throw e
+  }
 
   const insertTip = db.prepare(`
     INSERT INTO tips (txid, tx_status, verdict, competing_json, extra_info, note, received_at, updated_at)
     VALUES (@txid, @txStatus, @verdict, @competingJson, @extraInfo, @note, @now, @now)
     ON CONFLICT(txid) DO NOTHING`)
-  const insertBeef = db.prepare('INSERT INTO beefs (sha256, beef_hex) VALUES (?, ?) ON CONFLICT DO NOTHING')
+  const insertBeef = db.prepare('INSERT INTO beefs (sha256, size, beef_hex) VALUES (?, ?, ?) ON CONFLICT DO NOTHING')
+  const beefStored = db.prepare<[string], { one: number }>('SELECT 1 AS one FROM beefs WHERE sha256 = ?')
+  const beefBytes = db.prepare<[], { n: number }>('SELECT COALESCE(SUM(size), 0) AS n FROM beefs')
   const insertRemittance = db.prepare(`
     INSERT INTO remittances (txid, beef_sha256, output_index, sender_identity_key, derivation_prefix, derivation_suffix, satoshis, received_at)
     VALUES (@txid, @beefId, @outputIndex, @senderIdentityKey, @derivationPrefix, @derivationSuffix, @satoshis, @now)
@@ -179,6 +210,7 @@ export function openDb(file: string): Db {
   const setSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
 
   const now = () => new Date().toISOString()
+  const beefIdOf = (beefHex: string) => createHash('sha256').update(Buffer.from(beefHex, 'hex')).digest('hex')
 
   function toRow(r: RawTip): TipRow {
     const row: TipRow = {
@@ -209,8 +241,8 @@ export function openDb(file: string): Db {
     (txid: string, r: Omit<Remittance, 'receivedAt' | 'beefId'>, beefHex: string, maxPerTip: number) => {
       if (remittanceExists.get(txid, r.outputIndex, r.senderIdentityKey, r.derivationPrefix, r.derivationSuffix)) return 'exists' as const
       if (countRemittances.get(txid)!.n >= maxPerTip) return 'full' as const
-      const beefId = createHash('sha256').update(Buffer.from(beefHex, 'hex')).digest('hex')
-      insertBeef.run(beefId, beefHex.toLowerCase())
+      const beefId = beefIdOf(beefHex)
+      insertBeef.run(beefId, beefHex.length / 2, beefHex.toLowerCase())
       insertRemittance.run({ txid, beefId, ...r, now: now() })
       return 'inserted' as const
     },
@@ -263,6 +295,10 @@ export function openDb(file: string): Db {
       internalized.run({ txid, now: now() })
     },
     prune: opts => prune(opts),
+    beefFits(beefHex, budgetBytes) {
+      if (beefStored.get(beefIdOf(beefHex))) return true
+      return beefBytes.get()!.n + beefHex.length / 2 <= budgetBytes
+    },
     getSetting(key) {
       return getSetting.get(key)?.value
     },

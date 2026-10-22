@@ -20,6 +20,8 @@ export interface Limits {
   terminalMaxAgeMs: number
   /** A status read within this long of the last live read answers from the store. */
   statusFreshMs: number
+  /** All stored BEEFs together (bytes); a POST whose BEEF would exceed it gets 503. */
+  beefBytesBudget: number
 }
 
 export const DEFAULT_LIMITS: Limits = {
@@ -29,6 +31,8 @@ export const DEFAULT_LIMITS: Limits = {
   maxTips: 5000,
   terminalMaxAgeMs: 24 * 60 * 60 * 1000,
   statusFreshMs: 2000,
+  // 256 MiB: some 2,000 of the largest BEEFs a POST may carry, far more than ordinary tips need.
+  beefBytesBudget: 256 * 1024 * 1024,
 }
 
 export interface ApiDeps {
@@ -242,11 +246,14 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
       return
     }
 
-    let isNew = false
-    if (db.getTip(tip.txid) === undefined) {
-      db.prune({ now: now(), terminalMaxAgeMs: limits.terminalMaxAgeMs, maxTips: limits.maxTips - 1 })
-      isNew = db.insertTip({ txid: tip.txid, txStatus: 'UNKNOWN', verdict: 'pending', competingTxs: [] }).inserted
+    const known = db.getTip(tip.txid) !== undefined
+    if (!known) db.prune({ now: now(), terminalMaxAgeMs: limits.terminalMaxAgeMs, maxTips: limits.maxTips - 1 })
+    // Checked before anything is stored, so a refused POST leaves no tip without a candidate.
+    if (!db.beefFits(tip.beefHex, limits.beefBytesBudget)) {
+      res.status(503).set('Retry-After', '300').json({ error: 'the relay\'s BEEF storage is full; retry later' })
+      return
     }
+    const isNew = !known && db.insertTip({ txid: tip.txid, txStatus: 'UNKNOWN', verdict: 'pending', competingTxs: [] }).inserted
     // Anyone who sees the transaction can post it with another remittance or another BEEF, so each distinct
     // remittance is a candidate that keeps the BEEF it came with.
     const added = db.addRemittance(tip.txid, tip.remittance, tip.beefHex, limits.remittancesPerTip)

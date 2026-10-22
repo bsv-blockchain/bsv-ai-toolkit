@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchConfig, type AppConfig } from './config'
+import { Creator } from './pages/Creator'
+import { Tipper } from './pages/Tipper'
 
 type Route = 'tipper' | 'creator' | 'not-found'
 
@@ -35,8 +37,8 @@ export function App({ pathname = window.location.pathname }: { pathname?: string
       </header>
       <main>
         {error && <p role="alert">{error}</p>}
-        {route === 'tipper' && <section aria-label="tipper"><h2>Send a tip</h2></section>}
-        {route === 'creator' && <section aria-label="creator"><h2>Creator</h2></section>}
+        {config && route === 'tipper' && <Tipper config={config} />}
+        {config && route === 'creator' && <Creator config={config} />}
         {route === 'not-found' && <p>Page not found. <a href="/">Back to tipping</a></p>}
       </main>
     </>

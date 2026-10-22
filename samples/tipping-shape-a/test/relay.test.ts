@@ -16,7 +16,7 @@ import { Arcade, verdictOf } from '../server/arcade.js'
 import { claimMessage, internalizedMessage, isIdentityKey, SIGNATURE_KEY_ID, TIPS_PROTOCOL, verifyCreatorSignature } from '../server/auth.js'
 import { efHexFromAtomicBeef, outputPaysScript } from '../server/beef.js'
 import { DEFAULT_TRUST_PROXY, KNOWN_HOSTS, loadServerConfig } from '../server/config.js'
-import { openDb, type Db } from '../server/db.js'
+import { openDb, SCHEMA_VERSION, type Db } from '../server/db.js'
 import { addressKey } from '../server/rate-limit.js'
 import { DEFAULT_LIMITS, type Limits } from '../server/routes.js'
 import { Broadcaster } from '../server/sse.js'
@@ -461,6 +461,24 @@ describe('BEEF per candidate', () => {
 
   it('defaults: 64 candidates per tip', () => {
     expect(DEFAULT_LIMITS.remittancesPerTip).toBe(64)
+  })
+
+  it('a global BEEF byte budget answers 503 before storing a BEEF that would exceed it', async () => {
+    const a = await tip()
+    const b = await buildTip(1200)
+    const aBytes = a.beef.length / 2
+    // Room for a's BEEF and less than b's on top of it.
+    const { app, db, events } = relay(seen(a.txid), {}, { tipBurst: 1000, beefBytesBudget: aBytes + b.beef.length / 2 - 1 })
+    expect((await request(app).post('/api/tips').send(body(a))).status).toBe(200)
+    // Another candidate in the same BEEF costs nothing: it is stored once.
+    expect((await request(app).post('/api/tips').send(withPrefix(a, 'cDE='))).status).toBe(200)
+    const full = await request(app).post('/api/tips').send(body(b, { satoshis: 1200 }))
+    expect(full.status).toBe(503)
+    expect(full.headers['retry-after']).toMatch(/^\d+$/)
+    expect(full.body.error).toMatch(/storage/)
+    expect(db.getTip(b.txid)).toBeUndefined() // no tip row without a candidate
+    expect(events('tip')).toHaveLength(2)
+    expect(DEFAULT_LIMITS.beefBytesBudget).toBe(256 * 1024 * 1024)
   })
 })
 
@@ -917,6 +935,52 @@ describe('db.ts', () => {
       while (opened.length) opened.pop()!.close()
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('stamps PRAGMA user_version and refuses a database of another schema version', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tipping-db-'))
+    try {
+      const file = join(dir, 'tips.sqlite')
+      openDb(file).close()
+      const read = () => {
+        const raw = new Database(file)
+        try {
+          return raw.pragma('user_version', { simple: true })
+        } finally {
+          raw.close()
+        }
+      }
+      expect(read()).toBe(SCHEMA_VERSION)
+      expect(SCHEMA_VERSION).toBeGreaterThan(0)
+      openDb(file).close() // the same version opens again
+
+      const raw = new Database(file)
+      raw.pragma(`user_version = ${SCHEMA_VERSION + 1}`)
+      raw.close()
+      expect(() => openDb(file)).toThrow(new RegExp(`schema version ${SCHEMA_VERSION + 1}.*needs ${SCHEMA_VERSION}.*delete .*tips\\.sqlite`, 's'))
+
+      // A database from before versioning (tables, user_version 0) is refused too.
+      const legacy = join(dir, 'legacy.sqlite')
+      const old = new Database(legacy)
+      old.exec('CREATE TABLE tips (txid TEXT PRIMARY KEY)')
+      old.close()
+      expect(() => openDb(legacy)).toThrow(/schema version 0.*delete/s)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('beefFits counts each stored BEEF once against the budget', () => {
+    const db = openDb(':memory:')
+    opened.push(db)
+    const txid = '1'.repeat(64)
+    db.insertTip(newTip(txid))
+    expect(db.beefFits('abcd', 2)).toBe(true)
+    expect(db.beefFits('abcdef', 2)).toBe(false)
+    db.addRemittance(txid, remittance, 'abcd', 16)
+    expect(db.beefFits('abcd', 2)).toBe(true) // already stored
+    expect(db.beefFits('ef', 2)).toBe(false)
+    expect(db.beefFits('ef', 3)).toBe(true)
   })
 
   it('addRemittance holds the cap', () => {
