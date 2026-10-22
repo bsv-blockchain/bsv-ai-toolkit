@@ -1,0 +1,10 @@
+# Community BSV agent skills, listed on the docs page "Coding with agents".
+# Add one entry per skill by pull request. Every link is pinned to the reviewed commit (full SHA).
+# Entry schema:
+# { name, repo, commit, description, maintainer }
+#   name:        the skill's name, as in its SKILL.md
+#   repo:        https://github.com/<owner>/<repo>
+#   commit:      the full 40-character commit SHA that was reviewed
+#   description: one sentence on what the skill covers
+#   maintainer:  GitHub handle of the person who answers issues
+skills: []
