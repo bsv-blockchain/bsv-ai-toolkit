@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runGuardrails } from '../src/lint/engine.js'
-import type { Finding, GuardrailReport } from '../src/types.js'
+import { loadGuardrailMeta, runGuardrails } from '../src/lint/engine.js'
+import type { Rule } from '../src/lint/rules/index.js'
+import { g02 } from '../src/lint/rules/g02.js'
+import { g06 } from '../src/lint/rules/g06.js'
+import type { ProjectFile } from '../src/lint/walk.js'
+import type { Finding, GuardrailReport, ShapeDetected } from '../src/types.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PROJECTS = join(HERE, 'fixtures', 'projects')
@@ -13,6 +17,13 @@ const reports = new Map<string, Promise<GuardrailReport>>()
 function lint(project: string): Promise<GuardrailReport> {
   if (!reports.has(project)) reports.set(project, runGuardrails(join(PROJECTS, project), { contentDir: CONTENT, shape: 'auto' }))
   return reports.get(project)!
+}
+
+/** Runs one rule on a single in-memory file. */
+function runOn(rule: Rule, rel: string, text: string, shape: ShapeDetected = 'A') {
+  const file: ProjectFile = { rel, abs: `/x/${rel}`, text, isClient: rel.startsWith('src/'), isTest: false }
+  const meta = loadGuardrailMeta(CONTENT).find(m => m.id === rule.id)!
+  return rule.run({ files: [file], shape, root: '/x', meta }).findings
 }
 
 async function expectFinding(project: string, id: string, file: string, severity: string, line?: number): Promise<Finding> {
@@ -69,5 +80,69 @@ describe('wallet and manifest guardrails', () => {
     const f = await expectFinding('broken-a', 'G-06', '.env', 'error', 2)
     expect(f.snippet).toContain('SERVER_ROOT_KEY')
     expect(f.snippet).not.toMatch(/0{32}/)
+  })
+
+  it('clean-b: G-02 and G-06 have no findings on shape-B server code', async () => {
+    const report = await lint('clean-b')
+    expect(report.shapeDetected).toBe('B')
+    expect(report.findings.filter(f => f.id === 'G-02' || f.id === 'G-06')).toEqual([])
+    expect(report.passed).toEqual(expect.arrayContaining(['G-02', 'G-06']))
+  })
+})
+
+describe('G-02 mainnet-default detection', () => {
+  it.each([
+    "const network = process.env.BSV_NETWORK ?? 'mainnet'",
+    "const chain = env.CHAIN || 'main';",
+    "const network: Network = 'mainnet'",
+    "let defaultNetwork = 'mainnet' // fallback",
+    "  network: process.env.BSV_NETWORK ?? 'mainnet',",
+    "function connect(network = 'main') {",
+    "const { network = 'mainnet' } = opts",
+    "const BSV_NETWORK = 'mainnet'",
+  ])('flags %s', line => {
+    expect(runOn(g02, 'src/config.ts', line)).toHaveLength(1)
+  })
+
+  it.each([
+    "  mainnet: { network: 'mainnet', arcadeUrl: 'https://arcade-us-1.bsvblockchain.tech' },",
+    "case 'mainnet': return { chain: 'main' }",
+    "setup({ chain: 'main', rootKeyHex })",
+    "export const blockchainExplorer = 'main'",
+    "export type Network = 'mainnet' | 'testnet'",
+    "if (network === 'mainnet') {",
+    "const { network: walletNetwork } = await wallet.getNetwork()",
+    "const network = process.env.BSV_NETWORK ?? 'testnet'",
+    "const chain = process.env.BSV_NETWORK === 'mainnet' ? 'main' : 'test'",
+  ])('does not flag %s', line => {
+    expect(runOn(g02, 'src/config.ts', line)).toEqual([])
+  })
+})
+
+describe('G-06 .env detection', () => {
+  // The secp256k1 generator point G, compressed: the public key of private key 1, a public test vector.
+  const G = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+  // The BIP-39 test-vector phrase, built at runtime so no seed phrase sits in the repo as a literal.
+  const PHRASE = [...Array(11).fill('abandon'), 'about'].join(' ')
+
+  it.each([
+    `SERVER_IDENTITY_KEY=02${G}`,
+    `VITE_SERVER_PUBLIC_KEY=03${G}`,
+    `SERVER_PUBKEY="02${G}"`,
+    '# SERVER_ROOT_KEY=' + '0'.repeat(64),
+  ])('does not flag %s', line => {
+    expect(runOn(g06, '.env', line)).toEqual([])
+  })
+
+  it.each([`MNEMONIC="${PHRASE}"`, `WALLET_SEED=${PHRASE}`])('flags a 12-word phrase: %s', line => {
+    const findings = runOn(g06, '.env', line)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].snippet).not.toContain('abandon')
+  })
+
+  it('skips the client-code check only for a pure shape-B project', () => {
+    const line = 'const key = PrivateKey.fromHex(process.env.SERVER_PRIVATE_KEY)'
+    expect(runOn(g06, 'src/index.ts', line, 'B')).toEqual([])
+    expect(runOn(g06, 'src/index.ts', line, 'A+B')).toHaveLength(1)
   })
 })

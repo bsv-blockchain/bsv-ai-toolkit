@@ -1,17 +1,25 @@
 import type { Rule, RuleResult } from './index.js'
 import { isSource, lineAt, matchingLines } from './util.js'
 
-// A name containing network/chain, a single `=` or `:`, then 'main'/'mainnet' either directly or as a
-// `??` / `||` fallback, ending the expression. Comparisons (`===`) and union types (`'mainnet' | ...`) do not match.
-const MAINNET_DEFAULT =
-  /\b\w*(?:network|chain)\w*['"]?\s*(?:=(?![=>])|:)\s*(?:[^;=]*?(?:\?\?|\|\|)\s*)?['"`](?:main|mainnet)['"`]\s*(?:[,;})\]]|\/\/|$)/i
+// A name that is, or ends in, network / chain / net (`network`, `defaultNetwork`, `BSV_NETWORK`, `chain`).
+const NAME = String.raw`\b(?:\w*[a-z0-9](?:Network|Chain|Net)|\w*_(?:network|chain|net|NETWORK|CHAIN|NET)|[Nn]etwork|[Cc]hain|[Nn]et|NETWORK|CHAIN|NET)\b['"]?`
+// `=` (assignment, parameter or destructuring default), directly or behind a `??` / `||` fallback.
+const ASSIGN = String.raw`(?::\s*[\w.<>\[\]| ]+?)?=(?![=>])\s*(?:[^;={}]*?(?:\?\?|\|\|)\s*)?`
+// `:` (object key) only behind a fallback: `network: 'mainnet'` in an explicit per-network table is fine.
+const KEY_FALLBACK = String.raw`:\s*[^;=,:{}]*?(?:\?\?|\|\|)\s*`
+const MAIN = String.raw`['"\`](?:main|mainnet)['"\`]\s*(?:[,;})\]]|\/\/|$)`
+/** A hardcoded mainnet default. Comparisons, union types and explicit config tables do not match. */
+export const MAINNET_DEFAULT = new RegExp(String.raw`${NAME}\s*(?:${ASSIGN}|${KEY_FALLBACK})${MAIN}`)
 const CREATE_ACTION = /\bcreateAction\s*\(/
 const GET_NETWORK = /\bgetNetwork\s*\(/
 
-/** G-02: no hardcoded mainnet default, and a project that calls `createAction` reads `getNetwork()`. */
+/**
+ * G-02: no hardcoded mainnet default (both shapes); and in a browser-wallet project (A, A+B) that calls
+ * `createAction`, some file reads `getNetwork()`. Shape B reads the server wallet's chain instead.
+ */
 export const g02: Rule = {
   id: 'G-02',
-  run({ files, meta }) {
+  run({ files, shape, meta }) {
     const findings: RuleResult['findings'] = []
     const source = files.filter(isSource)
     for (const f of source) {
@@ -20,7 +28,7 @@ export const g02: Rule = {
       }
     }
 
-    const spender = source.find(f => CREATE_ACTION.test(f.text))
+    const spender = shape === 'A' || shape === 'A+B' ? source.find(f => CREATE_ACTION.test(f.text)) : undefined
     if (spender && !source.some(f => GET_NETWORK.test(f.text))) {
       const line = lineAt(spender.text, spender.text.search(CREATE_ACTION))
       findings.push({

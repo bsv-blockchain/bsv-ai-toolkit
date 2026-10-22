@@ -1,0 +1,10 @@
+{
+  "name": "clean-b-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@bsv/sdk": "3.2.1",
+    "@bsv/wallet-toolbox": "*",
+    "express": "^5"
+  }
+}
