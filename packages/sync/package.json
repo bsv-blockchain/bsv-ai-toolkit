@@ -1,0 +1,26 @@
+{
+  "name": "@bsv/sync",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Content lint and sync for the BSV AI devkit",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "scripts": {
+    "sync": "node --import tsx src/cli.ts sync",
+    "sync:check": "node --import tsx src/cli.ts sync --check",
+    "check:facts": "node --import tsx src/cli.ts check:facts",
+    "check:links": "node --import tsx src/cli.ts check:links",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3",
+    "yaml": "^2.9",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "tsx": "^4"
+  }
+}

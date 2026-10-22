@@ -1,0 +1,5 @@
+{
+  "verified": "2026-10-22",
+  "categories": ["apps", "key-derivation", "opinions", "outpoints", "overlays", "payments", "peer-to-peer", "scripts", "state-machines", "tokens", "transactions", "wallet"],
+  "index": { "0029": "payments", "0073": "wallet", "0100": "wallet" }
+}
