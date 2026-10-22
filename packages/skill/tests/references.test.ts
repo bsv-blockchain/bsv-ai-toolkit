@@ -32,6 +32,26 @@ describe('authored references', () => {
   }
 })
 
+describe('fund-safety wording', () => {
+  it('calls a double spend a failed payment only once the two-read rule confirms it', () => {
+    for (const file of ['arcade-0conf.md', 'threat-model.md']) {
+      const lines = read(file).split('\n').filter((l) => l.includes('failed payment'))
+      expect(lines.length, file).toBeGreaterThan(0)
+      for (const l of lines) expect(l, file).toMatch(/two-read/)
+    }
+  })
+
+  it('write-ahead remittance persists the output index and the sender identity key', () => {
+    const t = read('payments-brc29.md')
+    const call = t.slice(t.indexOf('saveRemittance('), t.indexOf('})', t.indexOf('saveRemittance(')))
+    for (const n of ['prefix', 'suffix', 'recipient', 'satoshis', 'outputIndex', 'senderIdentityKey']) expect(call, n).toContain(n)
+  })
+
+  it('WhatsOnChain backoff never moves the gate earlier than queued reservations', () => {
+    expect(read('arcade-0conf.md')).toContain('next = Math.max(next, Date.now() + 2_000 * 2 ** attempt)')
+  })
+})
+
 describe('SKILL.md links the authored references', () => {
   const skill = readFileSync(skillDir + 'SKILL.md', 'utf8')
 

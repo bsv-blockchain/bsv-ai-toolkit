@@ -92,7 +92,7 @@ export async function woc(path: string, attempt = 0): Promise<Response> {
   await new Promise((r) => setTimeout(r, at - Date.now()))
   const res = await fetch(WOC_BASE + path, { signal: AbortSignal.timeout(10_000) })
   if (res.status !== 429 || attempt >= 4) return res
-  next = Date.now() + 2_000 * 2 ** attempt // back off on 429
+  next = Math.max(next, Date.now() + 2_000 * 2 ** attempt) // back off on 429
   return woc(path, attempt + 1)
 }
 ```
@@ -108,7 +108,7 @@ These happen and need code; miner collusion is not modelled (`threat-model.md`):
 
 - **Dropped or evicted.** Keep the signed hex and re-post it to Arcade.
 - **Two-read dead rule.** A transaction is dead only when Arcade reports `REJECTED`, or names a competing transaction that is not yours, on two reads at least 20 s apart, with a re-post before the second read.
-- **Double spend.** `DOUBLE_SPEND_ATTEMPTED` or a non-empty `competingTxs` is a failed payment: refund or re-plan. Often it is the user spending the same coin from another app or device.
+- **Double spend.** `DOUBLE_SPEND_ATTEMPTED` or a non-empty `competingTxs` is a failed payment once the two-read rule above confirms it (a competitor that is not your own copy): then refund or re-plan. Before that, the original can still win under first-seen, and a refund from other coins would pay twice. Often it is the user spending the same coin from another app or device.
 - **Unavailable services.** Time out every call and retry on a bounded schedule.
 - Never a confirmation wait, and no logic whose only purpose is a miner-collusion threat.
 

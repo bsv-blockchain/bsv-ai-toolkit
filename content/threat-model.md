@@ -16,7 +16,7 @@ BSV nodes follow first-seen: the first valid transaction to spend an output is t
 - `ACCEPTED_BY_NETWORK` and earlier statuses still wait; they are one step short.
 - Nothing waits for `MINED`. Block confirmations are not part of the user experience; on testnet transactions were mined in the next block, about 10 minutes later, with nothing gained by waiting.
 
-A double-spend attempt shows up as `DOUBLE_SPEND_ATTEMPTED` or a non-empty `competingTxs`. Handle it as a failed payment.
+A double-spend attempt shows up as `DOUBLE_SPEND_ATTEMPTED` or a non-empty `competingTxs`. Handle it as a failed payment once the two-read dead rule below confirms it (a competitor that is not your own copy); until then the original can still win, and refunding or re-planning early can pay twice.
 
 ## Not modelled: miner collusion
 

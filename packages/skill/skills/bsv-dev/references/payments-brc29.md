@@ -18,7 +18,9 @@ import { P2PKH, PublicKey, Random, Utils } from '@bsv/sdk'
 
 const prefix = Utils.toBase64(Random(16))
 const suffix = Utils.toBase64(Random(16))
-await saveRemittance({ prefix, suffix, recipient, satoshis }) // write-ahead, before createAction
+await saveRemittance({ // write-ahead, before createAction
+  prefix, suffix, recipient, satoshis, outputIndex: 0, senderIdentityKey: identityKey,
+})
 const { publicKey } = await wallet.getPublicKey({
   protocolID: [2, '3241645161d8'], keyID: `${prefix} ${suffix}`, counterparty: recipient,
 })
