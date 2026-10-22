@@ -15,6 +15,8 @@ const SKILL_GUARD = fileURLToPath(new URL('../../../packages/skill/skills/bsv-de
 
 const TESTNET_ARCADE = 'https://arcade-testnet-us-1.bsvblockchain.tech'
 const MAINNET_ARCADE = 'https://arcade-us-1.bsvblockchain.tech'
+// A curve point; mainnet refuses to boot without a fixed creator key.
+const CREATOR_KEY = `02${'ab'.repeat(32)}`
 
 // A stand-in for the built web app, so the SPA fallback and route order can be checked without `vite build`.
 const webDir = mkdtempSync(join(tmpdir(), 'tipping-web-'))
@@ -87,7 +89,7 @@ describe('loadServerConfig', () => {
   it('defaults ARCADE_URL per network', () => {
     expect(loadServerConfig({}, quiet).arcadeUrl).toBe(TESTNET_ARCADE)
     expect(loadServerConfig({ BSV_NETWORK: '', ARCADE_URL: '' }, quiet)).toMatchObject({ network: 'testnet', arcadeUrl: TESTNET_ARCADE })
-    expect(loadServerConfig({ BSV_NETWORK: 'mainnet' }, quiet).arcadeUrl).toBe(MAINNET_ARCADE)
+    expect(loadServerConfig({ BSV_NETWORK: 'mainnet', CREATOR_IDENTITY_KEY: CREATOR_KEY }, quiet).arcadeUrl).toBe(MAINNET_ARCADE)
     expect(loadServerConfig({ ARCADE_URL: 'https://arcade.example.com' }, quiet).arcadeUrl).toBe('https://arcade.example.com')
   })
 
@@ -101,7 +103,7 @@ describe('loadServerConfig', () => {
     const lines: string[] = []
     loadServerConfig({}, l => lines.push(l))
     expect(lines.join('\n')).not.toMatch(/MAINNET/)
-    loadServerConfig({ BSV_NETWORK: 'mainnet' }, l => lines.push(l))
+    loadServerConfig({ BSV_NETWORK: 'mainnet', CREATOR_IDENTITY_KEY: CREATOR_KEY }, l => lines.push(l))
     expect(lines.join('\n')).toMatch(/MAINNET: real money/)
   })
 

@@ -1,3 +1,5 @@
+import { isIdentityKey } from './auth.js'
+
 // Relay settings from the environment. This is the app's own startup network check: BSV_NETWORK is the one
 // network switch (testnet unless set), anything other than testnet or mainnet refuses to start, and mainnet
 // prints a banner. No variable here ever holds a key: the relay signs nothing.
@@ -11,7 +13,10 @@ export interface ServerConfig {
   publicOrigin: string
   port: number
   dataDir: string
-  /** The creator's 33-byte compressed identity key (hex). Unset: the first wallet to claim the creator page. */
+  /**
+   * The creator's 33-byte compressed identity key (hex). Unset: the first wallet to claim the creator page (with a
+   * signature) becomes the creator. Required on mainnet.
+   */
   creatorIdentityKey?: string
 }
 
@@ -67,14 +72,20 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
   }
   const creator = nonEmpty(env.CREATOR_IDENTITY_KEY)
   if (creator !== undefined) {
-    if (!/^0[23][0-9a-f]{64}$/i.test(creator)) {
+    if (!isIdentityKey(creator)) {
       throw new Error('CREATOR_IDENTITY_KEY must be a 33-byte compressed public key in hex (66 characters, 02 or 03 first)')
     }
     cfg.creatorIdentityKey = creator.toLowerCase()
+  } else if (network === 'mainnet') {
+    // First-claim mode lets whoever reaches /creator first collect tips: never with real money.
+    throw new Error('CREATOR_IDENTITY_KEY is required on mainnet (the first-claim creator mode is for testnet only)')
   }
 
   if (network === 'mainnet') MAINNET_BANNER.forEach(line => log(line))
   if (warning !== undefined) log(`warning: ${warning}`)
+  if (creator === undefined && env.NODE_ENV === 'production') {
+    log('warning: CREATOR_IDENTITY_KEY is unset: the first wallet to claim /creator becomes the creator')
+  }
   return cfg
 }
 

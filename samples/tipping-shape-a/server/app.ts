@@ -5,7 +5,7 @@ import express from 'express'
 import type { Arcade } from './arcade.js'
 import type { ServerConfig } from './config.js'
 import type { Db } from './db.js'
-import { mountApi } from './routes.js'
+import { mountApi, type Limits } from './routes.js'
 import { Broadcaster } from './sse.js'
 
 export interface AppDeps {
@@ -15,6 +15,10 @@ export interface AppDeps {
   broadcaster?: Broadcaster
   /** The built web app. Default: dist/web under the sample root. */
   webDir?: string
+  /** Overrides for the API's rate limit, caps and pruning (tests). */
+  limits?: Partial<Limits>
+  /** The API's clock in ms (tests). Default Date.now. */
+  now?: () => number
 }
 
 // The sample root: one level above server/ (tsx, vitest), two above dist/server/ (built).
@@ -32,6 +36,9 @@ const MANIFEST_PATH = join(SAMPLE_ROOT, 'public', 'manifest.json')
 export function createApp(cfg: ServerConfig, deps: AppDeps): express.Express {
   const app = express()
   app.disable('x-powered-by')
+  // Behind the reverse proxy HOSTING.md requires, req.ip must be the client, not the proxy, or the per-address
+  // rate limit becomes one global bucket. Trust X-Forwarded-For only from loopback and private-network peers.
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal')
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, network: cfg.network, arcadeUrl: cfg.arcadeUrl, version: VERSION })
@@ -49,7 +56,7 @@ export function createApp(cfg: ServerConfig, deps: AppDeps): express.Express {
   })
 
   // /api answers JSON only (unknown paths are a JSON 404), so it never reaches the SPA fallback.
-  mountApi(app, cfg, { db: deps.db, arcade: deps.arcade, broadcaster: deps.broadcaster ?? new Broadcaster() })
+  mountApi(app, cfg, { db: deps.db, arcade: deps.arcade, broadcaster: deps.broadcaster ?? new Broadcaster(), limits: deps.limits, now: deps.now })
 
   const webDir = deps.webDir ?? join(SAMPLE_ROOT, 'dist', 'web')
   const indexHtml = join(webDir, 'index.html')
