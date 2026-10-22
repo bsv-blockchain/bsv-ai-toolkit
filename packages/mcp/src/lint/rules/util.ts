@@ -15,9 +15,9 @@ export function lineAt(text: string, index: number): number {
   return line
 }
 
-/** Every line of `text` matching `re`, with its 1-based line number and trimmed text. */
+/** Every line of `text` (LF or CRLF) matching `re`, with its 1-based line number and trimmed text. */
 export function matchingLines(text: string, re: RegExp): { line: number; text: string }[] {
-  return text.split('\n').flatMap((t, i) => (re.test(t) ? [{ line: i + 1, text: t.trim() }] : []))
+  return text.split(/\r?\n/).flatMap((t, i) => (re.test(t) ? [{ line: i + 1, text: t.trim() }] : []))
 }
 
 /** `public/manifest.json` at the project root, or under a sub-app (e.g. `web/public/manifest.json`). */

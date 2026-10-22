@@ -34,7 +34,7 @@ export const g06: Rule = {
     const push = (file: string, line: number, snippet: string) => findings.push({ id: meta.id, severity: meta.severity, file, line, snippet })
     for (const f of files) {
       if (basename(f.rel) === '.env') {
-        f.text.split('\n').forEach((t, i) => { if (isEnvSecret(t)) push(f.rel, i + 1, redactEnv(t.trim())) })
+        f.text.split(/\r?\n/).forEach((t, i) => { if (isEnvSecret(t)) push(f.rel, i + 1, redactEnv(t.trim())) })
       } else if (shape !== 'B' && f.isClient && isSource(f)) {
         for (const m of matchingLines(f.text, CLIENT_KEY)) push(f.rel, m.line, redactLiterals(m.text))
       }

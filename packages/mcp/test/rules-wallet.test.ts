@@ -122,8 +122,8 @@ describe('G-02 mainnet-default detection', () => {
 describe('G-06 .env detection', () => {
   // The secp256k1 generator point G, compressed: the public key of private key 1, a public test vector.
   const G = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
-  // The BIP-39 test-vector phrase, built at runtime so no seed phrase sits in the repo as a literal.
-  const PHRASE = [...Array(11).fill('abandon'), 'about'].join(' ')
+  // Placeholder words, not a seed phrase: the rule only counts words.
+  const PHRASE = Array(12).fill('word').join(' ')
 
   it.each([
     `SERVER_IDENTITY_KEY=02${G}`,
@@ -137,7 +137,14 @@ describe('G-06 .env detection', () => {
   it.each([`MNEMONIC="${PHRASE}"`, `WALLET_SEED=${PHRASE}`])('flags a 12-word phrase: %s', line => {
     const findings = runOn(g06, '.env', line)
     expect(findings).toHaveLength(1)
-    expect(findings[0].snippet).not.toContain('abandon')
+    expect(findings[0].snippet).not.toContain('word')
+  })
+
+  it('flags a key in a CRLF .env', () => {
+    const findings = runOn(g06, '.env', `# test fixture, not a real key\r\nSERVER_ROOT_KEY=${'0'.repeat(64)}\r\n`)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(2)
+    expect(findings[0].snippet).toBe('SERVER_ROOT_KEY=<redacted>')
   })
 
   it('skips the client-code check only for a pure shape-B project', () => {
