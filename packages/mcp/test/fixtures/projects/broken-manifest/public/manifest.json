@@ -1,0 +1,22 @@
+{
+  "name": "Tip Jar",
+  "short_name": "Tip Jar",
+  "metanet": {
+    "groupPermissions": {
+      "description": "Send and receive tips",
+      "protocolPermissions": [
+        { "protocolID": [1, "tipjar tips"], "description": "Sign tip receipts" },
+        { "protocolID": [2, "3241645161d8"], "description": "Receive BRC-29 payments" }
+      ],
+      "spendingAuthorization": { "amount": 500000, "description": "Large monthly tipping allowance" }
+    }
+  },
+  "babbage": {
+    "groupPermissions": {
+      "description": "Send and receive tips",
+      "protocolPermissions": [
+        { "protocolID": [2, "3241645161d8"], "description": "Receive BRC-29 payments" }
+      ]
+    }
+  }
+}

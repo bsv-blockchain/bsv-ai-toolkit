@@ -1,0 +1,8 @@
+{
+  "name": "clean-a-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@bsv/sdk": "3.2.1"
+  }
+}
