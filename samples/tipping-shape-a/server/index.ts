@@ -1,5 +1,9 @@
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { createApp } from './app.js'
+import { Arcade } from './arcade.js'
 import { loadServerConfig, type ServerConfig } from './config.js'
+import { openDb } from './db.js'
 
 // Refuses to start on a bad BSV_NETWORK, a mismatched ARCADE_URL or a missing PUBLIC_ORIGIN in production.
 let cfg: ServerConfig
@@ -10,6 +14,19 @@ try {
   process.exit(1)
 }
 
-createApp(cfg).listen(cfg.port, () => {
+mkdirSync(cfg.dataDir, { recursive: true })
+const db = openDb(join(cfg.dataDir, 'tips.sqlite'))
+const server = createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl) }).listen(cfg.port, () => {
   console.log(`bsv-tipping-demo relay on :${cfg.port} network=${cfg.network} arcade=${cfg.arcadeUrl} origin=${cfg.publicOrigin}`)
 })
+
+// Open SSE streams never end on their own, so close every connection, then the database.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    server.close(() => {
+      db.close()
+      process.exit(0)
+    })
+    server.closeAllConnections()
+  })
+}

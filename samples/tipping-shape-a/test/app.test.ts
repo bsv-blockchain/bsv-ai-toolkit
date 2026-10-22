@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url'
 import request from 'supertest'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createApp } from '../server/app.js'
+import { Arcade } from '../server/arcade.js'
 import { loadServerConfig } from '../server/config.js'
+import { openDb } from '../server/db.js'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
 const MANIFEST_PATH = join(SAMPLE, 'public', 'manifest.json')
@@ -20,7 +22,11 @@ writeFileSync(join(webDir, 'index.html'), '<!doctype html><title>spa shell</titl
 afterAll(() => rmSync(webDir, { recursive: true, force: true }))
 
 const quiet = () => {}
-const app = () => createApp(loadServerConfig({}, quiet), { webDir })
+// These tests never reach Arcade: a fetch that fails loudly proves it.
+const noFetch = (() => Promise.reject(new Error('unexpected fetch'))) as typeof fetch
+const db = openDb(':memory:')
+afterAll(() => db.close())
+const app = () => createApp(loadServerConfig({}, quiet), { db, arcade: new Arcade(TESTNET_ARCADE, noFetch), webDir })
 
 type Protocol = { protocolID: [number, string]; counterparty?: string }
 type Group = { protocolPermissions: Protocol[]; basketAccess: { basket: string }[] }

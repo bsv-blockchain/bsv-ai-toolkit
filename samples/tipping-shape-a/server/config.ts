@@ -21,7 +21,9 @@ export const DEFAULT_ARCADE: Record<Network, string> = {
 }
 
 // Known public Arcade hosts per network, so an ARCADE_URL that belongs to the other network fails at boot.
-const KNOWN_HOSTS: Record<Network, string[]> = {
+// Mirrors content/versions.json services.arcade.hosts in the kit repo (a test keeps them in step), plus
+// arcade.gorillapool.io on mainnet. ttn (the Teranode test network) is neither network: it boots with a warning.
+export const KNOWN_HOSTS: Record<Network | 'ttn', string[]> = {
   mainnet: [
     'arcade-us-1.bsvblockchain.tech',
     'arcade-eu-1.bsvblockchain.tech',
@@ -30,6 +32,7 @@ const KNOWN_HOSTS: Record<Network, string[]> = {
     'arcade.gorillapool.io',
   ],
   testnet: ['arcade-testnet-us-1.bsvblockchain.tech', 'arcade-v2-testnet-us-1.bsvblockchain.tech'],
+  ttn: ['arcade-v2-ttn-us-1.bsvblockchain.tech'],
 }
 
 // Where `pnpm dev` serves the app (Vite's default port); the deployed origin comes from PUBLIC_ORIGIN.
@@ -45,7 +48,7 @@ function nonEmpty(value: string | undefined): string | undefined {
   return value === undefined || value === '' ? undefined : value
 }
 
-/** Reads and validates the relay settings; throws on any invalid value. `log` receives the mainnet banner. */
+/** Reads and validates the relay settings; throws on any invalid value. `log` receives the mainnet banner and warnings. */
 export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (line: string) => void = console.log): ServerConfig {
   const raw = nonEmpty(env.BSV_NETWORK) ?? 'testnet'
   if (raw !== 'testnet' && raw !== 'mainnet') {
@@ -53,7 +56,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
   }
   const network: Network = raw
   const arcadeUrl = nonEmpty(env.ARCADE_URL) ?? DEFAULT_ARCADE[network]
-  checkArcadeHost(network, arcadeUrl)
+  const warning = checkArcadeHost(network, arcadeUrl)
 
   const cfg: ServerConfig = {
     network,
@@ -71,11 +74,12 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
   }
 
   if (network === 'mainnet') MAINNET_BANNER.forEach(line => log(line))
+  if (warning !== undefined) log(`warning: ${warning}`)
   return cfg
 }
 
-// Throws on an unparseable URL or a host known to belong to the other network.
-function checkArcadeHost(network: Network, arcadeUrl: string): void {
+// Throws on an unparseable URL or a host known to belong to the other network; returns a warning for a ttn host.
+function checkArcadeHost(network: Network, arcadeUrl: string): string | undefined {
   let host: string
   try {
     // Lowercase and drop trailing dots so a fully-qualified 'host.' cannot dodge the lists.
@@ -87,6 +91,8 @@ function checkArcadeHost(network: Network, arcadeUrl: string): void {
   if (KNOWN_HOSTS[other].includes(host)) {
     throw new Error(`network/host mismatch: ${host} is a known ${other} Arcade host, but BSV_NETWORK is ${network}`)
   }
+  if (KNOWN_HOSTS.ttn.includes(host)) return `ttn host: neither testnet nor mainnet (${host} is the Teranode test network)`
+  return undefined
 }
 
 function readOrigin(env: NodeJS.ProcessEnv): string {

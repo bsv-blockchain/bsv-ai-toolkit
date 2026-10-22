@@ -2,9 +2,17 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
+import type { Arcade } from './arcade.js'
 import type { ServerConfig } from './config.js'
+import type { Db } from './db.js'
+import { mountApi } from './routes.js'
+import { Broadcaster } from './sse.js'
 
 export interface AppDeps {
+  db: Db
+  arcade: Arcade
+  /** SSE fan-out for /api/events. Default: a new Broadcaster. */
+  broadcaster?: Broadcaster
   /** The built web app. Default: dist/web under the sample root. */
   webDir?: string
 }
@@ -21,7 +29,7 @@ const MANIFEST_PATH = join(SAMPLE_ROOT, 'public', 'manifest.json')
  * One origin for everything the wallet sees: /manifest.json, the web app and /api share it, so the
  * manifest's origin is the `originator` the app passes to WalletClient.
  */
-export function createApp(cfg: ServerConfig, deps: AppDeps = {}): express.Express {
+export function createApp(cfg: ServerConfig, deps: AppDeps): express.Express {
   const app = express()
   app.disable('x-powered-by')
 
@@ -40,10 +48,8 @@ export function createApp(cfg: ServerConfig, deps: AppDeps = {}): express.Expres
     res.send(readFileSync(MANIFEST_PATH))
   })
 
-  // Task 2 mounts the /api routes here.
-  app.use('/api', (_req, res) => {
-    res.status(404).json({ error: 'not found' })
-  })
+  // /api answers JSON only (unknown paths are a JSON 404), so it never reaches the SPA fallback.
+  mountApi(app, cfg, { db: deps.db, arcade: deps.arcade, broadcaster: deps.broadcaster ?? new Broadcaster() })
 
   const webDir = deps.webDir ?? join(SAMPLE_ROOT, 'dist', 'web')
   const indexHtml = join(webDir, 'index.html')

@@ -17,11 +17,14 @@
     "guardrails": "node ../../packages/mcp/build/cli/check-guardrails.js ."
   },
   "dependencies": {
+    "@bsv/sdk": "3.2.1",
+    "better-sqlite3": "^13.0.3",
     "express": "^5.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.3",
     "@types/node": "^22",
     "@types/react": "^19.1.0",
