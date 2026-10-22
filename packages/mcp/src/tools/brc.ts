@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { Config } from '../config.js'
+import { CONTENT_DIR } from '../content.js'
 import { errorResult, textResult } from './result.js'
 
 export interface BrcCategories {
@@ -19,8 +20,6 @@ export interface BrcDocument {
   url: string
 }
 
-// Two levels up from src/tools or build/tools is the package root.
-const CONTENT_DIR = fileURLToPath(new URL('../../content', import.meta.url))
 const GITHUB_RAW = 'https://raw.githubusercontent.com/bsv-blockchain/BRCs/master'
 const TIMEOUT_MS = 10_000
 const CATEGORY = /^[a-z0-9][a-z0-9-]*$/

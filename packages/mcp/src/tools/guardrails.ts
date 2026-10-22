@@ -1,11 +1,11 @@
 import { stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { Config } from '../config.js'
 import { runGuardrails } from '../lint/engine.js'
 import type { GuardrailReport } from '../types.js'
+import { CONTENT_DIR } from '../content.js'
 import { errorResult, textResult, type ToolResult } from './result.js'
 
 export interface CheckInput {
@@ -15,8 +15,6 @@ export interface CheckInput {
   exclude?: string[]
 }
 
-// Two levels up from src/tools or build/tools is the package root.
-const CONTENT_DIR = fileURLToPath(new URL('../../content', import.meta.url))
 const MAX_SKIP_NOTES = 20
 
 /** Runs every guardrail over the project at `input.path`. Read-only: it never writes to the project. */

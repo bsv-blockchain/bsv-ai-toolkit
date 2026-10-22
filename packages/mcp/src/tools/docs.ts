@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { CONTENT_DIR } from '../content.js'
 import { errorResult, textResult } from './result.js'
 
 /** The parsed `content/docs-index.json`. */
@@ -14,8 +14,6 @@ export interface DocsIndex {
 export type DocsHit = { id: string; title: string; url: string; markdownUrl: string; host: string }
 export type DocsMiss = { id: string; error: string; tried: string[] }
 
-// Two levels up from src/tools or build/tools is the package root.
-const CONTENT_DIR = fileURLToPath(new URL('../../content', import.meta.url))
 const TIMEOUT_MS = 10_000
 const SOFT_404 = '# Page Not Found'
 

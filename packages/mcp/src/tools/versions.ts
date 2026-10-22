@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ArcadeClient } from '../arcade/client.js'
 import type { TxStatus, VersionRow } from '../types.js'
+import { CONTENT_DIR } from '../content.js'
 import { errorResult, textResult } from './result.js'
 
 /** The parsed `content/versions.json`. */
@@ -30,8 +30,6 @@ export interface VersionsReport {
   rawTxProbe?: RawTxProbe
 }
 
-// Two levels up from src/tools or build/tools is the package root.
-const CONTENT_DIR = fileURLToPath(new URL('../../content', import.meta.url))
 const TIMEOUT_MS = 10_000
 const DAY_MS = 86_400_000
 const VERSION = /^v?\d+\.\d+/
