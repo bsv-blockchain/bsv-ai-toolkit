@@ -104,3 +104,32 @@ describe('routing and operations references', () => {
     expect(t).toMatch(/404.*wallet/i)
   })
 })
+
+describe('fix round 1: network evidence, wallet review errors, fee wording', () => {
+  it('network-guard is described as checking only its own environment, with the same check in app code', () => {
+    const t = read('testnet-to-mainnet.md')
+    expect(t).toMatch(/only the environment it runs in/)
+    expect(t).toMatch(/derived from `BSV_NETWORK` at build time/)
+    expect(t).toMatch(/startup check/)
+    const evidence = t.split('\n').find((l) => l.includes('set on purpose') && l.startsWith('- [ ]'))!
+    expect(evidence).toMatch(/startup check/)
+    expect(evidence).not.toMatch(/network-guard/)
+  })
+
+  it('WERR_REVIEW_ACTIONS row is marked untested and handles an absent tx', () => {
+    const row = read('common-errors.md').split('\n').find((l) => l.includes('WERR_REVIEW_ACTIONS'))!
+    for (const n of ['not yet tested against BSV Desktop', 'Transaction.fromAtomicBEEF(tx).toHexEF()', 'absent', 'one testnet observation']) expect(row, n).toContain(n)
+  })
+
+  it('fees are sized at the configured rate, never below what GET /policy reports', () => {
+    for (const file of ['testnet-to-mainnet.md', 'common-errors.md']) {
+      const t = read(file)
+      expect(t, file).toContain('never below what `GET /policy` reports')
+      expect(t, file).not.toMatch(/at the (current )?`?(GET )?\/policy`? rate|at the rate `GET \/policy` reports/)
+    }
+  })
+
+  it('the wallet-toolbox snippet falls back to the public Arcade when ARCADE_URL is empty', () => {
+    expect(read('simple-routing.md')).toMatch(/options\.arcadeUrl = ARCADE_URL \|\|/)
+  })
+})

@@ -59,12 +59,12 @@ fi
 have_jq=0
 command -v jq >/dev/null 2>&1 && have_jq=1
 
-# GET $1 with a 10 s timeout; sets $code (HTTP status) and $body. Exits 3 when Arcade cannot be reached.
+# GET $1 with a 10 s timeout, ignoring ~/.curlrc (-q) and URL globbing (-g); sets $code (HTTP status) and $body. Exits 3 when Arcade cannot be reached.
 code=""
 body=""
 fetch() {
   local out nl=$'\n'
-  if ! out="$(curl -sS -m 10 -w '\n%{http_code}' "$1")"; then
+  if ! out="$(curl -q -g -sS -m 10 -w '\n%{http_code}' "$1")"; then
     echo "arcade-check: could not reach Arcade" >&2
     exit 3
   fi

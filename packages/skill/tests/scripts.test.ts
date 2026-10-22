@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { accessSync, constants, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { accessSync, constants, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -179,4 +179,20 @@ describe('arcade-check.sh', () => {
       })
     })
   }
+})
+
+describe('arcade-check.sh curl options', () => {
+  it('ignores ~/.curlrc and URL globbing', async () => {
+    const src = readFileSync(check, 'utf8')
+    expect(src).toMatch(/curl -q -g /)
+    const home = mkdtempSync(join(tmpdir(), 'arcade-check-home-'))
+    try {
+      writeFileSync(join(home, '.curlrc'), 'fail\n')
+      const r = await run(check, [txid('d'), base], { PATH: process.env.PATH, HOME: home, ...noProxy })
+      expect(r.code).toBe(0)
+      expect(r.stdout.trimEnd().endsWith('verdict: no-verdict')).toBe(true)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
 })

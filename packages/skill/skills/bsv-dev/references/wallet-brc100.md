@@ -22,7 +22,7 @@ if (network !== BSV_NETWORK) throw new Error(`Wallet is on ${network}; switch it
 
 - **`waitForAuthentication()` is the gate, never `isAuthenticated()`.** In `@bsv/sdk` 3.2.1, `isAuthenticated()` throws `Invalid isAuthenticated result` on a locked wallet instead of returning `false` (verified 2026-10-22).
 - **`identityKey` is the user's id.** Store it as the account key; it is a 33-byte compressed public key in hex.
-- **Refuse on a network mismatch.** A local BSV Desktop is often on mainnet while the app runs on testnet. `BSV_NETWORK` is one setting read by both server and client (expose it to the browser through the bundler's public env prefix). Show the wallet's network in the UI, and read `getNetwork()` again before every money path: the user can switch networks without logging out.
+- **Refuse on a network mismatch.** A local BSV Desktop is often on mainnet while the app runs on testnet. `BSV_NETWORK` is one setting read by both server and client (when the bundler needs a public prefix, derive the prefixed copy from `BSV_NETWORK` at build time, never set it separately; `testnet-to-mainnet.md`). Show the wallet's network in the UI, and read `getNetwork()` again before every money path: the user can switch networks without logging out.
 - **No wallet found:** `connectToSubstrate()` rejects with `No wallet available over any communication substrate`. Tell the user to install and open a BRC-100 wallet; BSV Desktop serves on local ports 3321 (HTTP) and 2121 (HTTPS) (verified 2026-10-22).
 
 ## Manifest (BRC-73)

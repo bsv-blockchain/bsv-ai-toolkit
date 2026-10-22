@@ -57,9 +57,11 @@ Until ts-stack gives `@bsv/simple`'s server wallet a testnet default and an `arc
 
   ```ts
   const options = Services.createDefaultOptions(chain) // chain: 'test' | 'main', from BSV_NETWORK
-  options.arcadeUrl = ARCADE_URL
+  options.arcadeUrl = ARCADE_URL || PUBLIC_ARCADE[BSV_NETWORK] // never '': an empty string drops Arcade
   const services = new Services(options) // then new Wallet({ chain, keyDeriver, storage, services, monitor })
   ```
+
+  `PUBLIC_ARCADE` maps `testnet` and `mainnet` to the public Arcade hosts in `arcade-0conf.md`.
 
 - **or go-wallet-toolbox** with Arcade configured as its broadcaster.
 
