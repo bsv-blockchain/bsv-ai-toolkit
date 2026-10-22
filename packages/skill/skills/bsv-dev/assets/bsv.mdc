@@ -1,0 +1,13 @@
+---
+description: BSV development rules
+alwaysApply: true
+---
+
+1. Read https://bsv.writedocs.io/llms.txt first, then fetch only the docs pages the task needs.
+2. Use the `bsv-docs` and `bsv-mcp` MCP tools before relying on memory for BSV APIs, versions, limits or fees.
+3. Work on testnet unless `BSV_NETWORK=mainnet` is set on purpose by the operator.
+4. Connect to the user's BRC-100 wallet with `@bsv/sdk` 3.x `new WalletClient('auto', originator)`.
+5. Never hold, generate or ask for private keys or recovery phrases; the user's wallet holds them.
+6. Use Arcade for every broadcast and every txid state read; never ARC, and never WhatsOnChain as the truth for a known txid.
+7. A transaction is final at `SEEN_ON_NETWORK` or later with no competing transaction; never wait for confirmations or `MINED`.
+8. Run `check_guardrails` with the project's absolute path and fix every error before calling the work done.
