@@ -15,6 +15,9 @@ The repository becomes a pnpm monorepo and `@bsv/mcp` is rewritten around testne
 - `docs_url`: resolves stable docs ids to a live page across docs hosts.
 - Resources: `bsv://facts/*`, `bsv://guardrails`, `bsv://guardrails{#id}`, `bsv://custody-shapes`, `bsv://threat-model`, `bsv://docs/index`, `bsv://simple/api`, `bsv://simple/gotchas`, `bsv://brc/{id}`. Every content resource carries its `verified:` date (`bsv://brc/{id}` serves the upstream BRC text as-is).
 - Prompts: `review_against_guardrails`, `tokenize_with_1color`, and, folded in from `@bsv/simple-mcp` and rewritten for `@bsv/simple` 0.7 and testnet: `integrate_simple`, `add_simple_feature`, `debug_simple`.
+- The `bsv-dev` skill and Claude Code plugin (`packages/skill`, version 0.1.0; see [`packages/skill/CHANGELOG.md`](packages/skill/CHANGELOG.md)). Install with `npx skills add bsv-blockchain/bsv-mcp` or `claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv`; the plugin bundles `@bsv/mcp@2.0.0` and the BSV docs MCP.
+- Each GitHub release attaches `bsv-dev-skill.zip` (the plugin root, with `skills/bsv-dev/SKILL.md` inside). The release job builds and checks the zip before publishing to npm.
+- CI job `skill`: `skills-ref validate`, `claude plugin validate --strict` on the plugin, its marketplaces and component directories, the skill tests and the anti-goal grep over the skill. Root scripts `pnpm validate:skill` and `pnpm validate:plugin` run the same checks locally.
 - Environment: `BSV_NETWORK` (`testnet` default), `ARCADE_URL`, `BSV_MCP_ALLOW_MAINNET_BROADCAST`, `WOC_API_KEY`. `arcade_submit` on mainnet needs `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`, and an Arcade host known to belong to the other network is refused.
 
 ### Changed

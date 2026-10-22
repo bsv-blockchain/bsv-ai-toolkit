@@ -13,7 +13,9 @@
     "sync": "pnpm -F @bsv/sync sync",
     "sync:check": "pnpm -F @bsv/sync sync:check",
     "check:facts": "pnpm -F @bsv/sync check:facts",
-    "check:links": "pnpm -F @bsv/sync check:links"
+    "check:links": "pnpm -F @bsv/sync check:links",
+    "validate:skill": "npx -y skills-ref@0.1.5 validate packages/skill/skills/bsv-dev && bash scripts/anti-goals.sh packages/skill/skills",
+    "validate:plugin": "claude plugin validate --strict packages/skill && claude plugin validate --strict packages/skill/.claude-plugin/plugin.json && claude plugin validate --strict packages/skill/commands && claude plugin validate --strict packages/skill/skills && claude plugin validate --strict ."
   },
   "devDependencies": {
     "@types/node": "^22",

@@ -40,3 +40,40 @@ jobs:
         run: pnpm check:facts --max-age-days 60
       - name: Anti-goal grep
         run: bash scripts/anti-goals.sh
+
+  skill:
+    name: Skill and plugin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: skills-ref validate
+        run: npx -y skills-ref@0.1.5 validate packages/skill/skills/bsv-dev
+      # userConfig.options needs Claude Code v2.1.271 or later; pinned to the version verified locally.
+      - name: Install the claude CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.303
+      # A directory holding a marketplace.json validates only that file, so plugin.json and the component
+      # directories are validated explicitly too (the same targets as packages/skill/tests/plugin.test.ts).
+      - name: claude plugin validate --strict
+        run: |
+          claude plugin validate --strict packages/skill
+          claude plugin validate --strict packages/skill/.claude-plugin/plugin.json
+          claude plugin validate --strict packages/skill/commands
+          claude plugin validate --strict packages/skill/skills
+          claude plugin validate --strict .
+      - name: Skill tests (with the skills-ref and claude CLI tests)
+        run: pnpm -F bsv-dev-skill test
+        env:
+          SKILLS_REF_TESTS: '1'
+          CLAUDE_CLI_TESTS: '1'
+      - name: Anti-goal grep over the skill
+        run: bash scripts/anti-goals.sh packages/skill/skills

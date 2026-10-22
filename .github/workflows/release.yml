@@ -54,6 +54,17 @@ jobs:
       - run: pnpm test
       - name: Generated content matches content/
         run: pnpm sync:check
+      # Built before npm publish, so a bad zip stops the release before anything is published.
+      - name: Build bsv-dev-skill.zip
+        run: |
+          (cd packages/skill && zip -r ../../bsv-dev-skill.zip . -x 'node_modules/*' 'tests/*' '*.test.ts')
+          listing="$(unzip -l bsv-dev-skill.zip)"
+          for entry in skills/bsv-dev/SKILL.md .claude-plugin/plugin.json; do
+            if ! grep -qF "$entry" <<<"$listing"; then
+              echo "::error::bsv-dev-skill.zip is missing $entry"
+              exit 1
+            fi
+          done
       - name: Publish to npm (provenance is automatic under OIDC)
         working-directory: packages/mcp
         env:
@@ -76,10 +87,12 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
+          # A rerun finds the release already there and only (re)attaches the zip.
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "release $GITHUB_REF_NAME already exists"
+            echo "release $GITHUB_REF_NAME already exists; uploading bsv-dev-skill.zip"
+            gh release upload "$GITHUB_REF_NAME" bsv-dev-skill.zip --clobber
             exit 0
           fi
           flags=(--generate-notes)
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" bsv-dev-skill.zip
