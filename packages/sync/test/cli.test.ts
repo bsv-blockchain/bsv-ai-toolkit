@@ -8,16 +8,18 @@ function run(...args: string[]) {
   return { code: r.status, out: r.stdout + r.stderr }
 }
 
+// Accept cases use a 100-year limit: they test argument parsing against the real content and must not
+// go red as that content ages (the CLI measures age against the wall clock).
 describe('cli check:facts --max-age-days', () => {
   it('accepts the space form', () => {
-    const r = run('check:facts', '--max-age-days', '60')
+    const r = run('check:facts', '--max-age-days', '36500')
     expect(r.code).toBe(0)
-    expect(r.out).toContain('content lint: ok (verified dates within 60 days)')
+    expect(r.out).toContain('content lint: ok (verified dates within 36500 days)')
   })
   it('accepts the = form', () => {
-    const r = run('check:facts', '--max-age-days=60')
+    const r = run('check:facts', '--max-age-days=36500')
     expect(r.code).toBe(0)
-    expect(r.out).toContain('content lint: ok (verified dates within 60 days)')
+    expect(r.out).toContain('content lint: ok (verified dates within 36500 days)')
   })
   it.each([
     [['--max-age-days']],
