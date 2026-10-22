@@ -1,0 +1,127 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  freshness:
+    name: Content freshness
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_TITLE: 'Freshness: content drift'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Output directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/freshness"
+          echo "OUT=$RUNNER_TEMP/freshness" >> "$GITHUB_ENV"
+
+      - name: Versions check (npm, runar head, Arcade hosts)
+        id: versions
+        run: |
+          code=0
+          node packages/mcp/build/cli/versions-check.js --json > "$OUT/drift.json" || code=$?
+          cat "$OUT/drift.json"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Verified dates within 60 days
+        id: facts
+        run: |
+          code=0
+          pnpm check:facts --max-age-days 60 > "$OUT/facts.txt" 2>&1 || code=$?
+          cat "$OUT/facts.txt"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Links
+        id: links
+        run: |
+          code=0
+          pnpm check:links > "$OUT/links.txt" 2>&1 || code=$?
+          cat "$OUT/links.txt"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: llms.txt against docs-index
+        id: llms
+        run: |
+          node --input-type=module - <<'JS'
+          import { readFileSync, writeFileSync, appendFileSync } from 'node:fs'
+          const out = process.env.OUT
+          const { ids } = JSON.parse(readFileSync('packages/mcp/content/docs-index.json', 'utf8'))
+          let lines = []
+          try {
+            const res = await fetch('https://docs.bsvblockchain.org/llms.txt', { signal: AbortSignal.timeout(20_000) })
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            const text = await res.text()
+            const linked = new Set([...text.matchAll(/\/docs\/([^\s()<>"'`]+?)\.md/g)].map((m) => m[1]))
+            const indexed = new Set(Object.values(ids).map((e) => e.path))
+            const unindexed = [...linked].filter((p) => !indexed.has(p)).sort()
+            const unlisted = Object.entries(ids).filter(([, e]) => !linked.has(e.path)).map(([id, e]) => `${id} (${e.path})`).sort()
+            if (unindexed.length) lines.push('Linked from llms.txt, absent from docs-index.yaml:', '', ...unindexed.map((p) => `- \`/docs/${p}.md\``), '')
+            if (unlisted.length) lines.push('docs-index.yaml ids whose path is absent from llms.txt:', '', ...unlisted.map((s) => `- \`${s}\``), '')
+          } catch (e) {
+            lines.push(`Could not read https://docs.bsvblockchain.org/llms.txt: ${e.message}`, '')
+          }
+          writeFileSync(`${out}/llms.md`, lines.join('\n'))
+          console.log(lines.length ? lines.join('\n') : 'llms.txt and docs-index.yaml agree')
+          appendFileSync(process.env.GITHUB_OUTPUT, `drift=${lines.length ? 'true' : 'false'}\n`)
+          JS
+
+      - name: Create or update the freshness issue
+        if: steps.versions.outputs.code != '0' || steps.facts.outputs.code != '0' || steps.links.outputs.code != '0' || steps.llms.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERSIONS_CODE: ${{ steps.versions.outputs.code }}
+          FACTS_CODE: ${{ steps.facts.outputs.code }}
+          LINKS_CODE: ${{ steps.links.outputs.code }}
+        run: |
+          node --input-type=module - <<'JS'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          const out = process.env.OUT
+          const read = (f) => readFileSync(`${out}/${f}`, 'utf8').trim()
+          const cell = (v) => String(v ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ')
+          const body = [`Nightly freshness run: ${process.env.RUN_URL}`, '']
+          if (process.env.VERSIONS_CODE !== '0') {
+            body.push('## Versions', '')
+            try {
+              const rows = JSON.parse(read('drift.json')).rows.filter((r) => r.drift || !(r.ageDays <= 60))
+              body.push('| name | pinned | latest | verified | age (days) | note |', '| --- | --- | --- | --- | --- | --- |')
+              for (const r of rows) body.push(`| ${[r.name, r.pinned, r.latest, r.verifiedOn, r.ageDays, r.note].map(cell).join(' | ')} |`)
+            } catch {
+              body.push('versions-check produced no report; see the run log.')
+            }
+            body.push('')
+          }
+          if (process.env.FACTS_CODE !== '0') body.push('## Verified dates', '', '```', read('facts.txt'), '```', '')
+          if (process.env.LINKS_CODE !== '0') body.push('## Links', '', '```', read('links.txt'), '```', '')
+          const llms = read('llms.md')
+          if (llms) body.push('## llms.txt', '', llms, '')
+          writeFileSync(`${out}/issue.md`, body.join('\n'))
+          JS
+          number="$(gh issue list --search "$ISSUE_TITLE in:title" --state open --json number,title \
+            --jq "map(select(.title == \"$ISSUE_TITLE\")) | .[0].number // empty")"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$OUT/issue.md"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$OUT/issue.md"
+          fi
+
+      - name: Fail on drift, stale dates or broken links
+        if: steps.versions.outputs.code != '0' || steps.facts.outputs.code != '0' || steps.links.outputs.code != '0'
+        run: |
+          echo "::error::versions-check=${{ steps.versions.outputs.code }} check:facts=${{ steps.facts.outputs.code }} check:links=${{ steps.links.outputs.code }}"
+          exit 1

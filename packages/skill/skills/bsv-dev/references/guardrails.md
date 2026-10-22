@@ -83,7 +83,7 @@ Rules G-01..G-34 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 ### G-09 Broadcast only through Arcade
 
 - **Rule:** Broadcast only through Arcade (`POST /tx`, text/plain, EF when sources are attached, never BEEF); never the SDK `ARC` class or `/v1/tx`; `ARCADE_URL` configurable with the public instance per network as default.
-- **Why:** Arcade's `GET /tx/{txid}` status is what every later money decision reads; the SDK `ARC` class and `/v1/tx` target the legacy ARC API instead.
+- **Why:** Arcade's `GET /tx/{txid}` status is what every later money decision reads; the SDK `ARC` class and `/v1/tx` target the legacy ARC API instead, so never send a transaction there.
 - **Shape:** both
 - **Detect:** static
 - **Severity:** error

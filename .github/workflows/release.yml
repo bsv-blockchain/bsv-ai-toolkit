@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# npm trusted publishing (OIDC): no npm token is stored anywhere. The trusted publisher for @bsv/mcp on
+# npmjs.com names this repository and this workflow file (release.yml), with no environment.
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  publish:
+    name: Publish @bsv/mcp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: npm with trusted publishing (needs npm >= 11.5.1)
+        run: npm install -g npm@latest
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - name: Generated content matches content/
+        run: pnpm sync:check
+      - name: Package version matches the tag
+        run: |
+          version="$(node -p "require('./packages/mcp/package.json').version")"
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::packages/mcp/package.json version $version does not match tag $GITHUB_REF_NAME"
+            exit 1
+          fi
+      - name: Publish to npm (provenance is automatic under OIDC)
+        working-directory: packages/mcp
+        run: npm publish --access public
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes
