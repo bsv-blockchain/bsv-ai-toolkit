@@ -156,3 +156,4 @@ build/
 *.sqlite
 samples/**/data/
 .bsv-gate/
+*.key

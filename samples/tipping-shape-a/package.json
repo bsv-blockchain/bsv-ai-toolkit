@@ -24,6 +24,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@bsv/wallet-toolbox": "2.14.9",
     "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.3",
     "@types/node": "^22",
