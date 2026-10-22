@@ -4,6 +4,7 @@ import { bracketText, findingList, isSource, lineAt, scan, withAliases } from '.
 const SERVICE = /arcade|whatsonchain|\bwoc/i
 const FETCH = /\bfetch\s*\(/g
 const SIGNAL = /\bsignal\b/
+const MAX_CALL_LINES = 60
 
 /** Index of the first top-level comma in masked call arguments, or -1. */
 function firstArgEnd(masked: string): number {
@@ -19,7 +20,7 @@ function firstArgEnd(masked: string): number {
 
 /**
  * G-15: a per-request timeout on every Arcade/WhatsOnChain call. Flags `fetch(` whose URL names
- * Arcade or WoC and whose init (same statement, up to 5 lines) has no `signal`. An init passed as a
+ * Arcade or WoC and whose init (the rest of the call) has no `signal`. An init passed as a
  * variable is accepted when the module sets a `signal` somewhere.
  */
 export const g15: Rule = {
@@ -30,7 +31,8 @@ export const g15: Rule = {
       const s = scan(f)
       const service = withAliases(s.code, SERVICE)
       for (const m of s.masked.matchAll(FETCH)) {
-        const args = bracketText(s, m.index + m[0].length - 1, 5)
+        // The whole call, to its closing bracket: Prettier can put `signal` many lines down.
+        const args = bracketText(s, m.index + m[0].length - 1, MAX_CALL_LINES)
         const comma = firstArgEnd(args.masked)
         const url = comma < 0 ? args.code : args.code.slice(0, comma)
         if (!service.test(url)) continue

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { describe, it, expect, afterAll } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadGuardrailMeta, runGuardrails } from '../src/lint/engine.js'
@@ -50,6 +51,9 @@ async function expectFinding(project: string, id: string, file: string, severity
 }
 
 const BROADCAST = 'src/broadcast.ts'
+
+const tmpRoots: string[] = []
+afterAll(() => { for (const r of tmpRoots) rmSync(r, { recursive: true, force: true }) })
 
 describe('broadcast and money guardrails on fixtures', () => {
   it('clean-a has zero errors overall', async () => {
@@ -117,7 +121,8 @@ describe('broadcast and money guardrails on fixtures', () => {
   })
 
   it('broken-a: G-34 no trust model (warn)', async () => {
-    await expectFinding('broken-a', 'G-34', 'README.md', 'warn', 0)
+    // README line 1, so an ignore comment there can suppress it (ruling R24)
+    await expectFinding('broken-a', 'G-34', 'README.md', 'warn', 1)
   })
 
   it('exit-criterion set is all errors', async () => {
@@ -231,6 +236,26 @@ describe('G-10 SEEN_ON_NETWORK, never MINED', () => {
     expect(runOn(g10, { 'test/x.test.ts': "if (s.txStatus === 'MINED') credit()" })).toEqual([])
   })
 
+  it('reads a condition split over lines as one: SEEN beside MINED passes, MINED alone is flagged', () => {
+    const gate = (statuses: string[]) => [
+      'if (',
+      ...statuses.map((v, i) => `  s.txStatus === '${v}'${i < statuses.length - 1 ? ' ||' : ''}`),
+      ') {',
+      '  credit(order)',
+      '}',
+    ].join('\n')
+    expect(runOn(g10, gate(['SEEN_ON_NETWORK', 'SEEN_MULTIPLE_NODES', 'MINED']))).toEqual([])
+    expect(runOn(g10, gate(['MINED', 'IMMUTABLE'])).map(f => f.line)).toEqual([2])
+    const joined = "const final =\n  s.txStatus === 'SEEN_ON_NETWORK' ||\n  s.txStatus === 'MINED'"
+    expect(runOn(g10, joined)).toEqual([])
+    expect(runOn(g10, "if (\n  s.txStatus === 'MINED'\n) {\n  return 'In a block'\n}")).toEqual([])
+  })
+
+  it('does not count a POST to the app\'s own relay as an Arcade broadcast', () => {
+    const relay = "await fetch('/api/tx', {\n  method: 'POST',\n  body: JSON.stringify({ beef }),\n  signal: AbortSignal.timeout(10000),\n})"
+    expect(runOn(g10, relay)).toEqual([])
+  })
+
   it('flags a POST /tx with no GET /tx/ read in the module, and passes when one follows', () => {
     const post = "const r = await fetch(`${ARCADE_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n})"
     const findings = runOn(g10, post)
@@ -266,6 +291,23 @@ describe('G-12 Arcade first, WhatsOnChain gated', () => {
   ])('does not flag a module with a limiter: %s', limiter => {
     const text = `${WOC}${limiter}\nfor (const a of addrs) await fetch(\`\${WOC}/address/\${a}/unspent\`)`
     expect(runOn(g12, { 'server/woc.ts': text })).toEqual([])
+  })
+
+  it.each([
+    "import { gated } from './woc-gate.js'\nexport const unspent = (a: string) => gated(() => fetch(`${WOC}/address/${a}/unspent`))",
+    "import { limit } from './limit.js'\nexport const info = () => limit(() => fetch(`${WOC}/chain/info`))",
+    "import { run } from './gate.js'\nexport async function info() {\n  return run(async () => {\n    const res = await fetch(`${WOC}/chain/info`)\n    return res.json()\n  })\n}",
+  ])('does not flag a call wrapped in an imported gate: %s', text => {
+    expect(runOn(g12, { 'server/woc.ts': `${WOC}${text}` })).toEqual([])
+  })
+
+  it.each([
+    "export const status = 'Queue position'\nawait fetch(`${WOC}/chain/info`)",
+    "app.get('/h', async (req, res) => {\n  res.json(await fetch(`${WOC}/chain/info`))\n})",
+    "await Promise.all(addrs.map(a => fetch(`${WOC}/address/${a}/unspent`)))",
+    "useEffect(() => { fetch(`${WOC}/chain/info`) }, [])",
+  ])('still flags an ungated call: %s', text => {
+    expect(runOn(g12, { 'server/woc.ts': `${WOC}${text}` })).toHaveLength(1)
   })
 
   it('does not count "gate" inside another word as a limiter', () => {
@@ -319,6 +361,8 @@ describe('G-15 timeouts on Arcade and WhatsOnChain calls', () => {
     "const signal = AbortSignal.timeout(5000)\nawait fetch(ARCADE_URL + '/policy', init)\nconst init = { signal }",
     "await fetch('https://example.com/api')",
     "// fetch(ARCADE_URL + '/tx')",
+    // Prettier output of the kit's recommended POST: `signal` lands on line 8 (ruling R23)
+    "const res = await fetch(`${ARCADE_URL}/tx`, {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'text/plain',\n    'X-CallbackToken': token,\n  },\n  body: efHex,\n  signal: AbortSignal.timeout(10000),\n})",
   ])('does not flag %s', text => {
     expect(runOn(g15, text)).toEqual([])
   })
@@ -422,8 +466,18 @@ describe('G-31 versions against the kit pins', () => {
 })
 
 describe('G-34 trust model', () => {
-  it('warns with neither TRUST.md nor a trust-model heading', () => {
-    expect(runOn(g34, { 'README.md': '# App\n\nWe trust the model.\n' })).toHaveLength(1)
+  it('warns with neither TRUST.md nor a trust-model heading, at README line 1 (line 0 with no README)', () => {
+    expect(runOn(g34, { 'README.md': '# App\n\nWe trust the model.\n' })).toMatchObject([{ file: 'README.md', line: 1 }])
+    expect(runOn(g34, { 'src/app.ts': 'x' })).toMatchObject([{ file: 'README.md', line: 0 }])
+  })
+
+  it('can be suppressed with an ignore comment on README line 1', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bsv-g34-'))
+    tmpRoots.push(root)
+    writeFileSync(join(root, 'README.md'), '<!-- bsv-guardrail-ignore G-34 trust model lives in the wiki -->\n# App\n')
+    const report = await runGuardrails(root, { contentDir: CONTENT, rules: [g34] })
+    expect(report.findings).toEqual([])
+    expect(report.passed).toContain('G-34')
   })
 
   it.each([

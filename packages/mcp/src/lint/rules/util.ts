@@ -266,3 +266,22 @@ export function jsonKeyLine(text: string, name: string, spec?: string): number {
   const at = pair >= 0 ? pair : text.search(new RegExp(key))
   return at < 0 ? 1 : lineAt(text, at)
 }
+
+/**
+ * Offsets of the unmatched brackets around `index` in `masked`, innermost first. With `stopAtBrace`, the
+ * walk ends at the first enclosing `{` (a block or object), which is not included.
+ */
+export function enclosingOpens(masked: string, index: number, stopAtBrace: boolean): number[] {
+  const out: number[] = []
+  let depth = 0
+  for (let i = index - 1; i >= 0; i--) {
+    const c = masked[i]
+    if (CLOSERS.has(c)) depth++
+    else if (OPENERS.has(c)) {
+      if (depth > 0) { depth--; continue }
+      if (c === '{' && stopAtBrace) break
+      out.push(i)
+    }
+  }
+  return out
+}

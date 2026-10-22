@@ -10,8 +10,10 @@ export const g34: Rule = {
     if (files.some(f => basename(f.rel).toLowerCase() === 'trust.md')) return { findings: [], applicable: true }
     const readmes = files.filter(f => basename(f.rel).toLowerCase() === 'readme.md')
     if (readmes.some(f => TRUST_HEADING.test(f.text))) return { findings: [], applicable: true }
-    const file = readmes.find(f => f.rel.toLowerCase() === 'readme.md')?.rel ?? readmes[0]?.rel ?? 'README.md'
+    // Line 1 of the README, so `<!-- bsv-guardrail-ignore G-34 reason -->` there can suppress it; line 0 when there is none.
+    const readme = readmes.find(f => f.rel.toLowerCase() === 'readme.md') ?? readmes[0]
     const snippet = 'no TRUST.md and no "Trust model" heading in a README'
-    return { findings: [{ id: meta.id, severity: meta.severity, file, line: 0, snippet }], applicable: true }
+    const finding = { id: meta.id, severity: meta.severity, file: readme?.rel ?? 'README.md', line: readme ? 1 : 0, snippet }
+    return { findings: [finding], applicable: true }
   },
 }
