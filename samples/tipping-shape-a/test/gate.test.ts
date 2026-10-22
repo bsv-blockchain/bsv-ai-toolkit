@@ -3,7 +3,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Beef, Hash, MerklePath, P2PKH, PrivateKey, Transaction, UnlockingScript, Utils } from '@bsv/sdk'
+import { Beef, Hash, LockingScript, MerklePath, P2PKH, PrivateKey, ProtoWallet, Transaction, UnlockingScript, Utils, type WalletInterface } from '@bsv/sdk'
+import { payeeLockingScript } from '../web/brc29'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Arcade } from '../server/arcade.js'
 import {
@@ -13,8 +14,10 @@ import {
   returnCoinsAndClean,
   savedTipStore,
   SWEEP_LABEL,
+  lockRunDir,
+  unlockRunDir,
+  type GateCoinWallet,
   type Row,
-  type SettleWallet,
 } from '../scripts/gate-coins'
 import { addProvenTx, tscToMerklePath, WhatsOnChain } from '../scripts/gate-woc'
 import { derive, keyFilePath, loadOrCreateRootKey, openGateWallet } from '../scripts/gate-wallet'
@@ -157,6 +160,19 @@ describe('gate keys', { timeout: 30_000 }, () => {
     const wrong = gate(['recover', '--dir', other], env)
     expect(wrong.code).toBe(2)
     expect(wrong.stderr).toContain('wrong key?')
+
+    // A run dir whose run is still alive is refused; once its process is gone, recover finishes it (nothing in it
+    // here: both wallets open empty, no Arcade call is needed) and deletes it.
+    const mine = tempDir()
+    writeFileSync(join(mine, 'run.json'), JSON.stringify({ kind: 'bsv-gate-run', fundingAddress: derive(env.BSV_TESTNET_GATE_KEY).fundingAddress }))
+    writeFileSync(join(mine, 'run.lock'), JSON.stringify({ pid: process.pid, startedAt: 'now' }))
+    const busy = gate(['recover', '--dir', mine], env)
+    expect(busy.code).toBe(2)
+    expect(busy.stderr).toContain('in use by a live gate process')
+    writeFileSync(join(mine, 'run.lock'), JSON.stringify({ pid: spawnSync(process.execPath, ['-e', '']).pid, startedAt: 'earlier' }))
+    const done = gate(['recover', '--dir', mine], env)
+    expect(done.code, done.stderr).toBe(0)
+    expect(existsSync(mine)).toBe(false)
   })
 
   it('refuses a key path inside a git work tree and a key directory others can write', () => {
@@ -374,7 +390,7 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
   })()
 
   /** Arcade that has seen a txid only once it was POSTed (or from the start, when `known`). */
-  function fakeArcade(opts: { known?: string[]; neverSees?: boolean } = {}) {
+  function fakeArcade(opts: { known?: string[]; neverSees?: boolean; refuses?: string } = {}) {
     const seen = new Set(opts.known ?? [])
     const posts: string[] = []
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -382,6 +398,7 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
       if (init?.method === 'POST') {
         const tx = Transaction.fromHexEF(String(init.body))
         posts.push(tx.id('hex'))
+        if (tx.id('hex') === opts.refuses) return new Response(JSON.stringify({ status: 461, extraInfo: 'script verification failed' }), { status: 400 })
         if (!opts.neverSees) seen.add(tx.id('hex'))
         return new Response(JSON.stringify({ txid: tx.id('hex'), txStatus: 'RECEIVED' }), { status: 200 })
       }
@@ -419,7 +436,7 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
         state.closed = true
       },
     }
-    return { state, w: w as unknown as SettleWallet & { close(): Promise<void> } }
+    return { state, w: w as unknown as GateCoinWallet }
   }
   const io = { out: () => {}, err: () => {} }
   const runDir = () => {
@@ -480,8 +497,104 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
     const { w } = fakeWallet({ balance: 0 })
     const dir = runDir()
     writeFileSync(join(dir, 'tip.json'), JSON.stringify({ txid: 'ab'.repeat(32), beef: '00', outputIndex: 0 }))
-    expect(await returnCoinsAndClean([['creator', w]], dir, funding, arcade, [], io, 0)).toMatch(/went out but is not in the creator wallet/)
+    expect(await returnCoinsAndClean([['creator', w]], dir, funding, arcade, [], io, 0)).toMatch(/may have gone out but is not in the creator wallet/)
     expect(existsSync(dir)).toBe(true)
+  })
+
+  it('names the ancestor Arcade refused', async () => {
+    const { arcade, posts } = fakeArcade({ refuses: u.id('hex') })
+    const { w } = fakeWallet({ balance: 4800, postFails: true })
+    const left = await returnCoinsAndClean([['tipper', w]], runDir(), funding, arcade, [], io, 0)
+    expect(left).toContain(`Arcade refused ancestor ${u.id('hex')} (REJECTED: script verification failed)`)
+    expect(posts).toEqual([u.id('hex')]) // the sweep-back itself is not posted over a refused parent
+  })
+
+  it('keeps the run dir when a wallet with storage there could not be opened', async () => {
+    const { arcade } = fakeArcade()
+    const dir = runDir()
+    writeFileSync(join(dir, 'tipper-02aabbccddeeff00.sqlite'), '')
+    expect(await returnCoinsAndClean([['tipper', undefined]], dir, funding, arcade, [], io, 0)).toMatch(/tipper: its wallet in .* could not be opened/)
+    expect(existsSync(dir)).toBe(true)
+    // No storage, nothing to lose: the dir goes.
+    const empty = runDir()
+    expect(await returnCoinsAndClean([['creator', undefined]], empty, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(existsSync(empty)).toBe(false)
+  })
+
+  it('a write-ahead without a txid keeps the dir unless the tipper made nothing but imports and sweep-backs', async () => {
+    const { arcade } = fakeArcade({ known: [S] })
+    const writeAhead = { outputIndex: 0, satoshis: 1000, recipient: '02aa', senderIdentityKey: '03bb', derivationPrefix: 'cA==', derivationSuffix: 'cw==' }
+    const quiet = runDir()
+    writeFileSync(join(quiet, 'tip.json'), JSON.stringify(writeAhead))
+    const imports = fakeWallet({ balance: 0, actions: [{ txid: 'aa'.repeat(32), status: 'completed', labels: ['p2pkh-funding'] }] })
+    expect(await returnCoinsAndClean([['tipper', imports.w]], quiet, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(existsSync(quiet)).toBe(false)
+
+    const busy = runDir()
+    writeFileSync(join(busy, 'tip.json'), JSON.stringify(writeAhead))
+    const tipped = fakeWallet({ balance: 0, actions: [{ txid: 'bb'.repeat(32), status: 'unproven', labels: [] }] })
+    expect(await returnCoinsAndClean([['tipper', tipped.w]], busy, funding, arcade, [], io, 0)).toMatch(/txid not recorded/)
+    expect(existsSync(busy)).toBe(true)
+  })
+
+  it('fills in a write-ahead without a txid from the tipper wallet, then collects it', async () => {
+    const tipperKey = PrivateKey.fromRandom()
+    const creatorKey = PrivateKey.fromRandom().toPublicKey().toString()
+    const proto = new ProtoWallet(tipperKey)
+    const derivation = { derivationPrefix: 'cA==', derivationSuffix: 'cw==' }
+    const script = await payeeLockingScript(proto as unknown as WalletInterface, creatorKey, derivation.derivationPrefix, derivation.derivationSuffix)
+    const tip = new Transaction(
+      1,
+      [{ sourceTransaction: g, sourceOutputIndex: 0, unlockingScript: new UnlockingScript([]), sequence: 0xffffffff }],
+      [
+        { lockingScript: lock, satoshis: 3000 },
+        { lockingScript: new P2PKH().lock(PrivateKey.fromRandom().toPublicKey().toAddress('testnet')), satoshis: 1000 },
+        { lockingScript: LockingScript.fromHex(script), satoshis: 1000 },
+      ],
+      0,
+    )
+    const T = tip.id('hex')
+    const tipBeef = new Beef()
+    tipBeef.mergeTransaction(tip)
+    const tipper = {
+      wallet: {
+        getPublicKey: (args: Parameters<ProtoWallet['getPublicKey']>[0]) => proto.getPublicKey(args),
+        listActions: async () => ({ totalActions: 2, actions: [{ txid: 'aa'.repeat(32), status: 'completed', labels: ['p2pkh-funding'] }, { txid: T, status: 'unproven', labels: [] }] }),
+      },
+      beef: async (txid: string) => {
+        if (txid !== T) throw new Error('unknown')
+        return tipBeef.toBinary()
+      },
+    } as unknown as GateCoinWallet
+    const dir = tempDir()
+    writeFileSync(join(dir, 'tip.json'), JSON.stringify({ outputIndex: 0, satoshis: 1000, recipient: creatorKey, senderIdentityKey: tipperKey.toPublicKey().toString(), ...derivation }))
+    const internalized: Array<{ tx: number[]; outputs: Array<{ outputIndex: number }> }> = []
+    const creator = {
+      wallet: {
+        listActions: async () => ({ totalActions: 0, actions: [] }),
+        internalizeAction: async (args: { tx: number[]; outputs: Array<{ outputIndex: number }> }) => {
+          internalized.push(args)
+          return { accepted: true }
+        },
+      },
+    } as unknown as Parameters<typeof collectSavedTip>[0]
+    await collectSavedTip(creator, dir, [], tipper)
+    expect(readSavedTip(dir)).toMatchObject({ txid: T, outputIndex: 2, collected: true })
+    expect(internalized).toHaveLength(1)
+    expect(internalized[0].outputs[0].outputIndex).toBe(2) // the output paying the saved derivation, not the 1000-sat decoy
+    expect(Transaction.fromAtomicBEEF(internalized[0].tx).id('hex')).toBe(T)
+  })
+
+  it('locks a run dir: a live holder refuses, a dead one is taken over', () => {
+    const dir = runDir()
+    writeFileSync(join(dir, 'run.lock'), JSON.stringify({ pid: process.ppid, startedAt: 'earlier' }))
+    expect(() => lockRunDir(dir)).toThrow(new RegExp(`in use by a live gate process \\(pid ${process.ppid}`))
+    const dead = spawnSync(process.execPath, ['-e', '']).pid as number
+    writeFileSync(join(dir, 'run.lock'), JSON.stringify({ pid: dead, startedAt: 'earlier' }))
+    lockRunDir(dir)
+    expect(JSON.parse(readFileSync(join(dir, 'run.lock'), 'utf8')).pid).toBe(process.pid)
+    unlockRunDir(dir)
+    expect(existsSync(join(dir, 'run.lock'))).toBe(false)
   })
 
   it('saves the tip before the broadcast, keeps it after the relay has it, and collects it straight into the creator wallet', async () => {
@@ -522,7 +635,8 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
   })
 })
 
-// Needs a funded gate key (BSV_TESTNET_GATE_KEY or the key file, swept with `gate sweep`) and testnet Arcade.
+// Needs BSV_MCP_NETWORK_TESTS=1, a gate key (BSV_TESTNET_GATE_KEY or the key file) whose funding address holds at
+// least the tip plus fees, and testnet Arcade.
 describe('gate run on testnet', () => {
   it.skipIf(process.env.BSV_MCP_NETWORK_TESTS !== '1')(
     'run completes one tip at 0-conf on testnet',

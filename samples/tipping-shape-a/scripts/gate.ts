@@ -20,6 +20,7 @@ import {
   GateFailure,
   gatherCoins,
   importCoins,
+  lockRunDir,
   markTipCollected,
   returnCoinsAndClean,
   savedTipStore,
@@ -165,6 +166,7 @@ async function recover(argv: string[], env: Env, io: Io): Promise<number> {
   const { fundingAddress } = derive(rootKeyHex)
   try {
     checkRunDir(dir, fundingAddress)
+    lockRunDir(dir) // refuses while the run that made it (or another recover) is still alive
   } catch (e) {
     throw new GateUsageError(message(e))
   }
@@ -174,13 +176,20 @@ async function recover(argv: string[], env: Env, io: Io): Promise<number> {
   let failure: string | undefined
   let tipper: GateWallet | undefined
   let creator: GateWallet | undefined
+  const problems: string[] = []
+  // Each opened on its own: one that cannot be opened must not stop the other (its storage keeps the dir).
   try {
     tipper = await openGateWallet(rootKeyHex, 'tipper', 'testnet', arcadeUrl, dir)
-    creator = await openGateWallet(rootKeyHex, 'creator', 'testnet', arcadeUrl, dir)
-    await collectSavedTip(creator, dir, rows)
   } catch (e) {
-    failure = message(e)
+    problems.push(`opening the tipper wallet: ${message(e)}`)
   }
+  try {
+    creator = await openGateWallet(rootKeyHex, 'creator', 'testnet', arcadeUrl, dir)
+    await collectSavedTip(creator, dir, rows, tipper)
+  } catch (e) {
+    problems.push(`the creator wallet: ${message(e)}`)
+  }
+  if (problems.length > 0) failure = problems.join('; ')
   const left = await returnCoinsAndClean([['creator', creator], ['tipper', tipper]], dir, fundingAddress, arcade, rows, io)
   if (left !== undefined) failure = failure === undefined ? left : `${failure}; ${left}`
   tableLines(rows).forEach(line => io.out(line))
@@ -284,7 +293,7 @@ async function run(argv: string[], env: Env, io: Io): Promise<number> {
   // A tip that went out but was not collected: straight into the creator wallet from the saved BEEF and remittance.
   if (creator !== undefined) {
     try {
-      await collectSavedTip(creator, dir, rows)
+      await collectSavedTip(creator, dir, rows, tipper)
     } catch (e) {
       io.err(`collecting the saved tip: ${message(e)}`)
       rows.push({ step: 'creator internalizeAction (saved tip)', verdict: 'failed' })

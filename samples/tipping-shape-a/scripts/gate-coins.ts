@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Beef, P2PKH, Transaction, Utils, type CreateActionArgs, type WalletInterface } from '@bsv/sdk'
 import type { Wallet } from '@bsv/wallet-toolbox'
 import type { Arcade, Outcome } from '../server/arcade.js'
+import { payeeLockingScript } from '../web/brc29'
 import type { KeyValueStore, PendingTip } from '../web/tip'
 import { homeOf, type GateWallet } from './gate-wallet'
 import { addProvenTx, type WhatsOnChain } from './gate-woc'
@@ -40,6 +41,8 @@ export const FEE_RESERVE_SATS = 500
 export const SEEN_WITHIN_MS = 20_000
 /** The label on every sweep-back action, so a later `recover` finds and re-checks them. */
 export const SWEEP_LABEL = 'gate sweep back'
+/** The label Setup.fundWalletFromP2PKHOutpoints puts on each import (wallet-toolbox 2.14.9, fundWalletP2PKH.js). */
+export const IMPORT_LABEL = 'p2pkh-funding'
 // Toolbox action states in which the transaction may not have reached the network.
 const UNFINISHED = new Set(['unprocessed', 'sending', 'unsigned', 'nosend', 'nonfinal'])
 
@@ -59,6 +62,7 @@ export function checkFunding(o: { address: string; usable: number; unusable: num
 
 const RUN_MARKER = 'run.json'
 const TIP_FILE = 'tip.json'
+const LOCK_FILE = 'run.lock'
 
 /** Writes JSON atomically, owner-only. */
 function writeJson(path: string, value: unknown) {
@@ -67,14 +71,73 @@ function writeJson(path: string, value: unknown) {
   renameSync(tmp, path)
 }
 
-/** A new run dir under ~/.bsv-gate/runs/ (0700), marked with the funding address it belongs to. */
+/**
+ * A new run dir under ~/.bsv-gate/runs/ (0700), locked by this process and marked with the funding address it
+ * belongs to.
+ */
 export function createRunDir(fundingAddress: string, env: Env = process.env): string {
   const runs = join(homeOf(env), '.bsv-gate', 'runs')
   mkdirSync(runs, { recursive: true, mode: 0o700 })
   const dir = mkdtempSync(join(runs, 'run-'))
+  lockRunDir(dir)
   writeJson(join(dir, RUN_MARKER), { kind: 'bsv-gate-run', fundingAddress, createdAt: new Date().toISOString() })
   return dir
 }
+
+/** True while a process with this pid exists (EPERM: it exists, under another user). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Takes the run dir's lock ({ pid, startedAt }) for this process. A lock whose process is gone is stale and taken
+ * over; a lock held by a live process refuses: its run (or recover) is still working on the dir.
+ */
+export function lockRunDir(dir: string): void {
+  const path = join(dir, LOCK_FILE)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(path, 'wx', 0o600)
+      try {
+        writeSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }))
+      } finally {
+        closeSync(fd)
+      }
+      return
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
+    let held: { pid?: unknown; startedAt?: unknown } = {}
+    try {
+      held = JSON.parse(readFileSync(path, 'utf8'))
+    } catch {
+      // unreadable: treated as stale
+    }
+    if (typeof held.pid === 'number' && held.pid !== process.pid && alive(held.pid)) {
+      throw new Error(`${dir} is in use by a live gate process (pid ${held.pid}, since ${String(held.startedAt)}); let it finish first`)
+    }
+    unlinkSync(path) // stale: its process is gone
+  }
+  throw new Error(`${dir} is being locked by another gate process`)
+}
+
+/** Releases this process's lock on the run dir (a kept dir must be free for `gate recover`). */
+export function unlockRunDir(dir: string): void {
+  const path = join(dir, LOCK_FILE)
+  try {
+    if (JSON.parse(readFileSync(path, 'utf8')).pid === process.pid) unlinkSync(path)
+  } catch {
+    // no lock, or not ours
+  }
+}
+
+/** True when the run dir holds SQLite storage of the named wallet. */
+const walletFileIn = (dir: string, name: string) => readdirSync(dir).some(f => f.startsWith(`${name}-`) && f.endsWith('.sqlite'))
 
 /** Throws unless `dir` is a run dir of this funding address. */
 export function checkRunDir(dir: string, fundingAddress: string): void {
@@ -111,8 +174,48 @@ export function readSavedTip(dir: string): SavedTip | undefined {
   return JSON.parse(readFileSync(path, 'utf8')) as SavedTip
 }
 
-/** True when a tip that may have gone out is not in the creator wallet yet. */
-const tipOpen = (t: SavedTip | undefined) => t !== undefined && t.txid !== undefined && !t.collected
+/** The tipper surface the saved-tip checks need (a toolbox Wallet, or a fake in tests). */
+export type TipperWallet = Pick<GateWallet, 'beef'> & { wallet: Pick<Wallet, 'listActions' | 'getPublicKey'> }
+
+/** The tipper's actions other than imports and sweep-backs: the tip, if it was ever made. */
+async function tipActions(tipper: TipperWallet): Promise<string[]> {
+  const { actions } = await tipper.wallet.listActions({ labels: [], includeLabels: true, limit: 1000 })
+  return actions.filter(a => !(a.labels ?? []).some(l => l === IMPORT_LABEL || l === SWEEP_LABEL)).map(a => a.txid)
+}
+
+/**
+ * True when a tip may have gone out and is not in the creator wallet yet. A write-ahead without a txid (the process
+ * stopped between the broadcast and the second write) counts too, unless the tipper wallet holds nothing but
+ * imports and sweep-backs; with the tipper wallet unreadable, it counts whenever that wallet's storage exists.
+ */
+async function tipOpen(t: SavedTip | undefined, dir: string, tipper: TipperWallet | undefined): Promise<boolean> {
+  if (t === undefined || t.collected) return false
+  if (t.txid !== undefined) return true
+  if (tipper === undefined) return walletFileIn(dir, 'tipper')
+  return (await tipActions(tipper)).length > 0
+}
+
+/**
+ * Fills in a write-ahead that has no txid from the tipper wallet: the one tip action whose transaction pays the
+ * saved derivation's output. Returns the completed record, or the record unchanged when no action matches.
+ */
+async function completeSavedTip(t: SavedTip, dir: string, tipper: TipperWallet): Promise<SavedTip> {
+  const lockingScript = await payeeLockingScript(tipper.wallet as unknown as Parameters<typeof payeeLockingScript>[0], t.recipient, t.derivationPrefix, t.derivationSuffix)
+  for (const txid of await tipActions(tipper)) {
+    let beef: Beef
+    try {
+      beef = Beef.fromBinary(await tipper.beef(txid))
+    } catch {
+      continue // no transaction in storage for it
+    }
+    const outputIndex = beef.findAtomicTransaction(txid)?.outputs.findIndex(o => o.lockingScript.toHex() === lockingScript && o.satoshis === t.satoshis) ?? -1
+    if (outputIndex < 0) continue
+    const done: SavedTip = { ...t, txid, beef: Utils.toHex(beef.toBinaryAtomic(txid)), outputIndex }
+    writeJson(join(dir, TIP_FILE), done)
+    return done
+  }
+  return t
+}
 
 export function markTipCollected(dir: string): void {
   const t = readSavedTip(dir)
@@ -155,9 +258,11 @@ export function savedTipStore(dir: string): KeyValueStore {
  * Collects the saved tip straight into the creator wallet (internalizeAction with its BEEF and remittance), when it
  * went out and is not collected yet. Used after a failure in the tip stage, and by `gate recover`.
  */
-export async function collectSavedTip(creator: Pick<GateWallet, 'wallet'>, dir: string, rows: Row[]): Promise<void> {
-  const t = readSavedTip(dir)
-  if (!tipOpen(t) || t === undefined || t.txid === undefined) return
+export async function collectSavedTip(creator: Pick<GateWallet, 'wallet'>, dir: string, rows: Row[], tipper?: TipperWallet): Promise<void> {
+  let t = readSavedTip(dir)
+  if (t === undefined || t.collected) return
+  if (t.txid === undefined && tipper !== undefined) t = await completeSavedTip(t, dir, tipper)
+  if (t.txid === undefined) return
   if (t.beef === undefined || t.outputIndex < 0) throw new Error(`the saved tip ${t.txid} has no transaction to collect`)
   const { actions } = await creator.wallet.listActions({ labels: [], limit: 1000 })
   if (!actions.some(a => a.txid === t.txid)) {
@@ -263,7 +368,10 @@ export async function postChain(arcade: Arcade, beefBin: number[], txid: string,
   beef.sortTxs()
   for (const btx of beef.txs) {
     if (btx.txid === txid || btx.isTxidOnly || btx.bumpIndex !== undefined) continue
-    await arcade.submit(beef.findAtomicTransaction(btx.txid)!.toHexEF())
+    const ancestor = await arcade.broadcast(beef.findAtomicTransaction(btx.txid)!.toHexEF(), btx.txid, 0)
+    if (ancestor.verdict === 'terminal') {
+      throw new Error(`Arcade refused ancestor ${btx.txid} (${ancestor.txStatus}${ancestor.extraInfo ? `: ${ancestor.extraInfo}` : ''})`)
+    }
   }
   const subject = beef.findAtomicTransaction(txid)
   if (subject === undefined) throw new Error(`the wallet's BEEF for ${txid} does not hold it`)
@@ -274,7 +382,7 @@ export async function postChain(arcade: Arcade, beefBin: number[], txid: string,
 export type SettleWallet = Pick<GateWallet, 'beef'> & { wallet: Pick<Wallet, 'balance' | 'createAction' | 'listActions'> }
 
 /** Arcade's read of a wallet transaction; when it is not seen-no-competitor, one direct re-post of its chain. */
-async function confirmOnArcade(w: SettleWallet, txid: string, arcade: Arcade, waitMs: number): Promise<{ outcome?: Outcome; tx?: Transaction }> {
+async function confirmOnArcade(w: SettleWallet, txid: string, arcade: Arcade, waitMs: number): Promise<{ outcome?: Outcome; tx?: Transaction; error?: string }> {
   let tx: Transaction | undefined
   let beefBin: number[] | undefined
   try {
@@ -285,7 +393,11 @@ async function confirmOnArcade(w: SettleWallet, txid: string, arcade: Arcade, wa
   }
   let outcome = await arcade.read(txid, waitMs).catch(() => undefined)
   if (outcome?.verdict === 'seen-no-competitor' || beefBin === undefined) return { outcome, tx }
-  outcome = await postChain(arcade, beefBin, txid, waitMs).catch(() => outcome)
+  try {
+    outcome = await postChain(arcade, beefBin, txid, waitMs)
+  } catch (e) {
+    return { outcome, tx, error: message(e) }
+  }
   return { outcome, tx }
 }
 
@@ -322,7 +434,7 @@ export async function settleWallet(
   const problems: string[] = []
   const sweeps = (await w.wallet.listActions({ labels: [SWEEP_LABEL], limit: 1000 })).actions.filter(a => a.status !== 'failed').map(a => a.txid)
   for (const txid of new Set([...unfinished, ...sweeps])) {
-    const { outcome, tx } = await confirmOnArcade(w, txid, arcade, waitMs)
+    const { outcome, tx, error } = await confirmOnArcade(w, txid, arcade, waitMs)
     if (sweeps.includes(txid)) {
       rows.push({
         step: `sweep-back ${name}`,
@@ -334,7 +446,9 @@ export async function settleWallet(
         ms: Math.round(performance.now() - t0),
       })
     }
-    if (outcome?.verdict !== 'seen-no-competitor') problems.push(`${name}: ${txid} is not seen on Arcade (${outcome?.txStatus ?? 'unknown to Arcade'})`)
+    if (outcome?.verdict !== 'seen-no-competitor') {
+      problems.push(`${name}: ${txid} is not seen on Arcade (${outcome?.txStatus ?? 'unknown to Arcade'}${error ? `; ${error}` : ''})`)
+    }
   }
   if (sweeps.length === 0) rows.push({ step: `sweep-back ${name}`, verdict: 'empty' })
   const left = await w.wallet.balance()
@@ -343,12 +457,15 @@ export async function settleWallet(
   return problems.length > 0 && createError !== undefined ? [createError, ...problems] : problems
 }
 
+/** Everything returnCoinsAndClean uses of a gate wallet (a GateWallet, or a fake in tests). */
+export type GateCoinWallet = SettleWallet & TipperWallet & Pick<GateWallet, 'close'>
+
 /**
  * Settles every wallet (each is tried, whatever happened before), closes them, and deletes the run dir only when
  * nothing can be lost with it: every wallet settled and no tip left uncollected. Returns why the dir was kept.
  */
 export async function returnCoinsAndClean(
-  wallets: Array<[string, (SettleWallet & Pick<GateWallet, 'close'>) | undefined]>,
+  wallets: Array<[string, GateCoinWallet | undefined]>,
   dir: string,
   fundingAddress: string,
   arcade: Arcade,
@@ -358,7 +475,11 @@ export async function returnCoinsAndClean(
 ): Promise<string | undefined> {
   const problems: string[] = []
   for (const [name, w] of wallets) {
-    if (w === undefined) continue
+    if (w === undefined) {
+      // Not opened (busy, corrupt, a failed migration): if it has storage here, that storage may hold coins.
+      if (walletFileIn(dir, name)) problems.push(`${name}: its wallet in ${dir} could not be opened`)
+      continue
+    }
     try {
       problems.push(...(await settleWallet(w, name, fundingAddress, arcade, rows, waitMs)))
     } catch (e) {
@@ -366,13 +487,20 @@ export async function returnCoinsAndClean(
       rows.push({ step: `sweep-back ${name}`, verdict: 'failed' })
     }
   }
-  for (const [, w] of wallets) await w?.close().catch(e => io.err(`closing a wallet: ${message(e)}`))
   const tip = readSavedTip(dir)
-  if (tipOpen(tip)) problems.push(`the tip ${tip?.txid} went out but is not in the creator wallet (its record: ${join(dir, TIP_FILE)})`)
+  try {
+    if (await tipOpen(tip, dir, wallets.find(([name]) => name === 'tipper')?.[1])) {
+      problems.push(`the tip ${tip?.txid ?? '(txid not recorded)'} may have gone out but is not in the creator wallet (its record: ${join(dir, TIP_FILE)})`)
+    }
+  } catch (e) {
+    problems.push(`the saved tip could not be checked: ${message(e)}`)
+  }
+  for (const [, w] of wallets) await w?.close().catch(e => io.err(`closing a wallet: ${message(e)}`))
   if (problems.length === 0) {
     rmSync(dir, { recursive: true, force: true })
     return undefined
   }
+  unlockRunDir(dir)
   io.err(`kept ${dir}: it holds the only record of coins not yet back at ${fundingAddress}; finish with: pnpm gate recover --dir ${dir}`)
   return problems.join('; ')
 }
