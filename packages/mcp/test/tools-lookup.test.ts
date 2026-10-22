@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config.js'
 import { createServer } from '../src/server.js'
 import { lookupBrc, normalizeBrcId } from '../src/tools/brc.js'
 import { loadDocsIndex, resolveDocsUrl } from '../src/tools/docs.js'
+import { codeSearch, findFunctionDefinition } from '../src/tools/search.js'
 import { versionsCheck, type VersionsFile } from '../src/tools/versions.js'
 import { mockFetch } from './helpers/mockFetch.js'
 
@@ -115,17 +116,19 @@ describe('docs_url', () => {
 describe('versions_check', () => {
   const base = (): VersionsFile => JSON.parse(readFileSync(join(CONTENT, 'versions.json'), 'utf8'))
 
-  // npm answers each package's pinned version unless overridden; GitHub and Arcade answer the pinned values.
-  function registryFetch(v: VersionsFile, overrides: Record<string, string> = {}) {
+  // npm answers each package's pinned version unless overridden; GitHub and Arcade answer the pinned values;
+  // a request to `failHost` rejects like a network error.
+  function registryFetch(v: VersionsFile, overrides: Record<string, unknown> = {}, failHost?: string) {
     const calls: string[] = []
     const impl = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
       const url = new URL(input instanceof Request ? input.url : input.toString())
       calls.push(url.toString())
       if (!init.signal) throw new Error(`no timeout signal on ${url}`)
+      if (url.hostname === failHost) throw new TypeError('fetch failed')
       let body: unknown
       if (url.hostname === 'registry.npmjs.org') {
         const name = decodeURIComponent(url.pathname.slice(1).replace(/\/latest$/, ''))
-        body = { name, version: overrides[name] ?? v.packages[name].pinned }
+        body = { name, version: name in overrides ? overrides[name] : v.packages[name].pinned }
       } else if (url.hostname === 'api.github.com') {
         body = { sha: v.git.runar.commit + '0'.repeat(33) }
       } else if (url.pathname === '/health') {
@@ -154,6 +157,37 @@ describe('versions_check', () => {
     expect(rows.find((r) => r.name.includes('runar') && r.pinned === 'd207ee8')).toMatchObject({ latest: 'd207ee8', drift: false })
   })
 
+  it('an unreachable Arcade host is drift with latest unknown', async () => {
+    const v = base()
+    const host = new URL(v.services.arcade.hosts.mainnet[0]).hostname
+    const { rows } = await versionsCheck(v, registryFetch(v, {}, host))
+    expect(rows.find((r) => r.name === `arcade:${host}`)).toMatchObject({ latest: 'unknown', drift: true, note: expect.stringMatching(/^check failed: fetch failed/) })
+    expect(rows.filter((r) => r.drift).length).toBe(1)
+  })
+
+  it('runar-sdk drifts once npm catches up with git', async () => {
+    const v = base()
+    for (const [latest, drift] of [['0.4.7', false], ['1.0.0-rc.1', true], ['1.0.0', true]] as const) {
+      const { rows } = await versionsCheck(v, registryFetch(v, { 'runar-sdk': latest }))
+      expect(rows.find((r) => r.name === 'runar-sdk'), latest).toMatchObject({ latest, drift })
+    }
+  })
+
+  it('a malformed registry version is drift', async () => {
+    const v = base()
+    const { rows } = await versionsCheck(v, registryFetch(v, { '@bsv/sdk': 'garbage', 'runar-sdk': undefined }))
+    expect(rows.find((r) => r.name === '@bsv/sdk')).toMatchObject({ latest: 'unknown', drift: true, note: expect.stringMatching(/malformed version: garbage/) })
+    expect(rows.find((r) => r.name === 'runar-sdk')).toMatchObject({ latest: 'unknown', drift: true })
+  })
+
+  it('an unreadable verified date is drift', async () => {
+    const v = base()
+    v.packages['@bsv/simple'].verified = 'soon'
+    const { rows } = await versionsCheck(v, registryFetch(v))
+    expect(rows.find((r) => r.name === '@bsv/simple')).toMatchObject({ latest: '0.7.0', drift: true, note: expect.stringMatching(/verified date unreadable/) })
+    expect(Number.isFinite(rows.find((r) => r.name === '@bsv/simple')!.ageDays)).toBe(false)
+  })
+
   it('versionsCheck skips the probe when probeTxid is empty', async () => {
     const v = base()
     v.services.arcade.probeTxid = ''
@@ -165,6 +199,32 @@ describe('versions_check', () => {
 })
 
 describe('search tools', () => {
+  // Without rg: grep must still honour the file glob, stop at one hit per file, and skip .git and node_modules.
+  it('the grep fallback keeps the file filter, one hit per file and the skipped dirs', async () => {
+    const reposDir = mkdtempSync(join(tmpdir(), 'bsv-repos-'))
+    tmpDirs.push(reposDir)
+    const put = (rel: string, text: string) => {
+      mkdirSync(dirname(join(reposDir, rel)), { recursive: true })
+      writeFileSync(join(reposDir, rel), text)
+    }
+    put('ts-sdk/src/wallet.ts', 'export function createAction(a) {}\ncreateAction(1)\ncreateAction(2)\n')
+    put('ts-sdk/src/notes.md', 'createAction(x) in prose\n')
+    put('ts-sdk/.git/objects/x.ts', 'function createAction() {}\n')
+    put('ts-sdk/node_modules/dep/index.js', 'function createAction() {}\n')
+    put('py-sdk/src/wallet.py', 'def createAction(x):\n  pass\n')
+    const cfg = loadConfig({ BSV_REPOS_DIR: reposDir })
+    const noRg = { rg: 'bsv-mcp-test-no-such-rg', grep: 'grep' }
+
+    const defs = await findFunctionDefinition({ function_name: 'createAction', repository_name: 'ts-sdk' }, cfg, noRg)
+    expect(defs.split('\n')).toEqual(['ts-sdk/src/wallet.ts:1:export function createAction(a) {}'])
+
+    const all = await codeSearch({ query: 'createAction', file_extension: 'ts' }, cfg, noRg)
+    expect(all.split('\n')).toEqual(['ts-sdk/src/wallet.ts:1:export function createAction(a) {}'])
+
+    const py = await findFunctionDefinition({ function_name: 'createAction' }, cfg, noRg)
+    expect(py.split('\n').sort()).toEqual(['py-sdk/src/wallet.py:1:def createAction(x):', 'ts-sdk/src/wallet.ts:1:export function createAction(a) {}'])
+  })
+
   it('code_search without BSV_REPOS_DIR returns the setup hint', async () => {
     const server = createServer(loadConfig({}), { fetchImpl: mockFetch([]) })
     const client = new Client({ name: 'test', version: '0.0.0' })

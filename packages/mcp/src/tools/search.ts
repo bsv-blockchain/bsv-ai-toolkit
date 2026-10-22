@@ -27,15 +27,25 @@ function searchRoot(cfg: Config, repository?: string): string {
   return dir
 }
 
+/** The executables used; tests swap `rg` for a missing command to exercise the grep fallback. */
+export interface SearchCommands {
+  rg: string
+  grep: string
+}
+const DEFAULT_COMMANDS: SearchCommands = { rg: 'rg', grep: 'grep' }
+
 /**
- * Runs ripgrep (falling back to grep when rg is not installed) in `dir`. Arguments go to execa as an argv
- * array, never through a shell, so the query cannot inject commands.
+ * Runs ripgrep (falling back to grep when rg is not installed) in `dir`: first matching line per file, only
+ * files matching `fileGlob`. Arguments go to execa as an argv array, never through a shell, so the query
+ * cannot inject commands.
  */
-async function runSearch(dir: string, pattern: string, fileGlob: string): Promise<string> {
+async function runSearch(dir: string, pattern: string, fileGlob: string, commands: SearchCommands): Promise<string> {
   const opts = { cwd: dir, reject: false, timeout: TIMEOUT_MS } as const
-  let r = await execa('rg', ['--color=never', '--line-number', '--max-count=1', '-g', fileGlob, '-e', pattern, '.'], opts)
+  let r = await execa(commands.rg, ['--color=never', '--line-number', '--max-count=1', '-g', fileGlob, '-e', pattern, '.'], opts)
   if (r.failed && (r as { code?: string }).code === 'ENOENT') {
-    r = await execa('grep', ['-r', '-n', '-I', '-E', '-e', pattern, '.'], opts)
+    // rg skips .git and (via .gitignore) node_modules; grep has to be told.
+    const includes = expandGlob(fileGlob).map((g) => `--include=${g}`)
+    r = await execa(commands.grep, ['-r', '-n', '-I', '-E', '-m', '1', '--exclude-dir=.git', '--exclude-dir=node_modules', ...includes, '-e', pattern, '.'], opts)
   }
   if (r.exitCode === 1) return `${NO_MATCH} for "${pattern}".`
   if (r.failed) return `${FAILED} for "${pattern}": ${String(r.stderr || r.shortMessage).trim()}`
@@ -48,6 +58,13 @@ function truncate(text: string): string {
   return [...lines.slice(0, MAX_LINES), `... ${lines.length - MAX_LINES} more lines; narrow the query or set repository_name`].join('\n')
 }
 
+// grep's --include takes no brace lists: '*.{ts,js}' → ['*.ts', '*.js']; '*' → [] (every file).
+function expandGlob(glob: string): string[] {
+  if (glob === '*') return []
+  const m = /^([^{}]*)\{([^{}]*)\}([^{}]*)$/.exec(glob)
+  return m ? m[2].split(',').map((alt) => `${m[1]}${alt}${m[3]}`) : [glob]
+}
+
 const isHit = (text: string) => !text.startsWith(NO_MATCH) && !text.startsWith(FAILED)
 
 // 'ts', '.ts' and '*.ts' all mean *.ts; anything already a glob passes through.
@@ -58,12 +75,20 @@ function fileGlob(ext: string | undefined): string {
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export async function codeSearch(input: { query: string; repository_name?: string; file_extension?: string }, cfg: Config): Promise<string> {
+export async function codeSearch(
+  input: { query: string; repository_name?: string; file_extension?: string },
+  cfg: Config,
+  commands: SearchCommands = DEFAULT_COMMANDS,
+): Promise<string> {
   const dir = searchRoot(cfg, input.repository_name)
-  return prefix(await runSearch(dir, input.query, fileGlob(input.file_extension)), dir, cfg)
+  return prefix(await runSearch(dir, input.query, fileGlob(input.file_extension), commands), dir, cfg)
 }
 
-export async function findFunctionDefinition(input: { function_name: string; repository_name?: string }, cfg: Config): Promise<string> {
+export async function findFunctionDefinition(
+  input: { function_name: string; repository_name?: string },
+  cfg: Config,
+  commands: SearchCommands = DEFAULT_COMMANDS,
+): Promise<string> {
   const root = searchRoot(cfg, input.repository_name)
   const name = escapeRegex(input.function_name)
   const pattern = [
@@ -82,7 +107,7 @@ export async function findFunctionDefinition(input: { function_name: string; rep
   for (const sub of SOURCE_DIRS) {
     const dir = join(root, sub)
     if (!existsSync(dir)) continue
-    results = await runSearch(dir, pattern, SOURCE_GLOB)
+    results = await runSearch(dir, pattern, SOURCE_GLOB, commands)
     if (isHit(results)) return prefix(results, dir, cfg)
   }
   return results

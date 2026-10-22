@@ -33,7 +33,8 @@ async function main(): Promise<number> {
   const report = await versionsCheck(loadVersionsFile(), globalThis.fetch)
   console.log(args.json ? JSON.stringify(report, null, 2) : formatVersionsTable(report))
   const drifted = report.rows.filter((r) => r.drift).map((r) => r.name)
-  const stale = report.rows.filter((r) => r.ageDays > args.maxAgeDays).map((r) => r.name)
+  // NaN (an unreadable verified date) counts as stale.
+  const stale = report.rows.filter((r) => !(r.ageDays <= args.maxAgeDays)).map((r) => r.name)
   if (drifted.length) console.error(`drift: ${drifted.join(', ')}`)
   if (stale.length) console.error(`verified more than ${args.maxAgeDays} days ago: ${stale.join(', ')}`)
   return drifted.length || stale.length ? 1 : 0

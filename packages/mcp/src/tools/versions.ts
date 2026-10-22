@@ -34,6 +34,7 @@ export interface VersionsReport {
 const CONTENT_DIR = fileURLToPath(new URL('../../content', import.meta.url))
 const TIMEOUT_MS = 10_000
 const DAY_MS = 86_400_000
+const VERSION = /^v?\d+\.\d+/
 // npm packages whose npm release is known stale and unsafe, keyed to the git entry that replaces them.
 const NPM_UNSAFE: Record<string, string> = { 'runar-sdk': 'runar' }
 
@@ -56,12 +57,16 @@ export async function versionsCheck(
   const ageDays = (verified: string) => Math.floor((now - Date.parse(`${verified}T00:00:00Z`)) / DAY_MS)
   const row = async (name: string, pinned: string, verified: string, latest: Promise<string>, judge?: Judge): Promise<VersionRow> => {
     const base = { name, pinned, verifiedOn: verified, ageDays: ageDays(verified) }
+    // An unreadable verified date cannot prove freshness, so the row fails closed.
+    const badDate = Number.isFinite(base.ageDays) ? undefined : `verified date unreadable: "${verified}"`
     try {
       const l = await latest
       const { drift, note } = judge ? judge(l) : { drift: l !== pinned, note: undefined }
-      return { ...base, latest: l, drift, ...(note ? { note } : {}) }
+      const notes = [note, badDate].filter(Boolean).join('; ')
+      return { ...base, latest: l, drift: drift || badDate !== undefined, ...(notes ? { note: notes } : {}) }
     } catch (e) {
-      return { ...base, latest: 'unknown', drift: true, note: `check failed: ${e instanceof Error ? e.message : String(e)}` }
+      const notes = [`check failed: ${e instanceof Error ? e.message : String(e)}`, badDate].filter(Boolean).join('; ')
+      return { ...base, latest: 'unknown', drift: true, note: notes }
     }
   }
 
@@ -74,7 +79,11 @@ export async function versionsCheck(
   const rows: Promise<VersionRow>[] = []
 
   for (const [name, p] of Object.entries(versions.packages)) {
-    const latest = getJson(`https://registry.npmjs.org/${name}/latest`).then((j) => String(j.version))
+    const latest = getJson(`https://registry.npmjs.org/${name}/latest`).then((j) => {
+      const v = String(j?.version)
+      if (!VERSION.test(v)) throw new Error(`registry answered a malformed version: ${v}`)
+      return v
+    })
     const gitKey = NPM_UNSAFE[name]
     const git = gitKey === undefined ? undefined : versions.git[gitKey]
     if (git === undefined) {
