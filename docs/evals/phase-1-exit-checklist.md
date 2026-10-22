@@ -4,11 +4,11 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
 
 | # | Check | Owner | Evidence |
 | --- | --- | --- | --- |
-| 1 | Skill installs on a clean machine | HUMAN: Connor | |
-| 2 | Claude Code plugin installs | HUMAN: Connor | |
+| 1 | Skill installs on a clean machine (after item 3) | HUMAN: Connor | |
+| 2 | Claude Code plugin installs (after item 3) | HUMAN: Connor | |
 | 3 | `@bsv/mcp@2.0.0` on npm with provenance | HUMAN: Deggen, then Connor | |
-| 4 | Sample reports 0 guardrail errors | CI: job `sample` | |
-| 5 | Broken copy reports each exit-criterion error | CI: `rules-broadcast.test.ts` | |
+| 4 | Sample reports 0 guardrail errors | CI: job `sample` ("Sample (bsv-tipping-demo)") | |
+| 5 | Broken copy reports each exit-criterion error | CI: job `build-test` ("Build and test"), `rules-broadcast.test.ts` | |
 | 6 | Three fresh-agent runs pass | HUMAN: Connor | |
 | 7 | Real BSV Desktop tip at 0-conf on the hosted origin | HUMAN: Connor | |
 | 8 | Gate run recorded, `probeTxid` set | HUMAN: Connor | |
@@ -18,12 +18,12 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
 ## Items
 
 - [ ] **1. `npx skills add bsv-blockchain/bsv-mcp` works on a clean machine.**
-  Owner: HUMAN: Connor.
+  Owner: HUMAN: Connor. After item 3: the skill installs from this repository once v2.0.0 is released.
   On a machine (or user account) with no earlier install of the skill, run `npx skills add bsv-blockchain/bsv-mcp` and check that the agent lists the `bsv-dev` skill.
   Evidence: date, OS, Node version, the command's output.
 
 - [ ] **2. `claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv` works.**
-  Owner: HUMAN: Connor.
+  Owner: HUMAN: Connor. After item 3: the plugin pins `@bsv/mcp@2.0.0`, so it installs only once v2.0.0 is released.
   Run it in Claude Code, then check that the skill, the commands `/bsv-review` and `/bsv-design`, and both MCP servers (`bsv-mcp`, `bsv-docs`) are present.
   Evidence: date, `claude --version`, `claude mcp list` output.
 
@@ -33,14 +33,14 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   Evidence: the `release.yml` run URL and the `npm view` output.
 
 - [ ] **4. `check_guardrails` on `samples/tipping-shape-a` reports 0 errors.**
-  Owner: CI, job `sample` in `.github/workflows/ci.yml`.
+  Owner: CI, job `sample` ("Sample (bsv-tipping-demo)") in `.github/workflows/ci.yml`.
   The job runs `node packages/mcp/build/cli/check-guardrails.js "$GITHUB_WORKSPACE/samples/tipping-shape-a"`, which exits 1 on any `error` finding.
-  Evidence: a green `sample` run on the release commit.
+  Evidence: a green `sample` job on the release commit.
 
 - [ ] **5. The broken copy reports each of ARC class, `isAuthenticated`, mainnet default, WoC ancestry loop, missing manifest.**
   Owner: CI, `packages/mcp/test/rules-broadcast.test.ts`, test `exit-criterion set is all errors`.
   The test checks the `broken-a` fixture and requires at least one finding, every one of severity `error`, for each of the five.
-  Evidence: a green `build-test` run on the release commit.
+  Evidence: a green `build-test` job ("Build and test", `.github/workflows/ci.yml`) on the release commit.
 
 - [ ] **6. Three fresh-agent runs pass with zero errors, transcripts in `docs/evals/`.**
   Owner: HUMAN: Connor.
@@ -62,7 +62,7 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   1. `pnpm -F bsv-tipping-demo gate init` creates the gate's root key in `~/.bsv-gate/tipping-shape-a.key` (or `$BSV_GATE_KEY_FILE`) and prints the funding address. It never prints the key.
   2. Fund the printed testnet address from [bsvfaucet.com](https://bsvfaucet.com) (sign in with a BSV wallet). Optionally, once the faucet transaction is visible, `pnpm -F bsv-tipping-demo gate sweep --txid <faucet txid>` proves it is spendable.
   3. `BSV_MCP_NETWORK_TESTS=1 pnpm -F bsv-tipping-demo gate run` runs one tip end to end, writes the record `docs/evals/gate-<time>.md` and, on a pass, prints `probeTxid: <txid>`.
-  4. Set the repository secret `BSV_TESTNET_GATE_KEY` to the key file's contents (Settings, Secrets and variables, Actions; or `gh secret set BSV_TESTNET_GATE_KEY < ~/.bsv-gate/tipping-shape-a.key`, which never shows it). The nightly `gate` job runs only when this secret exists.
+  4. Set the repository secret `BSV_TESTNET_GATE_KEY` to the key file's contents (Settings, Secrets and variables, Actions; or `gh secret set BSV_TESTNET_GATE_KEY < "${BSV_GATE_KEY_FILE:-$HOME/.bsv-gate/tipping-shape-a.key}"`, the same path `init` used, which never shows it). The nightly `gate` job runs only when this secret exists.
   5. Put the printed txid in `content/versions.json` at `services.arcade.probeTxid`, run `pnpm sync`, and commit it with the gate record.
   Evidence: the committed `docs/evals/gate-<time>.md`, the `probeTxid` commit, and a green nightly `gate` run.
 

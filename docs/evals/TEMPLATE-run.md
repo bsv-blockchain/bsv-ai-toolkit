@@ -10,7 +10,8 @@ Copy this file to `docs/evals/2026-MM-DD-run-N.md` and fill it in. See the [prot
 | Run | N |
 | Prompt | `add tipping to my React app on BSV` |
 | Agent version | `claude --version` output |
-| Skill version | `version` from the installed `SKILL.md` |
+| Skill version | `metadata.version` from the installed `SKILL.md` |
+| create-vite version | `npm view create-vite version` on the day of the run |
 | MCP servers in the session | `claude mcp list` output (expected: `bsv-docs` only) |
 | Result | PASS or FAIL |
 | Findings | `error`: 0, `warn`: 0 |

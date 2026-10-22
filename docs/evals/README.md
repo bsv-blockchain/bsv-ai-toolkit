@@ -17,7 +17,7 @@ One run is one fresh Claude Code session building tipping into a plain React app
    ```
 
 3. Check that `@bsv/mcp` is **not** installed for the session: `claude mcp list` shows `bsv-docs` and no `bsv-mcp`. Remove any user-level or project-level `bsv-mcp` entry before you start, and do not install the `bsv-dev` plugin, which bundles it. The run measures the skill and the docs on their own.
-4. Note the agent version (`claude --version`) and the skill version (`version` in the installed `SKILL.md` frontmatter).
+4. Note the agent version (`claude --version`) and the skill version (`metadata.version` in the installed `SKILL.md` frontmatter), and the create-vite version (`npm view create-vite version` on the day of the run).
 
 ### The session
 
