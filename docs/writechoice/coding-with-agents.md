@@ -134,7 +134,7 @@ What the tools do:
 | `brc_lookup` | Returns a BRC standard as Markdown |
 | `versions_check` | Compares the recommended library versions with the latest releases |
 | `docs_url` | Finds the live page for a docs id |
-| `code_search`, `find_function_definition` | Search local copies of the BSV repositories, after you run `setup.sh` from the [repository](https://github.com/bsv-blockchain/bsv-mcp) |
+| `code_search`, `find_function_definition` | Search local copies of the BSV repositories, after you run `setup.sh` from the [repository](https://github.com/bsv-blockchain/bsv-mcp) and set `BSV_REPOS_DIR` |
 
 It also serves dated facts (networks, Arcade, fees, wallet limits), the guardrails and the `@bsv/simple` reference as resources, so the agent reads current values instead of guessing.
 
@@ -159,13 +159,13 @@ Try these once the pieces are installed. [Send a payment with an AI agent](/docs
 - **Testnet.** Everything here defaults to testnet. An app built this way switches networks with one `BSV_NETWORK` variable, read by both its server and its client, and refuses to pay when the user's wallet is on a different network.
 - **Approvals.** A person approves in BSV Desktop what an app may spend. An app asks once for a grouped permission with a small monthly allowance, and the wallet prompts for anything above it.
 - **No keys.** No tool in `@bsv/mcp` takes, stores or signs with a private key: `arcade_submit` broadcasts transactions that are already signed. The skill never asks for a key, and `check_guardrails` flags a key in client code.
-- **Mainnet broadcasts by the agent.** With `BSV_NETWORK=mainnet`, `arcade_submit` also needs `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`, or it refuses before contacting Arcade. This switch is for the agent only: it controls whether the agent's own `arcade_submit` tool may broadcast real money, and apps never read it. Set it yourself, in the shell that starts the agent, and only when you mean it. The agent never sets it itself, and the plugin never sets it.
+- **Mainnet broadcasts by the agent.** Any mainnet broadcast by `arcade_submit`, whether from `BSV_NETWORK=mainnet` or a per-call `network: 'mainnet'`, needs `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`, or the tool refuses before contacting Arcade. This switch is for the agent only: it controls whether the agent's own `arcade_submit` tool may broadcast real money, and apps never read it. Set it yourself, in the shell that starts the agent, and only when you mean it. The agent never sets it itself, and the plugin never sets it.
 - **Commands.** Claude Code asks before the agent runs a command such as `npm install`. Read each one before you allow it.
 
 ## Skills library
 
 **Official.** `bsv-dev`, maintained by the BSV Association in [bsv-blockchain/bsv-mcp](https://github.com/bsv-blockchain/bsv-mcp).
 
-**Community.** Skills from other authors are listed in [`community-skills.yaml`](https://github.com/bsv-blockchain/bsv-mcp/blob/main/community-skills.yaml). The list is empty for now.
+**Community.** Skills from other authors are listed in [`community-skills.yaml`](https://github.com/bsv-blockchain/bsv-mcp/blob/main/community-skills.yaml) (the link resolves once this work merges to `main`). The list is empty for now.
 
 To submit a skill, open a pull request on `bsv-blockchain/bsv-mcp` that adds one entry to `community-skills.yaml`, with `name`, `repo`, `commit`, `description` and `maintainer`. `commit` is the full commit SHA that was reviewed, and every link in the entry points at that commit, so readers install what was reviewed. A new version is a new pull request with a new commit.

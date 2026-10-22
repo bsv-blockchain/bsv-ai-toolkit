@@ -70,7 +70,7 @@ The install names stay `bsv-docs` and `bsv-mcp` everywhere: the skill's rules an
 What we see today (checked 2026-10-22):
 
 - `https://bsv.writedocs.io/mcp` is live. `https://docs.bsvblockchain.org/mcp` answers 404, and the "Copy MCP URL" button on `/docs/build-with-ai` points there. Please fix that URL now.
-- `bsv.writedocs.io` serves guide pages as Markdown at `/docs/<path>.md`, and reference pages at `/reference/<path>.md`, without `/docs/`.
+- `bsv.writedocs.io` serves guide pages as Markdown at `/docs/<path>.md`. The API reference pages (`/reference/arc/*`, `/reference/wallet-api/*`) are served without `/docs/`; `reference/networks` is a guide-site page under `/docs/`.
 - `docs.bsvblockchain.org` answers `/docs/<path>.md` with HTTP 200 and a "Page Not Found" body, and the HTML `/docs/<path>` with 404. The legacy GitBook pages at other paths there (for example `/guides/...`) still serve.
 
 How the kit links to you: every docs link goes through an id in `content/docs-index.yaml` (for example `guides.payments`, path `guides/payments`). The `docs_url` tool tries the hosts in order (`https://bsv.writedocs.io/docs/`, then `https://docs.bsvblockchain.org/docs/`), then the id's legacy URL when it has one, and takes the first that answers with a real page; a "Page Not Found" body counts as a miss. So when the pages move, links keep working as long as paths stay stable, and we change one file.
@@ -89,7 +89,7 @@ What we ask:
 | | |
 | --- | --- |
 | Live demo | `https://tipping.bsvb.tech` `TODO(hosting)`: placeholder; the hosting team has not deployed it yet, and we will send the real origin |
-| Source | `https://github.com/bsv-blockchain/bsv-mcp/tree/main/samples/tipping-shape-a` |
+| Source | `https://github.com/bsv-blockchain/bsv-mcp/tree/main/samples/tipping-shape-a` (resolves once this work merges to `main`) |
 | Image | `ghcr.io/bsv-blockchain/bsv-tipping-demo` (published from `main` once this work merges) |
 | Network | testnet |
 | Checks | `check_guardrails` reports zero errors in CI; a testnet gate runs a real tip end to end; `GUARDRAILS.md` maps each guardrail to the file that meets it; `TRUST.md` states the trust model |
@@ -110,7 +110,7 @@ The skill and the sample link to these pages. State on `bsv.writedocs.io` on 202
 | --- | --- | --- |
 | `get-started/quick-start-server` | Scaffold placeholder | A testnet payment from a server wallet (shape B) with `wallet-toolbox`, Arcade configured explicitly |
 | `guides/services/broadcasting` | Drafted | Already close. Two asks: final for an app is `SEEN_ON_NETWORK` with no `competingTxs`, so "follow the status until `SEEN_ON_NETWORK` or `MINED`" should stop at the first; and say which testnet host is official (the draft uses `arcade-v2-testnet-us-1`, the kit defaults to `arcade-testnet-us-1`; both are live) |
-| `guides/go-to-mainnet` | Drafted | The one `BSV_NETWORK` switch, the wallet's network check, mainnet fees (100 sat/kB observed against testnet's 1 sat/kB minimum) |
+| `guides/go-to-mainnet` | Drafted | The one `BSV_NETWORK` switch, the wallet's network check, fees: configure 100 sat/kB on both networks from the start (testnet's 1 sat/kB minimum is refused on mainnet) |
 | `reference/networks` | Scaffold placeholder | One row per network: Arcade endpoints, WhatsOnChain base, explorer, faucet, what `getNetwork()` returns. `content/facts/networks.md` has the table, dated |
 | `wallets/bsv-desktop` | Scaffold placeholder | Versions, networks, the local ports (HTTP 3321, HTTPS 2121) and that a local BSV Desktop is often on mainnet. BSVA can draft it |
 | `sdk/defaults` | Scaffold placeholder | Fee, network and storage defaults. Not yet in `docs-index.yaml`; the id is added when the page has content |
@@ -162,8 +162,9 @@ Below the block, point at the skill (`build-with-ai/skill`), and replace the "Co
 | Transaction state | Arcade `GET /tx/{txid}` is the source of truth; a 200 on submit is not acceptance | WhatsOnChain as the truth: it lags 6 to 12 s and 404s fresh transactions |
 | Finality | 0-conf is safe at `SEEN_ON_NETWORK` or later with no `competingTxs` | Waiting for `MINED`, "wait for 1 confirmation", machinery against miner collusion |
 | WhatsOnChain | Only UTXO listings, spent-by and tip height, throttled | On the hot path; unthrottled browser calls |
+| Fees | Configure 100 sat/kB on both networks, so testnet sizes and costs carry over; never below what `GET /policy` reports | Paying testnet's 1 sat/kB minimum, which mainnet refuses (code 465, fee too low) |
 | Receiving payments | BRC-29 plus `internalizeAction` with complete AtomicBEEF | Partial BEEF |
-| Networks | Testnet by default, coins from `bsvfaucet.com`, testnet Arcade `https://arcade-testnet-us-1.bsvblockchain.tech` | Mainnet in getting-started code; one fee rate for both (testnet minimum 1 sat/kB, mainnet 100 sat/kB observed) |
+| Networks | Testnet by default, coins from `bsvfaucet.com`, testnet Arcade `https://arcade-testnet-us-1.bsvblockchain.tech` | Mainnet in getting-started code |
 | Contracts | Rúnar from upstream main (1.0.0-rc.1), tested with `Spend` | npm 0.4.6 (forgeable `checkPreimage`); `TestContract`, which mocks `checkSig` |
 | Tokens | 1Color: BRC-162 format, BRC-207 wallet module, encoding in `@bsv/templates` 2.0 | "Mandala" (BRC-92 was withdrawn on 2 Oct 2026); claiming wallet support in the official `wallet-toolbox` or BSV Desktop before it ships |
 
@@ -195,7 +196,7 @@ Below the block, point at the skill (`build-with-ai/skill`), and replace the "Co
 
 1. **Final host**: the final URL for the pages and the docs MCP, and the move date.
 2. **Redirect map**: old path to new path, including `bsvblockchain.org/docs/*`.
-3. **Hosting `@bsv/mcp` over HTTP in phase 3**: would WriteChoice host it next to the docs MCP (for example at `docs.bsvblockchain.org/mcp-tools`)? Phase 1 ships it over stdio only.
+3. **Hosting `@bsv/mcp` over HTTP in phase 3**: would WriteChoice host it next to the docs MCP, and at what URL? Phase 1 ships it over stdio only.
 4. **Community skills policy**: the Coding with agents draft lists community skills from `community-skills.yaml` in this repository, added by pull request with commit-pinned links. Who reviews submissions, what the bar is, and whether the docs page shows the list or links to it.
 5. **Stable page ids**: can the paths in `content/docs-index.yaml` be treated as stable?
 6. **Soft 404**: can missing pages answer a real 404?
@@ -209,5 +210,6 @@ Below the block, point at the skill (`build-with-ai/skill`), and replace the "Co
 - The Codex lines are marked "verify": their syntax is not yet checked against `codex --help`.
 - Host facts are more precise: `docs.bsvblockchain.org` answers `/docs/*.md` with a "Page Not Found" body behind HTTP 200, and writedocs reference pages live under `/reference/`, not `/docs/reference/`.
 - `guides/services/broadcasting` and `guides/go-to-mainnet` now have drafts on writedocs; the other stubs are still scaffold placeholders.
+- Fees, corrected: the first briefing's Networks row could be read as "use testnet's 1 sat/kB on testnet". The kit configures 100 sat/kB on both networks, never below what `GET /policy` reports, because an app paying testnet's 1 sat/kB minimum is refused on mainnet (code 465).
 - The plugin pins `@bsv/mcp@2.0.0`, and the tipping sample ships as a container image.
 - The example prompts on the draft page include "add tipping to my React app on BSV", the prompt the kit's phase-1 exit check uses.

@@ -54,6 +54,17 @@ describe('docs/writechoice', () => {
     expect(text).toContain('TODO(hosting)')
   })
 
+  it('briefing never recommends 1 sat/kB as a rate to configure', () => {
+    // content/facts/fees.md: configure 100 sat/kB on both networks; testnet's 1 sat/kB minimum is refused on mainnet.
+    for (const [name, text] of [['briefing.md', briefing()], ['coding-with-agents.md', page()]]) {
+      for (const line of text.split('\n').filter((l) => /\b1 sat\/kB/.test(l))) {
+        expect(line, `${name}: ${line}`).toMatch(/100 sat\/kB/)
+        expect(line, `${name}: ${line}`).toMatch(/refuse/i)
+      }
+    }
+    expect(briefing()).toMatch(/configure 100 sat\/kB on both networks/i)
+  })
+
   it('briefing quotes the CLAUDE.md snippet in full', () => {
     const snippet = read(join(assetsDir, 'CLAUDE.md.snippet')).trim()
     expect(snippet).not.toBe('')
