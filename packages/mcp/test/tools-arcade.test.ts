@@ -96,6 +96,33 @@ describe('arcadeSubmit', () => {
     expect(f.calls).toHaveLength(1)
   })
 
+  it('terminal 400 blaming inputs carries the re-read warning', async () => {
+    const f = mockFetch([post(400, { status: 466, error: 'UTXO_SPENT' })])
+    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    expect(r).toMatchObject({ verdict: 'terminal', txStatus: 'REJECTED', arcCode: 466, extraInfo: 'UTXO_SPENT', warning: R15 })
+  })
+
+  it('terminal 400 reads the reason field for extraInfo and the re-read warning', async () => {
+    const f = mockFetch([post(400, { status: 466, reason: 'UTXO_SPENT' })])
+    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    expect(r).toMatchObject({ verdict: 'terminal', extraInfo: 'UTXO_SPENT', warning: R15 })
+  })
+
+  it('a 404 from POST /tx is not a transaction verdict', async () => {
+    const f = mockFetch([post(404, { error: 'not found' })])
+    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    expect(r).toMatchObject({ txStatus: 'UNKNOWN', verdict: 'pending', transient: false, postStatus: 404 })
+    expect(r.warning).toMatch(/HTTP 404.*not a transaction verdict/)
+    expect(f.calls).toHaveLength(1)
+  })
+
+  it('a 422 from POST /tx is a validation answer', async () => {
+    const f = mockFetch([post(422, { error: 'invalid script' })])
+    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    expect(r).toMatchObject({ txStatus: 'REJECTED', verdict: 'terminal', transient: false, postStatus: 422 })
+    expect(r.warning).toBeUndefined()
+  })
+
   it('503 is transient UNREACHABLE', async () => {
     const f = mockFetch([post(503, { error: 'busy' })])
     const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)

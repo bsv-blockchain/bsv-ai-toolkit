@@ -49,11 +49,20 @@ function joinNotes(...notes: (string | undefined)[]): string | undefined {
   return present.length > 0 ? present.join('; ') : undefined
 }
 
+// The error strings an Arcade/ARC error body may carry, most specific first.
+function errorTexts(body: any): string[] {
+  return [body?.extraInfo, body?.reason, body?.detail, body?.error, body?.title].filter((v): v is string => typeof v === 'string' && v !== '')
+}
+
 function errorText(body: any): string | undefined {
-  for (const v of [body?.extraInfo, body?.detail, body?.error, body?.title]) {
-    if (typeof v === 'string' && v !== '') return v
-  }
-  return undefined
+  return errorTexts(body)[0]
+}
+
+// Only HTTP 400/422, or a body with an ARC code in 460-476, is Arcade's verdict on the transaction itself;
+// any other 4xx (401, 403, 404, 405, ...) is about the request or the URL.
+function isValidationAnswer(postStatus: number, body: any): boolean {
+  if (postStatus === 400 || postStatus === 422) return true
+  return typeof body?.status === 'number' && body.status >= 460 && body.status <= 476
 }
 
 // The txid of a raw or EF hex (EF inputs carry the previous output's satoshis and locking script, which are
@@ -147,6 +156,13 @@ export async function arcadeSubmit(input: SubmitInput, cfg: Config, fetchImpl: t
   let readStatus = is2xx
   let arcCode: number | undefined
 
+  if (is4xx && !isValidationAnswer(postStatus, body)) {
+    return finish(
+      { ...base, txStatus: 'UNKNOWN', verdict: 'pending', transient: false, ...extra(errorText(body)) },
+      `Arcade answered HTTP ${postStatus} — check arcadeUrl; this is not a transaction verdict`,
+    )
+  }
+
   if (is4xx) {
     const c = classify400(body)
     arcCode = c.arcCode
@@ -155,7 +171,11 @@ export async function arcadeSubmit(input: SubmitInput, cfg: Config, fetchImpl: t
       return finish({ ...base, txStatus: 'UNKNOWN', verdict: 'pending', arcCode: c.arcCode, transient: true, ...extra(errorText(body)) })
     }
     if (c.kind === 'terminal') {
-      return finish({ ...base, txStatus: 'REJECTED', verdict: 'terminal', ...(c.arcCode === undefined ? {} : { arcCode: c.arcCode }), transient: false, ...extra(errorText(body)) })
+      const blamesInputs = errorTexts(body).some((extraInfo) => rejectedMayNotBeFinal({ txStatus: 'REJECTED', extraInfo }))
+      return finish(
+        { ...base, txStatus: 'REJECTED', verdict: 'terminal', ...(c.arcCode === undefined ? {} : { arcCode: c.arcCode }), transient: false, ...extra(errorText(body)) },
+        blamesInputs ? REJECTED_MAY_NOT_BE_FINAL : undefined,
+      )
     }
     readStatus = true // already known: treat as submitted and read its status
   }
