@@ -207,3 +207,30 @@ export function stuckTips(network: Network, storage: KeyValueStore = localStorag
 export function forgetTip(key: string, storage: KeyValueStore = localStorage): void {
   if (key.startsWith(PENDING_PREFIX)) storage.removeItem(key)
 }
+
+/**
+ * A saved record's collect details as JSON, for the user to keep before forgetting it: with these the creator can
+ * collect the tip by hand. Nothing secret: only the creator's wallet can derive the key they name.
+ * Undefined when the record holds no derivation.
+ */
+export function tipDetails(record: PendingTip): string | undefined {
+  const { txid, derivationPrefix, derivationSuffix, recipient, satoshis, outputIndex, senderIdentityKey } = record
+  if (!derivationPrefix || !derivationSuffix) return undefined
+  return JSON.stringify({ txid: txid ?? null, derivationPrefix, derivationSuffix, recipient, satoshis, outputIndex, senderIdentityKey }, null, 2)
+}
+
+/** The question asked before a saved record is forgotten. */
+export function forgetQuestion(record: PendingTip): string {
+  const which = record.txid === undefined ? `this ${record.satoshis}-sat tip` : `the tip in transaction ${record.txid}`
+  return (
+    `Forget ${which}? If your wallet sent it, this record may be the only copy of the details the creator needs ` +
+    'to collect it. Use Copy details first to keep them.'
+  )
+}
+
+/** Forgets `record` only when `ask` (window.confirm on the page) says yes. True when it was deleted. */
+export function forgetWithConsent(record: PendingTip, ask: (question: string) => boolean, storage: KeyValueStore = localStorage): boolean {
+  if (!ask(forgetQuestion(record))) return false
+  forgetTip(record.key, storage)
+  return true
+}

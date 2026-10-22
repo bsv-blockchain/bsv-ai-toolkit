@@ -24,7 +24,7 @@ import {
   type WalletInterface,
 } from '@bsv/sdk'
 import { validateCreateActionArgs, validateInternalizeActionArgs } from '@bsv/sdk/wallet/validationHelpers'
-import { createElement } from 'react'
+import { createElement, isValidElement, type ReactElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../server/app.js'
@@ -38,8 +38,8 @@ import { buildAtomicBeef, claimCreator, collectTip, Collector, type CollectDeps,
 import { TipList } from '../web/components/TipList'
 import type { AppConfig } from '../web/config'
 import { Creator } from '../web/pages/Creator'
-import { Tipper } from '../web/pages/Tipper'
-import { forgetTip, pendingTips, postPending, resumableTips, sendTip, stuckTips, type KeyValueStore } from '../web/tip'
+import { Tipper, Unfinished } from '../web/pages/Tipper'
+import { forgetTip, forgetWithConsent, pendingTips, postPending, resumableTips, sendTip, stuckTips, tipDetails, type KeyValueStore } from '../web/tip'
 import { assertNetwork, login, TIPS_PROTOCOL } from '../web/wallet'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
@@ -506,7 +506,63 @@ describe('tip.ts', () => {
     forgetTip(stuck[0].key, storage)
     expect(stuckTips('testnet', storage)).toHaveLength(2)
   })
+
+  it('Forget asks first, and Copy details exports what the creator needs, no secret (C18)', async () => {
+    const storage = new MemoryStorage()
+    vi.stubGlobal('localStorage', storage)
+    const txidOnly = new FakeWallet()
+    txidOnly.createAction = async () => {
+      throw Object.assign(new Error('broadcast failed'), { txid: 'cd'.repeat(32) })
+    }
+    await expect(sendTip(asWallet(txidOnly), config(), creatorKey, 2222, okRelay())).rejects.toThrow('broadcast failed')
+    const [record] = stuckTips('testnet', storage)
+
+    // The details: exactly the fields a collect needs, as JSON.
+    expect(JSON.parse(tipDetails(record)!)).toEqual({
+      txid: 'cd'.repeat(32),
+      derivationPrefix: record.derivationPrefix,
+      derivationSuffix: record.derivationSuffix,
+      recipient: creatorKey,
+      satoshis: 2222,
+      outputIndex: 0,
+      senderIdentityKey: txidOnly.identityKey,
+    })
+    expect(tipDetails({ ...record, derivationPrefix: '' })).toBeUndefined()
+
+    // Forget deletes only after a yes, and the question names the transaction and the way to keep the details.
+    const asked: string[] = []
+    expect(forgetWithConsent(record, q => (asked.push(q), false), storage)).toBe(false)
+    expect(stuckTips('testnet', storage)).toHaveLength(1)
+    expect(asked[0]).toContain('cd'.repeat(32))
+    expect(asked[0]).toContain('Copy details')
+
+    // The page wires both buttons to the record; a record with no derivation offers no Copy details.
+    const forgot: string[] = []
+    const copied: string[] = []
+    const damaged = { ...record, key: `${record.key}-damaged`, derivationSuffix: '' }
+    const list = Unfinished({ records: [record, damaged], network: 'testnet', onForget: r => forgot.push(r.key), onCopy: r => copied.push(r.key) })
+    const buttons = elementsOf(list).filter(e => e.type === 'button')
+    expect(buttons.map(b => textOf(b))).toEqual(['Copy details', 'Forget', 'Forget'])
+    for (const b of buttons) (b.props as { onClick: () => void }).onClick()
+    expect(copied).toEqual([record.key])
+    expect(forgot).toEqual([record.key, damaged.key])
+    expect(renderToString(createElement(Tipper, { config: config({ creatorIdentityKey: creatorKey }) }))).toContain('Copy details')
+
+    expect(forgetWithConsent(record, () => true, storage)).toBe(true)
+    expect(stuckTips('testnet', storage)).toEqual([])
+  })
 })
+
+/** Every React element in a tree a component returned (no rendering). */
+function elementsOf(node: unknown): ReactElement[] {
+  if (Array.isArray(node)) return node.flatMap(elementsOf)
+  if (!isValidElement(node)) return []
+  return [node, ...elementsOf((node.props as { children?: unknown }).children)]
+}
+const textOf = (e: ReactElement): string => {
+  const c = (e.props as { children?: unknown }).children
+  return (Array.isArray(c) ? c : [c]).map(x => (typeof x === 'string' ? x : isValidElement(x) ? textOf(x) : '')).join('').trim()
+}
 
 describe('collect.ts', () => {
   it('buildAtomicBeef completes a BEEF with ancestors the relay serves as plain transactions', async () => {

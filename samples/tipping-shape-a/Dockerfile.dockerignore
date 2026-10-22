@@ -1,0 +1,21 @@
+# Build context: the repo root (docker build -f samples/tipping-shape-a/Dockerfile .). BuildKit reads this file
+# because it sits next to the Dockerfile with the Dockerfile's name; a .dockerignore in the repo root is ignored.
+# Only the workspace files and this sample go in.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!samples/tipping-shape-a
+
+# Never in the context, wherever they are: secrets, local data and state, installs and builds.
+**/.env
+**/.env.*
+**/data
+**/*.sqlite
+**/*.key
+**/.bsv-gate
+**/.git
+**/node_modules
+**/dist
+**/coverage
+docs/evals

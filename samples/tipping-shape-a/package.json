@@ -5,6 +5,11 @@
   "description": "BSV tipping demo: a shape-A web app (the user's wallet holds the keys) with a key-less relay on one origin",
   "type": "module",
   "license": "MIT",
+  "files": [
+    "dist",
+    "public",
+    "scripts/network-guard.sh"
+  ],
   "engines": {
     "node": ">=22"
   },

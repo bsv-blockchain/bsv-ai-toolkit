@@ -1,0 +1,16 @@
+# Runs the published image. Copy env.example to .env first and set PUBLIC_ORIGIN (see HOSTING.md).
+services:
+  tipping:
+    image: ghcr.io/bsv-blockchain/bsv-tipping-demo:latest
+    ports: ["8080:8080"]
+    env_file: .env
+    # Set here so a .env copied from env.example (DATA_DIR=./data, PORT=8080) cannot move the database off the
+    # volume or the relay off the mapped port: environment wins over env_file.
+    environment:
+      DATA_DIR: /data
+      PORT: "8080"
+    volumes: ["tipping-data:/data"]
+    restart: unless-stopped
+
+volumes:
+  tipping-data:

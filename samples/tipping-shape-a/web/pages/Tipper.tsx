@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { relayApi, type RelayApi } from '../api'
 import { short, verdictLabel } from '../components/TipList'
 import type { AppConfig, Network } from '../config'
-import { forgetTip, MIN_TIP_SATS, postPending, resumableTips, sendTip, stuckTips, type PendingTip, type TipOutcome } from '../tip'
+import { forgetWithConsent, MIN_TIP_SATS, postPending, resumableTips, sendTip, stuckTips, tipDetails, type PendingTip, type TipOutcome } from '../tip'
 import { login, networkMismatch, type Session } from '../wallet'
 
 const EXPLORER: Record<Network, string> = { testnet: 'https://test.whatsonchain.com', mainnet: 'https://whatsonchain.com' }
@@ -11,6 +11,22 @@ const EXPLORER: Record<Network, string> = { testnet: 'https://test.whatsonchain.
 export const explorerTxUrl = (network: Network, txid: string) => `${EXPLORER[network]}/tx/${txid}`
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/**
+ * Puts a saved record's details on the clipboard (true); where the page may not write it (no secure context,
+ * permission refused) the details are shown in a prompt to copy by hand (false).
+ */
+async function copyDetails(record: PendingTip): Promise<boolean> {
+  const details = tipDetails(record)
+  if (details === undefined) return false
+  try {
+    await navigator.clipboard.writeText(details)
+    return true
+  } catch {
+    window.prompt('Copy these tip details and keep them', details)
+    return false
+  }
+}
 
 /** Saved tip records that cannot be re-posted; [] when this browser has no localStorage. */
 function readStuck(network: Network): PendingTip[] {
@@ -21,15 +37,26 @@ function readStuck(network: Network): PendingTip[] {
   }
 }
 
+export interface UnfinishedProps {
+  records: PendingTip[]
+  network: Network
+  /** Asks, then deletes the record. */
+  onForget: (record: PendingTip) => void
+  /** Puts the record's details (tipDetails) on the clipboard. */
+  onCopy: (record: PendingTip) => void
+  /** The key of the record whose details were just copied. */
+  copiedKey?: string
+}
+
 /** Tips the wallet may have sent that never reached the relay: shown with what is known, never hidden. */
-function Unfinished({ records, network, onForget }: { records: PendingTip[]; network: Network; onForget: (key: string) => void }) {
+export function Unfinished({ records, network, onForget, onCopy, copiedKey }: UnfinishedProps) {
   if (records.length === 0) return null
   return (
     <section aria-label="unfinished tips">
       <h3>Unfinished tips</h3>
       <p>
         These tips did not reach the relay, so the creator cannot collect them from here. If your wallet shows one of
-        them as sent, keep this record: it holds the details the creator needs.
+        them as sent, keep this record, or copy its details first: it holds what the creator needs to collect it.
       </p>
       <ul>
         {records.map(r => (
@@ -41,9 +68,17 @@ function Unfinished({ records, network, onForget }: { records: PendingTip[]; net
               </>
             )}
             : {r.lastError ?? 'the page closed before the wallet answered'}{' '}
-            <button type="button" onClick={() => onForget(r.key)}>
+            {tipDetails(r) !== undefined && (
+              <>
+                <button type="button" onClick={() => onCopy(r)}>
+                  Copy details
+                </button>{' '}
+              </>
+            )}
+            <button type="button" onClick={() => onForget(r)}>
               Forget
             </button>
+            {copiedKey === r.key && ' copied'}
           </li>
         ))}
       </ul>
@@ -87,6 +122,7 @@ export function Tipper({ config, initialSession, api, connect = login }: TipperP
   const [busy, setBusy] = useState(false)
   const [outcomes, setOutcomes] = useState<TipOutcome[]>([])
   const [stuck, setStuck] = useState(() => readStuck(config.network))
+  const [copiedKey, setCopiedKey] = useState<string>()
 
   const mismatch = session && networkMismatch(session.network, config.network)
   const creator = config.creatorIdentityKey
@@ -197,9 +233,10 @@ export function Tipper({ config, initialSession, api, connect = login }: TipperP
       <Unfinished
         records={stuck}
         network={config.network}
-        onForget={key => {
-          forgetTip(key)
-          setStuck(readStuck(config.network))
+        copiedKey={copiedKey}
+        onCopy={record => void copyDetails(record).then(ok => setCopiedKey(ok ? record.key : undefined))}
+        onForget={record => {
+          if (forgetWithConsent(record, question => window.confirm(question))) setStuck(readStuck(config.network))
         }}
       />
     </section>
