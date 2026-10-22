@@ -53,16 +53,18 @@ jobs:
           cat "$OUT/links.txt"
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
+      # llms.txt links pages on either docs host; pages are compared by their /docs/<path>, ignoring the host.
       - name: llms.txt against docs-index
         id: llms
         run: |
           node --input-type=module - <<'JS'
           import { readFileSync, writeFileSync, appendFileSync } from 'node:fs'
           const out = process.env.OUT
-          const { ids } = JSON.parse(readFileSync('packages/mcp/content/docs-index.json', 'utf8'))
+          const source = 'https://bsv.writedocs.io/llms.txt'
           let lines = []
           try {
-            const res = await fetch('https://docs.bsvblockchain.org/llms.txt', { signal: AbortSignal.timeout(20_000) })
+            const { ids } = JSON.parse(readFileSync('packages/mcp/content/docs-index.json', 'utf8'))
+            const res = await fetch(source, { signal: AbortSignal.timeout(20_000) })
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
             const text = await res.text()
             const linked = new Set([...text.matchAll(/\/docs\/([^\s()<>"'`]+?)\.md/g)].map((m) => m[1]))
@@ -72,7 +74,7 @@ jobs:
             if (unindexed.length) lines.push('Linked from llms.txt, absent from docs-index.yaml:', '', ...unindexed.map((p) => `- \`/docs/${p}.md\``), '')
             if (unlisted.length) lines.push('docs-index.yaml ids whose path is absent from llms.txt:', '', ...unlisted.map((s) => `- \`${s}\``), '')
           } catch (e) {
-            lines.push(`Could not read https://docs.bsvblockchain.org/llms.txt: ${e.message}`, '')
+            lines.push(`Could not compare ${source} with docs-index: ${e.message}`, '')
           }
           writeFileSync(`${out}/llms.md`, lines.join('\n'))
           console.log(lines.length ? lines.join('\n') : 'llms.txt and docs-index.yaml agree')
@@ -90,9 +92,9 @@ jobs:
           LINKS_CODE: ${{ steps.links.outputs.code }}
         run: |
           node --input-type=module - <<'JS'
-          import { readFileSync, writeFileSync } from 'node:fs'
+          import { existsSync, readFileSync, writeFileSync } from 'node:fs'
           const out = process.env.OUT
-          const read = (f) => readFileSync(`${out}/${f}`, 'utf8').trim()
+          const read = (f) => (existsSync(`${out}/${f}`) ? readFileSync(`${out}/${f}`, 'utf8').trim() : '')
           const cell = (v) => String(v ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ')
           const body = [`Nightly freshness run: ${process.env.RUN_URL}`, '']
           if (process.env.VERSIONS_CODE !== '0') {
@@ -112,8 +114,9 @@ jobs:
           if (llms) body.push('## llms.txt', '', llms, '')
           writeFileSync(`${out}/issue.md`, body.join('\n'))
           JS
-          number="$(gh issue list --search "$ISSUE_TITLE in:title" --state open --json number,title \
-            --jq "map(select(.title == \"$ISSUE_TITLE\")) | .[0].number // empty")"
+          # Exact-title match over the open issues (search syntax would read `Freshness:` as a qualifier).
+          number="$(gh issue list --state open --limit 200 --json number,title \
+            | jq -r --arg t "$ISSUE_TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
           if [ -n "$number" ]; then
             gh issue edit "$number" --body-file "$OUT/issue.md"
           else

@@ -5,17 +5,23 @@
 #
 # usage: scripts/anti-goals.sh [path ...]
 #   With no arguments, scans the default paths relative to the repo root. Paths that do not exist are skipped.
+#   Exits 0 when clean, 1 on an unmarked hit, 2 when grep cannot read the paths.
 set -euo pipefail
 
-forbidden=(
+# Prose: matched as fixed strings, ignoring case.
+prose=(
   'wait for confirmation'
   'waiting for confirmation'
+  'fetch the parent from WhatsOnChain'
+)
+# Code tokens: matched as fixed strings, case-sensitive (so `ARCADE_URL` and `arcade` never match).
+tokens=(
   '/v1/tx'
   'ARC_URL'
-  'fetch the parent from WhatsOnChain'
   'new ARC('
-  'import { ARC'
 )
+# `import { ARC` as a named import of the whole word ARC anywhere in the braces, never `ArcadeClient`.
+import_arc='import \{([^}]*[^A-Za-z0-9_$])?ARC([^A-Za-z0-9_$]|$)'
 markers="never|not |don't|anti-goal|forbidden|G-0|G-1"
 
 if [ "$#" -eq 0 ]; then
@@ -32,11 +38,27 @@ if [ "${#paths[@]}" -eq 0 ]; then
   exit 0
 fi
 
-patterns=()
-for f in "${forbidden[@]}"; do patterns+=(-e "$f"); done
+# Runs grep with the given flags and patterns over the paths and appends its hits to $hits.
+# grep exits 1 when nothing matches (the clean case); any other non-zero status is an error.
+hits=""
+scan() {
+  local out status=0
+  out="$(grep -rnHI "$@" -- "${paths[@]}")" || status=$?
+  if [ "$status" -gt 1 ]; then
+    echo "anti-goals: grep failed (exit $status); not reporting clean" >&2
+    exit 2
+  fi
+  [ -n "$out" ] && hits+="$out"$'\n'
+  return 0
+}
 
-# grep exits 1 when nothing matches; that is the clean case.
-hits="$(grep -rnHIiF "${patterns[@]}" -- "${paths[@]}" || true)"
+args=()
+for p in "${prose[@]}"; do args+=(-e "$p"); done
+scan -iF "${args[@]}"
+args=()
+for t in "${tokens[@]}"; do args+=(-e "$t"); done
+scan -F "${args[@]}"
+scan -E -e "$import_arc"
 
 failed=0
 while IFS= read -r hit; do
