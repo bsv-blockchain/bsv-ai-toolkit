@@ -1,0 +1,15 @@
+{
+  "name": "bsv-dev-skill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The bsv-dev agent skill: an end-to-end playbook for building BSV apps with AI coding agents",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "validate": "npx -y skills-ref@0.1.5 validate skills/bsv-dev"
+  }
+}

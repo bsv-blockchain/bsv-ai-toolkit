@@ -43,6 +43,8 @@ importers:
         specifier: 3.2.1
         version: 3.2.1
 
+  packages/skill: {}
+
   packages/sync:
     dependencies:
       fast-glob:
