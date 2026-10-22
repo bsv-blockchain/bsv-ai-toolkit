@@ -41,14 +41,23 @@ function shapeExcludes(ruleShape: GuardrailMeta['shape'], shape: ShapeDetected):
  * Per guardrail, in id order: shape mismatch → notApplicable; manual/contract detection,
  * or a static guardrail with no registered rule → manualChecklist; otherwise the rule runs and
  * lands in notApplicable (applicable false), findings (unsuppressed hits) or passed.
+ * A rule that throws becomes a `warn` finding for its guardrail (file '', line 0) and the run continues.
  * `rules` overrides the registered rule set (tests use it; defaults to the exported `rules`).
+ * `onSkip` hears about each file the walker could not read.
  */
 export async function runGuardrails(
   root: string,
-  opts: { shape?: 'A' | 'B' | 'auto'; include?: string[]; exclude?: string[]; contentDir: string; rules?: Rule[] },
+  opts: {
+    shape?: 'A' | 'B' | 'auto'
+    include?: string[]
+    exclude?: string[]
+    contentDir: string
+    rules?: Rule[]
+    onSkip?: (rel: string, reason: string) => void
+  },
 ): Promise<GuardrailReport> {
   const metas = loadGuardrailMeta(opts.contentDir)
-  const files = await walkProject(root, { include: opts.include, exclude: opts.exclude })
+  const files = await walkProject(root, { include: opts.include, exclude: opts.exclude, onSkip: opts.onSkip })
   const shapeDetected = detectShape(files)
   const shape: ShapeDetected = opts.shape === 'A' || opts.shape === 'B' ? opts.shape : shapeDetected
   const byRel = new Map(files.map(f => [f.rel, f]))
@@ -60,7 +69,18 @@ export async function runGuardrails(
     const rule = meta.detect === 'static' ? ruleSet.find(r => r.id === meta.id) : undefined
     if (!rule) { report.manualChecklist.push(meta.id); continue }
 
-    const result = rule.run({ files, shape, root, meta, contentDir: opts.contentDir })
+    let result: ReturnType<Rule['run']>
+    try {
+      result = rule.run({ files, shape, root, meta, contentDir: opts.contentDir })
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e)
+      report.findings.push({
+        id: meta.id, severity: 'warn', file: '', line: 0, snippet: '',
+        fix: `The ${meta.id} check failed to run (${why}); check this guardrail by hand.`,
+        ref: `bsv://guardrails#${meta.id}`,
+      })
+      continue
+    }
     if (!result.applicable) { report.notApplicable.push(meta.id); continue }
     const kept: Finding[] = result.findings
       .filter(f => { const file = byRel.get(f.file); return !(file && isSuppressed(file, f.line, meta.id)) })

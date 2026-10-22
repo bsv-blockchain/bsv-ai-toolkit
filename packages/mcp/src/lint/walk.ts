@@ -48,8 +48,12 @@ async function loadGitignore(root: string) {
  * Honours the root .gitignore (nested .gitignore files are not read) and
  * always skips node_modules, dist, build, .git and coverage at any depth.
  * `include` / `exclude` are fast-glob patterns relative to `root`.
+ * A file that cannot be stat'ed or read (EACCES, removed mid-walk) is skipped and reported to `onSkip`.
  */
-export async function walkProject(root: string, opts: { include?: string[]; exclude?: string[] } = {}): Promise<ProjectFile[]> {
+export async function walkProject(
+  root: string,
+  opts: { include?: string[]; exclude?: string[]; onSkip?: (rel: string, reason: string) => void } = {},
+): Promise<ProjectFile[]> {
   const patterns = opts.include?.length ? opts.include : ['**/*']
   const skip = [...ALWAYS_SKIP.map(d => `**/${d}/**`), ...(opts.exclude ?? [])]
   const entries = await fg(patterns, { cwd: root, dot: true, onlyFiles: true, followSymbolicLinks: false, ignore: skip })
@@ -59,8 +63,12 @@ export async function walkProject(root: string, opts: { include?: string[]; excl
   for (const rel of entries.sort()) {
     if (!isTextFile(rel) || gitignore.ignores(rel)) continue
     const abs = join(root, rel)
-    if ((await stat(abs)).size > MAX_BYTES) continue
-    files.push({ rel, abs, text: await readFile(abs, 'utf8'), ...classify(rel) })
+    try {
+      if ((await stat(abs)).size > MAX_BYTES) continue
+      files.push({ rel, abs, text: await readFile(abs, 'utf8'), ...classify(rel) })
+    } catch (e) {
+      opts.onSkip?.(rel, (e as NodeJS.ErrnoException).code ?? (e instanceof Error ? e.message : String(e)))
+    }
   }
   return files
 }

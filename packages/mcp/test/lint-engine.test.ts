@@ -107,6 +107,16 @@ describe('lint engine', () => {
     expect(report.manualChecklist).toContain('G-26') // contract
   })
 
+  it('a throwing rule becomes a warn finding and the run continues', async () => {
+    const boom: Rule = { id: 'G-09', run() { throw new Error('boom') } }
+    const report = await runGuardrails(MINIMAL, { contentDir: CONTENT, rules: [boom, flagRule('G-10')] })
+    const g09 = report.findings.find(f => f.id === 'G-09')
+    expect(g09).toMatchObject({ severity: 'warn', file: '', line: 0, ref: 'bsv://guardrails#G-09' })
+    expect(g09!.fix).toMatch(/boom/)
+    expect(report.passed).not.toContain('G-09')
+    expect(report.findings.some(f => f.id === 'G-10')).toBe(true)
+  })
+
   it('shape B makes A-only rules notApplicable', async () => {
     const report = await runGuardrails(MINIMAL, { contentDir: CONTENT, shape: 'B', rules: [flagRule('G-01')] })
     expect(report.notApplicable).toContain('G-01')
