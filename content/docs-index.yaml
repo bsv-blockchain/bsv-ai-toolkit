@@ -47,7 +47,8 @@ ids:
     title: Run a local test chain
   reference.wallet-api:
     path: reference/wallet-api
-    title: Wallet API reference
+    title: Wallet API reference (createAction)
+    legacy: https://bsv.writedocs.io/reference/wallet-api/actions/post-createaction.md
   reference.networks:
     path: reference/networks
     title: Network endpoints
