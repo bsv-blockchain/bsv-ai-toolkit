@@ -48,6 +48,21 @@ describe('assets', () => {
     expect(g.basketAccess).toEqual([{ basket: '__APP_NAME__', description: '__APP_NAME__ outputs' }])
   })
 
+  it('manifest protocol names are ones the wallet accepts once __APP_NAME__ is filled in', () => {
+    const m = manifest()
+    expect(m._comment).toContain("__APP_NAME__: lowercase letters, digits and single spaces only (e.g. 'my app')")
+    expect(m._comment).toMatch(/may be deleted from the deployed manifest/)
+    const filled = JSON.parse(read('manifest.template.json').replaceAll('__APP_NAME__', 'my app')) as Manifest
+    const names = filled.metanet.groupPermissions.protocolPermissions.map((p) => p.protocolID[1])
+    // @bsv/sdk KeyDeriver.computeInvoiceNumber: 5+ chars of [a-z0-9 ], no double space, no trailing ' protocol'.
+    for (const n of names) {
+      expect(n).toMatch(/^[a-z0-9 ]+$/)
+      expect(n.length).toBeGreaterThanOrEqual(5)
+      expect(n).not.toContain('  ')
+      expect(n).not.toMatch(/ protocol$/)
+    }
+  })
+
   it('a shape-A project using the manifest template passes G-03 and G-04', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'bsv-assets-'))
     try {
@@ -72,6 +87,9 @@ describe('assets', () => {
     expect(rules(read('AGENTS.md.snippet'))).toEqual(claude)
     expect(rules(mdc)).toEqual(claude)
     expect(claude[0]).toContain('https://bsv.writedocs.io/llms.txt')
+    expect(claude[3]).toMatch(/^In the browser, /)
+    expect(claude[4]).toMatch(/shape A.*shape B/)
+    expect(claude[5]).toContain('never the legacy ARC API')
     expect(claude[6]).toMatch(/SEEN_ON_NETWORK.*never/)
     expect(claude[7]).toMatch(/check_guardrails.*absolute/)
   })

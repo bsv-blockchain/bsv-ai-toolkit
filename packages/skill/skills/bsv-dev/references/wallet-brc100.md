@@ -54,6 +54,7 @@ On a static host, set the same three headers for `/manifest.json` in its headers
 | 2 | originator, protocol and counterparty | per-peer keys; the manifest entry needs a `counterparty`, and without one the wallet prompts once per new peer |
 
 - Design repeated signing around a level-1 protocol, for example `[1, 'myapp actions']` with `keyID` set per record or session.
+- Protocol names: the SDK trims and lowercases the name, then rejects it unless it is 5 to 400 characters of letters, digits and single spaces, not ending in ` protocol` (`@bsv/sdk` 3.2.1, verified 2026-10-22). Use lowercase letters, digits and single spaces only, for example `[1, 'my app actions']`: `my-app actions` passes the manifest checks and then throws at the first signature. Basket names are trimmed and lowercased, so declare them in lowercase.
 - BRC-29 payments use the level-2 protocol `[2, '3241645161d8']`; the template's entry carries `counterparty: 'self'`. Whether BSV Desktop treats `'self'` as grouped is unsettled (verified 2026-10-22).
 - Keep `spendingAuthorization.amount` small: it covers small payments silently, and anything larger should prompt. Grants do not expire, and the allowance renews monthly; request only what the app needs.
 

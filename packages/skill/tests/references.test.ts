@@ -7,7 +7,7 @@ const refs = skillDir + 'references/'
 const read = (file: string) => readFileSync(refs + file, 'utf8')
 
 const must: Record<string, string[]> = {
-  'wallet-brc100.md': ['waitForAuthentication', "WalletClient('auto'", 'babbage.groupPermissions', 'hashToDirectlySign', 'G-01'],
+  'wallet-brc100.md': ['waitForAuthentication', "WalletClient('auto'", 'babbage.groupPermissions', 'hashToDirectlySign', 'G-01', 'letters, digits and single spaces'],
   'payments-brc29.md': ["'3241645161d8'", 'paymentRemittance', 'forSelf', 'fromHexEF', 'toBinaryAtomic', '10 s'],
   'arcade-0conf.md': ['SEEN_ON_NETWORK', 'competingTxs', '476', 'txn-already-known', 'text/plain', '350 ms'],
   'simple-routing.md': ['0.7', 'network', 'arcadeUrl', 'integrate_simple'],

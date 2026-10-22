@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to public/manifest.json and replace __APP_NAME__. Keep metanet and babbage groupPermissions identical (G-03); every level-2 protocol names a counterparty and the allowance stays small (G-04). The BRC-29 entry uses counterparty 'self': it is unsettled whether BSV Desktop treats 'self' as grouped; a level-2 entry without counterparty prompts once per peer.",
+  "_comment": "Copy to public/manifest.json and replace __APP_NAME__. __APP_NAME__: lowercase letters, digits and single spaces only (e.g. 'my app'); the wallet rejects any other protocol name; basket names are lowercased. Keep metanet and babbage groupPermissions identical (G-03); every level-2 protocol names a counterparty and the allowance stays small (G-04). The BRC-29 entry uses counterparty 'self': it is unsettled whether BSV Desktop treats 'self' as grouped; a level-2 entry without counterparty prompts once per peer. This _comment field may be deleted from the deployed manifest.",
   "metanet": {
     "groupPermissions": {
       "spendingAuthorization": { "amount": 10000, "description": "Small monthly allowance for __APP_NAME__" },

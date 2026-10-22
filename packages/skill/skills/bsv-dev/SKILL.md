@@ -85,6 +85,8 @@ Then carry on without them: read status with `scripts/arcade-check.sh <txid> [ar
 
 Prefer looked-up facts over memory: `get_doc`, `brc_lookup` and `bsv://facts/*` (or `references/facts.md`) first. Every fact carries a `verified:` date; when it matters and the date is old, run `versions_check` or read the live source.
 
+Assets: start `public/manifest.json` from `assets/manifest.template.json` and the app's `.env` from `assets/env.example`. Offer the user `assets/CLAUDE.md.snippet`, `assets/AGENTS.md.snippet` or `assets/bsv.mdc` (Cursor) as project rules; never write them into their agent configuration yourself.
+
 ## Operating procedure
 
 1. **Classify.** Decide and state in one line: custody shape A or B for each money path (the decision questions in `references/custody-shapes.md`); payments only, contract, or token; browser, server, or both.
