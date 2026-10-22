@@ -18,6 +18,7 @@ The repository becomes a pnpm monorepo and `@bsv/mcp` is rewritten around testne
 - The `bsv-dev` skill and Claude Code plugin (`packages/skill`, version 0.1.0; see [`packages/skill/CHANGELOG.md`](packages/skill/CHANGELOG.md)). Install with `npx skills add bsv-blockchain/bsv-mcp` or `claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv`; the plugin bundles `@bsv/mcp@2.0.0` and the BSV docs MCP.
 - Each GitHub release attaches `bsv-dev-skill.zip` (the plugin root, with `skills/bsv-dev/SKILL.md` inside). The release job builds and checks the zip before publishing to npm.
 - CI job `skill`: `skills-ref validate`, `claude plugin validate --strict` on the plugin, its marketplaces and component directories, the skill tests and the anti-goal grep over the skill. Root scripts `pnpm validate:skill` and `pnpm validate:plugin` run the same checks locally.
+- `docs/evals/`: the phase-1 exit checklist, and the fresh-agent eval protocol (a starter React app, the prompt `add tipping to my React app on BSV`, scoring with `check_guardrails`, and a run template).
 - Environment: `BSV_NETWORK` (`testnet` default), `ARCADE_URL`, `BSV_MCP_ALLOW_MAINNET_BROADCAST`, `WOC_API_KEY`. `arcade_submit` on mainnet needs `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`, and an Arcade host known to belong to the other network is refused.
 
 ### Changed

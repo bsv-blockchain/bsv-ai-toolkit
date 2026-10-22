@@ -2,7 +2,7 @@
 
 An MCP server for building BSV applications with AI coding agents, testnet first: Arcade broadcast and status tools, a static guardrail checker, BRC and docs lookup, and dated facts served as `bsv://` resources.
 
-Source, changelog and the companion `bsv-dev` skill (arrives with plan 1b): [github.com/bsv-blockchain/bsv-mcp](https://github.com/bsv-blockchain/bsv-mcp).
+Source, changelog and the companion `bsv-dev` skill: [github.com/bsv-blockchain/bsv-mcp](https://github.com/bsv-blockchain/bsv-mcp).
 
 ## Install
 

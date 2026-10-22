@@ -10,21 +10,21 @@ Tools and dated knowledge for building BSV applications with AI coding agents, t
 | --- | --- |
 | `content/` | The single source of facts and rules: dated facts (`facts/*.md`), the guardrails `G-01`..`G-34` (`guardrails.yaml`), pinned versions (`versions.json`), the docs index, custody shapes and the threat model. Facts are edited here and nowhere else. |
 | `packages/mcp/` | `@bsv/mcp` 2.0.0, the MCP server. `packages/mcp/content/` is a generated snapshot of `content/` that ships in the npm package. |
-| `packages/skill/` | The `bsv-dev` skill and Claude Code plugin. Today it holds only the generated `references/`; the skill itself ships in plan 1b. |
+| `packages/skill/` | The `bsv-dev` skill 0.1.0 and Claude Code plugin: `skills/bsv-dev/` (`SKILL.md`, the generated `references/`, assets and scripts), the commands `/bsv-review` and `/bsv-design`, and the plugin manifest, which bundles `bsv-mcp` and `bsv-docs`. Unreleased until v2.0.0 is tagged. |
 | `packages/sync/` | Private build step: renders `content/` into `packages/mcp/content/` and the skill's references, and lints facts and links. |
 | `samples/` | Sample apps; see [`samples/README.md`](samples/README.md). |
-| `docs/` | The design spec and implementation plans (`docs/superpowers/`). |
+| `docs/` | The design spec and implementation plans (`docs/superpowers/`), the [phase-1 exit checklist](docs/evals/phase-1-exit-checklist.md) and agent evals (`docs/evals/`), the WriteChoice briefing (`docs/writechoice/`) and the `@bsv/simple-mcp` deprecation kit (`docs/deprecation/`). |
 | `setup.sh` | Clones the BSV repositories that `code_search`, `find_function_definition` and `brc_lookup` read locally. |
 
 ## Install
 
-Skill (any agent that reads Agent Skills), available once the skill ships (plan 1b):
+Skill (any agent that reads Agent Skills), available once v2.0.0 is released:
 
 ```bash
 npx skills add bsv-blockchain/bsv-mcp
 ```
 
-Claude Code plugin (skill plus MCP), available once the skill ships (plan 1b):
+Claude Code plugin (skill plus MCP), available once v2.0.0 is released:
 
 ```bash
 claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
@@ -155,6 +155,8 @@ claude mcp add bsv-mcp-dev -e BSV_NETWORK=testnet -- node "$PWD/packages/mcp/bui
 ## Release
 
 Releases are cut by pushing a tag `v<version>` that matches `packages/mcp/package.json`. The `release.yml` workflow runs on `v*` tags only: it builds, tests, checks that generated content is current, and publishes `@bsv/mcp` with npm trusted publishing (GitHub OIDC, with provenance), so no long-lived npm token exists anywhere. Pushing to `main` never publishes. Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
+
+What must be true before and after the first release is tracked in the [phase-1 exit checklist](docs/evals/phase-1-exit-checklist.md).
 
 ## License
 

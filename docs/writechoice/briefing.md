@@ -208,7 +208,7 @@ Below the block, point at the skill (`build-with-ai/skill`), and replace the "Co
 
 - The `bsv-mcp` install line now names the network: `claude mcp add bsv-mcp -e BSV_NETWORK=testnet -- npx -y @bsv/mcp` (testnet is the default either way), and the client JSON carries `"env": { "BSV_NETWORK": "testnet" }` and the `bsv-docs` entry. Windsurf names the URL field `serverUrl`; VS Code uses a top-level `servers` key.
 - The Codex lines are marked "verify": their syntax is not yet checked against `codex --help`.
-- Host facts are more precise: `docs.bsvblockchain.org` answers `/docs/*.md` with a "Page Not Found" body behind HTTP 200, and writedocs reference pages live under `/reference/`, not `/docs/reference/`.
+- Host facts are more precise: `docs.bsvblockchain.org` answers `/docs/*.md` with a "Page Not Found" body behind HTTP 200, and the writedocs API reference trees (`/reference/arc/*`, `/reference/wallet-api/*`) live under `/reference/`, not `/docs/reference/`; `reference/networks` is a guide-site page, served under `/docs/` (`/docs/reference/networks.md`).
 - `guides/services/broadcasting` and `guides/go-to-mainnet` now have drafts on writedocs; the other stubs are still scaffold placeholders.
 - Fees, corrected: the first briefing's Networks row could be read as "use testnet's 1 sat/kB on testnet". The kit configures 100 sat/kB on both networks, never below what `GET /policy` reports, because an app paying testnet's 1 sat/kB minimum is refused on mainnet (code 465).
 - The plugin pins `@bsv/mcp@2.0.0`, and the tipping sample ships as a container image.
