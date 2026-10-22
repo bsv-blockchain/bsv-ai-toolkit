@@ -108,6 +108,11 @@ describe('HOSTING.md', () => {
     expect(md).toContain('X-Accel-Buffering: no')
   })
 
+  it('says how to try the image locally over http', () => {
+    expect(md).toContain('-e NODE_ENV=development -e PUBLIC_ORIGIN=http://localhost:8080')
+    expect(md).toContain('pnpm start')
+  })
+
   it('names the manifest passthrough headers', () => {
     for (const h of ['application/manifest+json', 'Access-Control-Allow-Origin: *', 'Cache-Control: no-store']) expect(md, h).toContain(h)
   })

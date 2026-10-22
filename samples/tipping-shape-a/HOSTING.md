@@ -47,6 +47,8 @@ docker run -d --name tipping -p 8080:8080 -v tipping-data:/data \
 
 The image sets `NODE_ENV=production`, so the relay refuses to start without `PUBLIC_ORIGIN`, or with one that is `http:` or a loopback host (`localhost`, `127.0.0.1`, `[::1]`). It also refuses an unknown `BSV_NETWORK`, an `ARCADE_URL` that belongs to the other network, mainnet without `CREATOR_IDENTITY_KEY`, and a `tips.sqlite` of another schema version. In each case it prints the reason and exits.
 
+To try the image on your own machine over plain http, add `-e NODE_ENV=development -e PUBLIC_ORIGIN=http://localhost:8080` to the `docker run` above (never on a public host), or run the sample with `pnpm start` instead (see [README.md](README.md)).
+
 ## Environment
 
 None of these is a secret. `env.example` lists the same variables.

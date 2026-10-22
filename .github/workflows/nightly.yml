@@ -189,14 +189,51 @@ jobs:
           BSV_TESTNET_GATE_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY }}
         run: pnpm -F bsv-tipping-demo gate run 2>&1 | tee "$RUNNER_TEMP/gate.log"
 
+      # The gate's log and record are scanned for the key before either is uploaded or quoted in the issue (an
+      # issue's edit history cannot be scrubbed). The record path comes from the gate's own `wrote <file>` line, so
+      # an older run's record is never used. The key goes to grep as a pattern file, never in argv; grep exits
+      # 0 found, 1 not found, 2 could not read, and anything but 1 withholds the file.
+      - name: Scan the gate output for the key
+        id: scan
+        if: always() && steps.key.outputs.has_key == 'true'
+        env:
+          GATE_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY }}
+        run: |
+          state() {
+            [ -f "$1" ] || { echo none; return; }
+            local found=0
+            grep -qiF -f <(printf '%s' "$GATE_KEY" | tr -d '[:space:]') -- "$1" || found=$?
+            if [ "$found" -eq 1 ]; then echo clean; else echo withheld; fi
+          }
+          log="$RUNNER_TEMP/gate.log"
+          record=""
+          if [ -f "$log" ]; then
+            record="$(sed -n 's/^.*wrote \(.*\/docs\/evals\/gate-[^/]*\.md\)$/\1/p' "$log" | tail -n 1)"
+          fi
+          log_state="$(state "$log")"
+          record_state=none
+          if [ -n "$record" ]; then record_state="$(state "$record")"; fi
+          {
+            echo "record=$record"
+            echo "record_state=$record_state"
+            echo "log_state=$log_state"
+          } >> "$GITHUB_OUTPUT"
+          echo "gate log: $log_state; gate record: $record_state"
+          if [ "$log_state" = withheld ] || [ "$record_state" = withheld ]; then
+            echo "leak=true" >> "$GITHUB_OUTPUT"
+            echo "::error::the gate output contains key material (or could not be read); it is withheld"
+            exit 1
+          fi
+          echo "leak=false" >> "$GITHUB_OUTPUT"
+
       # The gate's record; CI does not commit it.
       - name: Upload the gate record
-        if: always() && steps.key.outputs.has_key == 'true'
+        if: always() && steps.scan.outputs.record_state == 'clean'
         uses: actions/upload-artifact@v4
         with:
           name: gate-record
-          path: docs/evals/gate-*.md
-          if-no-files-found: warn
+          path: ${{ steps.scan.outputs.record }}
+          if-no-files-found: error
 
       # The steps below test the gate step's own outcome (not failure(), which also sees the freshness job): it is
       # not 'success' when the gate failed, timed out, or never ran because a setup step failed.
@@ -215,12 +252,18 @@ jobs:
             echo "upload=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # The key goes to grep as a pattern file, never in argv. grep: 0 found, 1 not found, 2 could not read.
+          # As above: the key as a pattern file; 0 found, 1 not found, 2 could not read.
           found=0
           grep -rqiF -f <(printf '%s' "$GATE_KEY" | tr -d '[:space:]') -- "$runs" || found=$?
-          if [ "$found" -ne 1 ] || [ -n "$(find "$runs" -name '*.key')" ]; then
-            echo "::error::a run dir holds key material; it is not uploaded"
+          refused=""
+          if [ -n "$(find "$runs" -name '*.key')" ]; then refused="it holds a .key file"
+          elif [ "$found" -eq 0 ]; then refused="a file in it contains the gate key"
+          elif [ "$found" -ne 1 ]; then refused="part of it could not be read, so it could not be checked for the key"
+          fi
+          if [ -n "$refused" ]; then
+            echo "::error::a run dir was kept but is not uploaded: $refused"
             echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "refused=$refused" >> "$GITHUB_OUTPUT"
             exit 1
           fi
           echo "upload=true" >> "$GITHUB_OUTPUT"
@@ -230,17 +273,23 @@ jobs:
         with:
           name: gate-run-dirs
           path: ~/.bsv-gate/runs/
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       # The same exact-title lookup as the freshness job: adds (or replaces) the `## Gate` section of the open
-      # freshness issue, or opens that issue when none is open.
+      # freshness issue, or opens that issue when none is open. It quotes the log and the record only when the scan
+      # found them clean.
       - name: Add the gate failure to the freshness issue
-        if: ${{ !cancelled() && steps.key.outputs.has_key == 'true' && steps.gate.outcome != 'success' }}
+        if: ${{ !cancelled() && steps.key.outputs.has_key == 'true' && (steps.gate.outcome != 'success' || steps.scan.outputs.leak == 'true') }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          RECORD: ${{ steps.scan.outputs.record }}
+          RECORD_STATE: ${{ steps.scan.outputs.record_state }}
+          LOG_STATE: ${{ steps.scan.outputs.log_state }}
           UPLOADED: ${{ steps.runs.outputs.upload }}
+          REFUSED: ${{ steps.runs.outputs.refused }}
         run: |
           out="$RUNNER_TEMP/gate-issue"
           mkdir -p "$out"
@@ -252,18 +301,30 @@ jobs:
             printf 'Nightly freshness run: %s\n' "$RUN_URL" > "$out/current.md"
           fi
           OUT="$out" node --input-type=module - <<'JS'
-          import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-          const out = process.env.OUT
-          const read = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim() : '')
-          const records = existsSync('docs/evals') ? readdirSync('docs/evals').filter((f) => /^gate-.*\.md$/.test(f)).sort() : []
-          const record = records.length ? read(`docs/evals/${records.at(-1)}`) : ''
-          const log = read(`${process.env.RUNNER_TEMP}/gate.log`).split('\n').slice(-40).join('\n')
-          const section = [`## Gate`, '', `The testnet gate failed: ${process.env.RUN_URL}`, '']
-          if (process.env.UPLOADED === 'true') {
+          import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+          const { OUT: out, RUN_URL, GATE_OUTCOME, RECORD, RECORD_STATE, LOG_STATE, UPLOADED, REFUSED } = process.env
+          const read = (f) => (f && existsSync(f) ? readFileSync(f, 'utf8').trim() : '')
+          const withheld = (what) => `The ${what} was withheld: it contained key material, or could not be read to check.`
+          const section = ['## Gate', '']
+          section.push(GATE_OUTCOME === 'success' ? `The testnet gate passed, but its output was withheld: ${RUN_URL}` : `The testnet gate failed: ${RUN_URL}`, '')
+          if (UPLOADED === 'true') {
             section.push('Its run dir was kept: download the `gate-run-dirs` artifact and run `pnpm gate recover --dir <run dir>` with the gate key.', '')
           }
-          if (record) section.push('<details><summary>gate record</summary>', '', record.replace(/^#{1,2} /gm, '### '), '', '</details>', '')
-          if (log) section.push('```', log.replaceAll('```', "'''"), '```', '')
+          if (REFUSED) {
+            section.push(`A run dir, which may hold coins still to recover, existed on the runner and was NOT uploaded: ${REFUSED}. It is lost with the runner, and with it the wallet storage that spends any coins left in it.`, '')
+          }
+          if (RECORD_STATE === 'clean') {
+            const record = read(RECORD)
+            if (record) section.push('<details><summary>gate record</summary>', '', record.replace(/^#{1,2} /gm, '### '), '', '</details>', '')
+          } else if (RECORD_STATE === 'withheld') {
+            section.push(withheld('gate record'), '')
+          }
+          if (LOG_STATE === 'clean') {
+            const log = read(`${process.env.RUNNER_TEMP}/gate.log`).split('\n').slice(-40).join('\n')
+            if (log) section.push('```', log.replaceAll('```', "'''"), '```', '')
+          } else if (LOG_STATE === 'withheld') {
+            section.push(withheld('gate log'), '')
+          }
           // Replace an earlier Gate section (up to the next level-2 heading), else append one.
           const current = read(`${out}/current.md`)
           const kept = current.replace(/^## Gate\r?\n[\s\S]*?(?=^## |(?![\s\S]))/m, '').trimEnd()
