@@ -19,9 +19,15 @@ export async function lintContent(contentDir: string): Promise<{ errors: string[
   return { errors }
 }
 
+/** Splits a Markdown file into its parsed YAML frontmatter (undefined when absent) and the body after it. */
+export function splitFrontmatter(text: string): { data: unknown; body: string } {
+  const normalized = text.replace(/\r\n/g, '\n')
+  const match = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(normalized)
+  return match ? { data: parseYaml(match[1]), body: normalized.slice(match[0].length) } : { data: undefined, body: normalized }
+}
+
 function frontmatter(text: string): unknown {
-  const match = /^---\n([\s\S]*?)\n---/.exec(text.replace(/\r\n/g, '\n'))
-  return match ? parseYaml(match[1]) : undefined
+  return splitFrontmatter(text).data
 }
 
 async function lintFrontmatter(dir: string, errors: string[]): Promise<void> {
@@ -94,4 +100,42 @@ async function lintGuardrails(dir: string, errors: string[]): Promise<void> {
       break
     }
   }
+}
+
+const DAY_MS = 86_400_000
+
+/** Lists every `verified` date (Markdown frontmatter and top-level JSON files, at any depth) older than maxAgeDays on `today`. */
+export async function staleVerified(contentDir: string, maxAgeDays: number, today: Date = new Date()): Promise<string[]> {
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+  const stale: string[] = []
+  const check = (where: string, verified: unknown): void => {
+    if (typeof verified !== 'string' || !VerifiedDate.safeParse(verified).success) return
+    const age = Math.floor((todayUtc - Date.parse(`${verified}T00:00:00Z`)) / DAY_MS)
+    if (age > maxAgeDays) stale.push(`${where}: verified ${verified} is ${age} days old (max ${maxAgeDays})`)
+  }
+  for (const file of (await fg(MARKDOWN_WITH_FRONTMATTER, { cwd: contentDir })).sort()) {
+    try {
+      const fm = frontmatter(await readFile(join(contentDir, file), 'utf8'))
+      if (fm && typeof fm === 'object') check(file, (fm as Record<string, unknown>).verified)
+    } catch {
+      // malformed frontmatter is reported by lintContent
+    }
+  }
+  for (const file of (await fg('*.json', { cwd: contentDir })).sort()) {
+    let data: unknown
+    try {
+      data = JSON.parse(await readFile(join(contentDir, file), 'utf8'))
+    } catch {
+      continue
+    }
+    const walk = (node: unknown, path: string[]): void => {
+      if (!node || typeof node !== 'object') return
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'verified') check(path.length ? `${file} ${path.join('.')}` : file, value)
+        else walk(value, [...path, key])
+      }
+    }
+    walk(data, [])
+  }
+  return stale
 }

@@ -1,0 +1,57 @@
+hosts:
+  - https://bsv.writedocs.io/docs/
+  - https://docs.bsvblockchain.org/docs/
+ids:
+  get-started.quick-start-browser:
+    path: get-started/quick-start-browser
+    title: Send a payment from a web app
+  get-started.quick-start-server:
+    path: get-started/quick-start-server
+    title: Send a payment from a server
+  get-started.project-starter:
+    path: get-started/project-starter
+    title: Start a project from a template
+  build-with-ai:
+    path: build-with-ai
+    title: Set up your AI
+  build-with-ai.prompts:
+    path: build-with-ai/prompts
+    title: Send a payment with an AI agent
+  build-with-ai.llm-resources:
+    path: build-with-ai/llm-resources
+    title: Give agents the docs in Markdown
+  build-with-ai.skill:
+    path: build-with-ai/skill
+    title: Install the BSV agent skill
+  guides.payments:
+    path: guides/payments
+    title: Gate an API behind payments
+  guides.identity-auth:
+    path: guides/identity-auth
+    title: Authenticate users with their wallet
+  guides.app-frameworks:
+    path: guides/app-frameworks
+    title: Integrate BSV with web frameworks
+  guides.wallet-aware-apps:
+    path: guides/wallet-aware-apps
+    title: Request permissions and organize outputs
+  guides.go-to-mainnet:
+    path: guides/go-to-mainnet
+    title: Move your app to mainnet
+  guides.services.broadcasting:
+    path: guides/services/broadcasting
+    title: Broadcast transactions with Arcade
+    legacy: https://docs.bsvblockchain.org/broadcasting/arcade
+  guides.services.local-stack:
+    path: guides/services/local-stack
+    title: Run a local test chain
+  reference.wallet-api:
+    path: reference/wallet-api
+    title: Wallet API reference (createAction)
+    legacy: https://bsv.writedocs.io/reference/wallet-api/actions/post-createaction.md
+  reference.networks:
+    path: reference/networks
+    title: Network endpoints
+  wallets.bsv-desktop:
+    path: wallets/bsv-desktop
+    title: BSV Desktop

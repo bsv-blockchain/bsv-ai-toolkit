@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { lintContent } from '../src/lint.js'
+import { lintContent, staleVerified } from '../src/lint.js'
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,5 +19,26 @@ describe('lintContent', () => {
     writeFileSync(join(d, 'guardrails.yaml'), '- id: G-02\n  title: t\n  shape: both\n  rule: r\n  why: w\n  detect: manual\n  severity: warn\n  refs: []\n')
     const { errors } = await lintContent(d)
     expect(errors.some(e => e.includes('G-01'))).toBe(true)
+  })
+})
+
+describe('staleVerified', () => {
+  const today = new Date('2026-10-22T12:00:00Z')
+  function dir() {
+    const d = mkdtempSync(join(tmpdir(), 's-')); mkdirSync(join(d, 'facts'))
+    writeFileSync(join(d, 'facts', 'fresh.md'), '---\ntitle: F\nverified: 2026-08-23\n---\n')
+    writeFileSync(join(d, 'facts', 'old.md'), '---\ntitle: O\nverified: 2026-08-22\n---\n')
+    writeFileSync(join(d, 'versions.json'), JSON.stringify({ verified: '2026-10-22', packages: { a: { pinned: '1', verified: '2026-01-01' } } }))
+    return d
+  }
+  it('flags every verified date older than the limit, in markdown frontmatter and JSON', async () => {
+    const stale = await staleVerified(dir(), 60, today)
+    expect(stale).toEqual([
+      'facts/old.md: verified 2026-08-22 is 61 days old (max 60)',
+      'versions.json packages.a: verified 2026-01-01 is 294 days old (max 60)',
+    ])
+  })
+  it('passes on the repo content today', async () => {
+    expect(await staleVerified(root, 60, today)).toEqual([])
   })
 })
