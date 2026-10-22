@@ -301,7 +301,24 @@ describe('G-12 Arcade first, WhatsOnChain gated', () => {
     expect(runOn(g12, { 'server/woc.ts': `${WOC}${text}` })).toEqual([])
   })
 
+  it('counts a callee imported from a gate module as a gate', () => {
+    const text = "import { wocCall } from './woc-gate.js'\nexport const info = () => wocCall(() => fetch(`${WOC}/chain/info`))"
+    expect(runOn(g12, { 'server/woc.ts': `${WOC}${text}` })).toEqual([])
+  })
+
   it.each([
+    // framework and utility thunks are not gates
+    "onMount(async () => {\n  for (const a of addrs) await fetch(`${WOC}/address/${a}/unspent`)\n})",
+    "onMounted(async () => {\n  await fetch(`${WOC}/chain/info`)\n})",
+    "export default defineEventHandler(async () => {\n  for (const a of addrs) await fetch(`${WOC}/address/${a}/unspent`)\n})",
+    "for (const a of addrs) await withRetry(() => fetch(`${WOC}/address/${a}/unspent`))",
+    "setInterval(() => fetch(`${WOC}/chain/info`), 1000)",
+    "button.onclick = () => fetch(`${WOC}/chain/info`)",
+    // a gate whose one task loops over the calls does not space them (`limit` is a gate only by wrapping, not a module token)
+    "limit(async () => {\n  for (const a of addrs) await fetch(`${WOC}/address/${a}/unspent`)\n})",
+    // a named function inside a gate call is its own function
+    "limit(async () => {\n  async function load() {\n    return fetch(`${WOC}/chain/info`)\n  }\n  return load\n})",
+    "scheduleRender()\nawait fetch(`${WOC}/chain/info`)",
     "export const status = 'Queue position'\nawait fetch(`${WOC}/chain/info`)",
     "app.get('/h', async (req, res) => {\n  res.json(await fetch(`${WOC}/chain/info`))\n})",
     "await Promise.all(addrs.map(a => fetch(`${WOC}/address/${a}/unspent`)))",
