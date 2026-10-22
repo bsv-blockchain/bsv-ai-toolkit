@@ -6,12 +6,22 @@ import { fileURLToPath } from 'node:url'
 import { Beef, Hash, MerklePath, P2PKH, PrivateKey, Transaction, UnlockingScript, Utils } from '@bsv/sdk'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Arcade } from '../server/arcade.js'
-import { checkFunding } from '../scripts/gate'
+import {
+  checkFunding,
+  collectSavedTip,
+  readSavedTip,
+  returnCoinsAndClean,
+  savedTipStore,
+  SWEEP_LABEL,
+  type Row,
+  type SettleWallet,
+} from '../scripts/gate-coins'
 import { addProvenTx, tscToMerklePath, WhatsOnChain } from '../scripts/gate-woc'
 import { derive, keyFilePath, loadOrCreateRootKey, openGateWallet } from '../scripts/gate-wallet'
 
-// No test here touches ~/.bsv-gate: every run gets a temp HOME and a temp BSV_GATE_KEY_FILE. Keys are fresh random
-// keys that never hold funds.
+// No test here touches ~/.bsv-gate, the network or a wallet with funds. CLI runs get only PATH, a temp HOME and the
+// variables a test passes (always a temp BSV_GATE_KEY_FILE); in-process calls pass a temp BSV_GATE_KEY_FILE, and a
+// temp HOME where $HOME matters. Keys are fresh random keys; Arcade and WhatsOnChain are fakes behind injected fetch.
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
 const GATE = join(SAMPLE, 'scripts', 'gate.ts')
@@ -38,7 +48,8 @@ function gate(args: string[], env: Record<string, string> = {}) {
   return { code: r.status, stdout: r.stdout, stderr: r.stderr }
 }
 
-describe('gate keys', () => {
+// Each CLI run starts tsx afresh (about a second); a test runs several.
+describe('gate keys', { timeout: 30_000 }, () => {
   it('init writes the key file with mode 0600 and prints only an address and identities', () => {
     const dir = join(tempDir(), 'gate')
     const file = join(dir, 'tipping-shape-a.key')
@@ -115,6 +126,39 @@ describe('gate keys', () => {
     }
   })
 
+  it('refuses a key under a group- or world-writable directory between it and $HOME', () => {
+    const home = tempDir()
+    mkdirSync(join(home, 'shared', 'private'), { recursive: true })
+    chmodSync(join(home, 'shared'), 0o775)
+    chmodSync(join(home, 'shared', 'private'), 0o700)
+    const key = join(home, 'shared', 'private', 'gate.key')
+    expect(() => loadOrCreateRootKey({ create: true, env: { HOME: home, BSV_GATE_KEY_FILE: key } })).toThrow(/shared is writable by group or others/)
+    expect(existsSync(key)).toBe(false)
+    // Through a symlink, the real directory's mode is what counts.
+    symlinkSync(join(home, 'shared'), join(home, 'alias'))
+    expect(() => loadOrCreateRootKey({ create: true, env: { HOME: home, BSV_GATE_KEY_FILE: join(home, 'alias', 'private', 'gate.key') } })).toThrow(/writable by group or others/)
+    chmodSync(join(home, 'shared'), 0o700)
+    expect(loadOrCreateRootKey({ create: true, env: { HOME: home, BSV_GATE_KEY_FILE: key } }).source).toBe('created')
+    chmodSync(home, 0o777) // $HOME itself counts
+    expect(() => loadOrCreateRootKey({ create: false, env: { HOME: home, BSV_GATE_KEY_FILE: key } })).toThrow(/writable by group or others/)
+    chmodSync(home, 0o700)
+  })
+
+  it('recover needs a run dir of this key', () => {
+    const env = { BSV_TESTNET_GATE_KEY: randomKey(), BSV_GATE_KEY_FILE: join(tempDir(), 'none.key') }
+    const none = gate(['recover'], env)
+    expect(none.code).toBe(2)
+    expect(none.stderr).toContain('recover needs --dir')
+    const notRun = gate(['recover', '--dir', tempDir()], env)
+    expect(notRun.code).toBe(2)
+    expect(notRun.stderr).toContain('is not a gate run dir')
+    const other = tempDir()
+    writeFileSync(join(other, 'run.json'), JSON.stringify({ kind: 'bsv-gate-run', fundingAddress: 'mOtherAddress' }))
+    const wrong = gate(['recover', '--dir', other], env)
+    expect(wrong.code).toBe(2)
+    expect(wrong.stderr).toContain('wrong key?')
+  })
+
   it('refuses a key path inside a git work tree and a key directory others can write', () => {
     const repo = tempDir()
     mkdirSync(join(repo, '.git'))
@@ -157,7 +201,7 @@ describe('gate keys', () => {
   })
 
   it('mainnet is refused with exit 2', () => {
-    for (const cmd of [['init'], ['address'], ['sweep', '--txid', 'ab'.repeat(32)], ['run']]) {
+    for (const cmd of [['init'], ['address'], ['sweep', '--txid', 'ab'.repeat(32)], ['run'], ['recover', '--dir', tempDir()]]) {
       const file = join(tempDir(), 'gate.key')
       const out = gate(cmd, { BSV_NETWORK: 'mainnet', BSV_GATE_KEY_FILE: file })
       expect(out.code).toBe(2)
@@ -306,18 +350,190 @@ describe('funding coins (offline: Arcade and WhatsOnChain answer from fakes)', (
   })
 })
 
+describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
+  const ARCADE = 'https://arcade.test'
+  const funding = PrivateKey.fromRandom().toPublicKey().toAddress('testnet')
+  const lock = new P2PKH().lock(funding)
+  const spend = (source: Transaction | string, satoshis: number) =>
+    new Transaction(
+      1,
+      [{ ...(typeof source === 'string' ? { sourceTXID: source } : { sourceTransaction: source }), sourceOutputIndex: 0, unlockingScript: new UnlockingScript([]), sequence: 0xffffffff }],
+      [{ lockingScript: lock, satoshis }],
+      0,
+    )
+  // G is in a block; U (an import the toolbox left 'sending') spends it; S (the sweep-back) spends U.
+  const g = spend('cd'.repeat(32), 5000)
+  g.merklePath = new MerklePath(100, [[{ offset: 0, hash: g.id('hex'), txid: true }]])
+  const u = spend(g, 4900)
+  const sweepTx = spend(u, 4800)
+  const S = sweepTx.id('hex')
+  const sweepBeef = (() => {
+    const b = new Beef()
+    b.mergeTransaction(sweepTx)
+    return b.toBinary()
+  })()
+
+  /** Arcade that has seen a txid only once it was POSTed (or from the start, when `known`). */
+  function fakeArcade(opts: { known?: string[]; neverSees?: boolean } = {}) {
+    const seen = new Set(opts.known ?? [])
+    const posts: string[] = []
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (init?.method === 'POST') {
+        const tx = Transaction.fromHexEF(String(init.body))
+        posts.push(tx.id('hex'))
+        if (!opts.neverSees) seen.add(tx.id('hex'))
+        return new Response(JSON.stringify({ txid: tx.id('hex'), txStatus: 'RECEIVED' }), { status: 200 })
+      }
+      const txid = url.split('/tx/')[1]
+      if (!seen.has(txid)) return new Response('{}', { status: 404 })
+      return new Response(JSON.stringify({ txid, txStatus: 'SEEN_ON_NETWORK' }), { status: 200 })
+    }) as typeof fetch
+    return { posts, arcade: new Arcade(ARCADE, fetchImpl) }
+  }
+
+  type Action = { txid: string; status: string; labels: string[] }
+  /** A wallet holding `balance`; its sweep-back leaves a labelled S, 'sending' and throwing when `postFails`. */
+  function fakeWallet(opts: { balance: number; actions?: Action[]; postFails?: boolean }) {
+    const state = { balance: opts.balance, actions: [...(opts.actions ?? [])], created: [] as unknown[], closed: false }
+    const w = {
+      wallet: {
+        balance: async () => state.balance,
+        listActions: async (args: { labels: string[] }) => ({
+          totalActions: state.actions.length,
+          actions: state.actions.filter(a => args.labels.length === 0 || a.labels.some(l => args.labels.includes(l))),
+        }),
+        createAction: async (args: unknown) => {
+          state.created.push(args)
+          state.balance = 0 // the inputs are spent in storage either way
+          state.actions.push({ txid: S, status: opts.postFails ? 'sending' : 'unproven', labels: [SWEEP_LABEL] })
+          if (opts.postFails) throw new Error('WERR_REVIEW_ACTIONS: broadcast did not succeed')
+          return { txid: S, tx: sweepBeef }
+        },
+      },
+      beef: async (txid: string) => {
+        if (txid !== S && txid !== u.id('hex')) throw new Error('unknown')
+        return sweepBeef
+      },
+      close: async () => {
+        state.closed = true
+      },
+    }
+    return { state, w: w as unknown as SettleWallet & { close(): Promise<void> } }
+  }
+  const io = { out: () => {}, err: () => {} }
+  const runDir = () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, 'run.json'), '{}')
+    return dir
+  }
+
+  it('sweeps everything back in one sendMax output and deletes the run dir once Arcade sees it', async () => {
+    const { arcade } = fakeArcade({ known: [S] })
+    const { state, w } = fakeWallet({ balance: 4800 })
+    const dir = runDir()
+    const rows: Row[] = []
+    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, rows, io, 0)).toBeUndefined()
+    expect(existsSync(dir)).toBe(false)
+    expect(state.closed).toBe(true)
+    expect(state.created).toEqual([
+      expect.objectContaining({
+        labels: [SWEEP_LABEL],
+        outputs: [expect.objectContaining({ lockingScript: lock.toHex(), satoshis: 2099999999999999 })],
+        options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
+      }),
+    ])
+    expect(rows).toContainEqual(expect.objectContaining({ step: 'sweep-back tipper', txid: S, verdict: 'seen-no-competitor', bytes: sweepTx.toBinary().length }))
+  })
+
+  it('a sweep-back the toolbox could not post goes straight to Arcade (ancestors first); the dir goes only once it is seen', async () => {
+    const { arcade, posts } = fakeArcade()
+    const { w } = fakeWallet({ balance: 4800, postFails: true })
+    const dir = runDir()
+    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(posts).toEqual([u.id('hex'), S]) // G has a merkle path: not posted
+    expect(existsSync(dir)).toBe(false)
+  })
+
+  it('keeps the run dir and fails when the balance reads 0 but Arcade never sees the sweep-back', async () => {
+    const { arcade } = fakeArcade({ neverSees: true })
+    const { w } = fakeWallet({ balance: 4800, postFails: true })
+    const dir = runDir()
+    const errs: string[] = []
+    const left = await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, [], { out: () => {}, err: l => void errs.push(l) }, 0)
+    expect(left).toMatch(new RegExp(`tipper: ${S} is not seen on Arcade`))
+    expect(existsSync(dir)).toBe(true)
+    expect(errs.join('\n')).toContain(`pnpm gate recover --dir ${dir}`)
+  })
+
+  it('re-checks an unfinished action and an earlier sweep-back in an empty wallet (recover)', async () => {
+    const { arcade, posts } = fakeArcade()
+    const { w } = fakeWallet({ balance: 0, actions: [{ txid: S, status: 'sending', labels: [SWEEP_LABEL] }] })
+    const dir = runDir()
+    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(posts).toContain(S)
+    expect(existsSync(dir)).toBe(false)
+  })
+
+  it('keeps the run dir while a tip that went out is not in the creator wallet', async () => {
+    const { arcade } = fakeArcade()
+    const { w } = fakeWallet({ balance: 0 })
+    const dir = runDir()
+    writeFileSync(join(dir, 'tip.json'), JSON.stringify({ txid: 'ab'.repeat(32), beef: '00', outputIndex: 0 }))
+    expect(await returnCoinsAndClean([['creator', w]], dir, funding, arcade, [], io, 0)).toMatch(/went out but is not in the creator wallet/)
+    expect(existsSync(dir)).toBe(true)
+  })
+
+  it('saves the tip before the broadcast, keeps it after the relay has it, and collects it straight into the creator wallet', async () => {
+    const dir = tempDir()
+    const store = savedTipStore(dir)
+    const base = { key: 'tip:pending:1', createdAt: '', network: 'testnet', recipient: '02aa', senderIdentityKey: '03bb', satoshis: 1000, outputIndex: 0, derivationPrefix: 'cA==', derivationSuffix: 'cw==' }
+    store.setItem(base.key, JSON.stringify(base)) // the write-ahead, before createAction
+    expect(readSavedTip(dir)).toMatchObject({ derivationPrefix: 'cA==', derivationSuffix: 'cw==', senderIdentityKey: '03bb' })
+    expect(readSavedTip(dir)?.txid).toBeUndefined()
+    store.setItem(base.key, JSON.stringify({ ...base, txid: S, beef: Utils.toHex(sweepBeef) }))
+    store.removeItem(base.key) // sendTip, once the relay has it
+    expect(readSavedTip(dir)).toMatchObject({ txid: S, beef: Utils.toHex(sweepBeef), outputIndex: 0, satoshis: 1000 })
+    expect(statSync(join(dir, 'tip.json')).mode & 0o777).toBe(0o600)
+
+    const internalized: unknown[] = []
+    const creator = {
+      wallet: {
+        listActions: async () => ({ totalActions: 0, actions: [] }),
+        internalizeAction: async (args: unknown) => {
+          internalized.push(args)
+          return { accepted: true }
+        },
+      },
+    } as unknown as Parameters<typeof collectSavedTip>[0]
+    const rows: Row[] = []
+    await collectSavedTip(creator, dir, rows)
+    expect(internalized).toEqual([
+      {
+        tx: sweepBeef,
+        outputs: [{ outputIndex: 0, protocol: 'wallet payment', paymentRemittance: { senderIdentityKey: '03bb', derivationPrefix: 'cA==', derivationSuffix: 'cw==' } }],
+        description: 'Tip received',
+      },
+    ])
+    expect(readSavedTip(dir)?.collected).toBe(true)
+    expect(rows).toContainEqual(expect.objectContaining({ txid: S, verdict: 'accepted' }))
+    await collectSavedTip(creator, dir, rows) // collected: nothing more
+    expect(internalized).toHaveLength(1)
+  })
+})
+
 // Needs a funded gate key (BSV_TESTNET_GATE_KEY or the key file, swept with `gate sweep`) and testnet Arcade.
 describe('gate run on testnet', () => {
   it.skipIf(process.env.BSV_MCP_NETWORK_TESTS !== '1')(
     'run completes one tip at 0-conf on testnet',
     () => {
-      const r = spawnSync(process.execPath, ['--import', 'tsx', GATE, 'run'], { cwd: SAMPLE, env: process.env, encoding: 'utf8', timeout: 240_000 })
+      const r = spawnSync(process.execPath, ['--import', 'tsx', GATE, 'run'], { cwd: SAMPLE, env: process.env, encoding: 'utf8', timeout: 1_500_000 })
       expect(r.status, r.stderr).toBe(0)
       expect(r.stdout).toMatch(/^\| .*\| seen-no-competitor \|/m)
       expect(r.stdout).toMatch(/^\| .*\| accepted \|/m)
       expect(r.stdout).toMatch(/^\| sweep-back tipper \| [0-9a-f]{64} \|/m)
       expect(r.stdout).toMatch(/^probeTxid: [0-9a-f]{64}$/m)
     },
-    300_000,
+    1_600_000, // listing, imports, the tip, collection and two sweep-backs, each with up to two 20 s Arcade waits
   )
 })

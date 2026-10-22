@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, unlinkSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { Hash, PrivateKey, Utils } from '@bsv/sdk'
 import type { Wallet } from '@bsv/wallet-toolbox'
 
@@ -32,6 +32,8 @@ export interface GateWallet {
   /** A wallet-toolbox Wallet: a BRC-100 WalletInterface (plus balance()). */
   wallet: Wallet
   identityKey: string
+  /** The BEEF (binary) the wallet's storage holds for one of its transactions, with its unproven ancestors. */
+  beef(txid: string): Promise<number[]>
   close(): Promise<void>
 }
 
@@ -45,8 +47,11 @@ const ENV_KEY = 'BSV_TESTNET_GATE_KEY'
 /** BSV_GATE_KEY_FILE, else ~/.bsv-gate/tipping-shape-a.key (outside any repo). */
 export function keyFilePath(env: Env = process.env): string {
   const set = env.BSV_GATE_KEY_FILE?.trim()
-  return set ? set : join(homedir(), '.bsv-gate', 'tipping-shape-a.key')
+  return set ? set : join(homeOf(env), '.bsv-gate', 'tipping-shape-a.key')
 }
+
+/** $HOME (as `env` gives it), else the OS's idea of it. */
+export const homeOf = (env: Env = process.env) => env.HOME?.trim() || homedir()
 
 /** 64 hex characters that are a valid secp256k1 scalar (1 ≤ k < n). Never echoes the value. */
 function parseRootKey(raw: string, where: string): string {
@@ -74,16 +79,24 @@ function insideGitWorkTree(path: string): boolean {
 }
 
 /**
- * Where a key file may live: never inside a git work tree (one `git add -A` from publishing it), and never in an
- * existing directory that group or others can write (they could replace the file).
+ * Where a key file may live: never inside a git work tree (one `git add -A` from publishing it), and never under a
+ * directory that group or others can write (they could swap the file or a directory above it). Modes are read on
+ * real paths (symlinks resolved): the key's directory (or, before it exists, its nearest existing ancestor) and,
+ * when that is inside $HOME, every directory up to and including $HOME.
  */
-function checkKeyLocation(path: string): void {
+function checkKeyLocation(path: string, home: string): void {
   if (insideGitWorkTree(path)) {
     throw new GateUsageError(`key file ${path} is inside a git work tree; keep it outside every repo (set BSV_GATE_KEY_FILE)`)
   }
-  const dir = dirname(resolve(path))
-  if (POSIX && exists(dir) && (lstatSync(dir).mode & 0o022) !== 0) {
-    throw new GateUsageError(`key directory ${dir} is writable by group or others; run: chmod 700 ${dir}`)
+  if (!POSIX) return
+  let dir = dirname(resolve(path))
+  while (!exists(dir) && dirname(dir) !== dir) dir = dirname(dir)
+  const real = realpathSync(dir)
+  const realHome = exists(home) ? realpathSync(home) : resolve(home)
+  const underHome = real === realHome || real.startsWith(realHome + sep)
+  for (let d = real; ; d = dirname(d)) {
+    if ((statSync(d).mode & 0o022) !== 0) throw new GateUsageError(`${d} is writable by group or others; run: chmod go-w ${d}`)
+    if (!underHome || d === realHome || dirname(d) === d) return
   }
 }
 
@@ -92,8 +105,8 @@ function checkKeyLocation(path: string): void {
  * user and group/world-readable modes, checked on the open descriptor so the file cannot be swapped between the
  * check and the read.
  */
-function readKeyFile(path: string): string {
-  checkKeyLocation(path)
+function readKeyFile(path: string, home: string): string {
+  checkKeyLocation(path, home)
   let fd: number
   try {
     fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
@@ -121,8 +134,8 @@ function readKeyFile(path: string): string {
  * same directory (made 0700), is synced, then hard-linked into place (link fails if the path exists) and the temp
  * name removed. Returns false when another file got there first.
  */
-function writeKeyFileExclusive(path: string, hex: string): boolean {
-  checkKeyLocation(path)
+function writeKeyFileExclusive(path: string, hex: string, home: string): boolean {
+  checkKeyLocation(path, home)
   const dir = dirname(path)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   // Ends in .key, so the repo's *.key ignore rule covers it too.
@@ -166,13 +179,13 @@ export function loadOrCreateRootKey(opts: { create: boolean; env?: Env }): RootK
   const fromEnv = env[ENV_KEY]
   if (fromEnv !== undefined && fromEnv.trim() !== '') return { rootKeyHex: parseRootKey(fromEnv, ENV_KEY), source: 'env' }
   const path = keyFilePath(env)
-  if (exists(path)) return { rootKeyHex: readKeyFile(path), source: 'file' }
+  if (exists(path)) return { rootKeyHex: readKeyFile(path, homeOf(env)), source: 'file' }
   if (!opts.create) {
     throw new GateUsageError(`no gate key: set ${ENV_KEY} or create the key file ${path} with \`pnpm gate init\``)
   }
   const hex = parseRootKey(PrivateKey.fromRandom().toHex(), 'the new key') // toHex pads to 32 bytes
   // Lost a race with another init: use the key that won.
-  if (!writeKeyFileExclusive(path, hex)) return { rootKeyHex: readKeyFile(path), source: 'file' }
+  if (!writeKeyFileExclusive(path, hex, homeOf(env))) return { rootKeyHex: readKeyFile(path, homeOf(env)), source: 'file' }
   return { rootKeyHex: hex, source: 'created' }
 }
 
@@ -268,6 +281,7 @@ export async function openGateWallet(
   return {
     wallet,
     identityKey,
+    beef: async txid => (await active.getBeefForTransaction(txid, {})).toBinary(),
     close: async () => {
       await wallet.destroy() // destroys the storage providers, which closes knex
     },
