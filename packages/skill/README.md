@@ -18,6 +18,8 @@ Claude Code plugin (the skill plus both MCP servers):
 claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
 ```
 
+The plugin needs Claude Code v2.1.271 or later (its network setting is a fixed `testnet`/`mainnet` choice). It adds `/bsv-review [path]` and `/bsv-design [app name]`, and asks for two settings: the network (default `testnet`) and an optional Arcade URL. Mainnet broadcasts by the agent also need `BSV_MCP_ALLOW_MAINNET_BROADCAST=1` in your shell; the plugin never sets it.
+
 The MCP servers on their own, in Claude Code:
 
 ```bash
@@ -46,6 +48,7 @@ From the repository root:
 ```bash
 pnpm -F bsv-dev-skill test                        # structure tests, offline
 SKILLS_REF_TESTS=1 pnpm -F bsv-dev-skill test     # also runs skills-ref validate (fetches it with npx)
+CLAUDE_CLI_TESTS=1 pnpm -F bsv-dev-skill test     # also runs claude plugin validate --strict (needs the claude CLI)
 pnpm -F bsv-dev-skill validate                    # skills-ref validate on its own
 bash scripts/anti-goals.sh packages/skill/skills  # forbidden phrasings appear only as "never" lines
 ```
