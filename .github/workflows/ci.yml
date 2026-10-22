@@ -77,3 +77,32 @@ jobs:
           CLAUDE_CLI_TESTS: '1'
       - name: Anti-goal grep over the skill
         run: bash scripts/anti-goals.sh packages/skill/skills
+
+  sample:
+    name: Sample (bsv-tipping-demo)
+    needs: build-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The guardrails CLI is part of @bsv/mcp's build.
+      - run: pnpm -F @bsv/mcp build
+      - run: pnpm -F bsv-tipping-demo build
+      - run: pnpm -F bsv-tipping-demo test
+      # check_guardrails takes an absolute path; the CLI exits 1 on any `error` finding.
+      - name: check_guardrails over the sample (zero error findings)
+        run: node packages/mcp/build/cli/check-guardrails.js "$GITHUB_WORKSPACE/samples/tipping-shape-a"
+      - name: Anti-goal grep over the sample
+        run: bash scripts/anti-goals.sh samples/tipping-shape-a
+      # The same Dockerfile and repo-root context as sample-ghcr.yml, amd64 only; nothing is pushed.
+      - name: Docker build (linux/amd64, no push)
+        run: docker build --platform linux/amd64 -f samples/tipping-shape-a/Dockerfile .

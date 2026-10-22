@@ -9,12 +9,14 @@ permissions:
   issues: write
   contents: read
 
+# The one freshness issue, found by this exact title; the gate job adds its section to the same issue.
+env:
+  ISSUE_TITLE: 'Freshness: content drift'
+
 jobs:
   freshness:
     name: Content freshness
     runs-on: ubuntu-latest
-    env:
-      ISSUE_TITLE: 'Freshness: content drift'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -134,3 +136,141 @@ jobs:
         run: |
           echo "::error::versions-check=${{ steps.versions.outputs.code }} check:facts=${{ steps.facts.outputs.code }} check:links=${{ steps.links.outputs.code }}"
           exit 1
+
+  # The testnet gate (samples/tipping-shape-a/scripts/gate.ts): one real tip end to end through Arcade, at 0-conf.
+  # Runs only when the gate key secret exists. The key reaches the gate through the env mapping of the
+  # steps that need it, never a file or the log; the gate prints only addresses and identity keys.
+  gate:
+    name: Testnet gate (bsv-tipping-demo)
+    # After freshness, whatever its result, so the two jobs never write the freshness issue at the same time.
+    needs: freshness
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    # The gate spends the coins at one funding address: two runs at once would spend the same coins.
+    concurrency:
+      group: bsv-gate
+      cancel-in-progress: false
+    steps:
+      # `if:` cannot read secrets, so this step turns the secret's presence into an output the others test.
+      - name: Gate key present
+        id: key
+        env:
+          HAS_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY != '' }}
+        run: |
+          echo "has_key=$HAS_KEY" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_KEY" != 'true' ]; then echo "::notice::the testnet gate key secret is not set; skipping the gate"; fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.has_key == 'true'
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        if: steps.key.outputs.has_key == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.has_key == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: steps.key.outputs.has_key == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # Writes docs/evals/gate-<time>.md (pass or fail); the run dir under ~/.bsv-gate/runs/ is deleted unless
+      # something is left to recover. The step timeout leaves time for the failure steps below.
+      - name: Gate run
+        id: gate
+        if: steps.key.outputs.has_key == 'true'
+        timeout-minutes: 30
+        shell: bash
+        env:
+          BSV_MCP_NETWORK_TESTS: '1'
+          BSV_NETWORK: testnet
+          BSV_TESTNET_GATE_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY }}
+        run: pnpm -F bsv-tipping-demo gate run 2>&1 | tee "$RUNNER_TEMP/gate.log"
+
+      # The gate's record; CI does not commit it.
+      - name: Upload the gate record
+        if: always() && steps.key.outputs.has_key == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-record
+          path: docs/evals/gate-*.md
+          if-no-files-found: warn
+
+      # The steps below test the gate step's own outcome (not failure(), which also sees the freshness job): it is
+      # not 'success' when the gate failed, timed out, or never ran because a setup step failed.
+      # A kept run dir holds the wallets whose storage alone can spend the coins still in them: kept as an artifact
+      # for `pnpm gate recover --dir <dir>`, also when the run is cancelled. It holds no key (the key comes from the
+      # env, never a file); checked here before anything is uploaded.
+      - name: Run dirs hold no key
+        id: runs
+        if: always() && steps.key.outputs.has_key == 'true' && steps.gate.outcome != 'success'
+        env:
+          GATE_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY }}
+        run: |
+          runs="$HOME/.bsv-gate/runs"
+          if [ ! -d "$runs" ] || [ -z "$(ls -A "$runs")" ]; then
+            echo "no run dir was kept"
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The key goes to grep as a pattern file, never in argv. grep: 0 found, 1 not found, 2 could not read.
+          found=0
+          grep -rqiF -f <(printf '%s' "$GATE_KEY" | tr -d '[:space:]') -- "$runs" || found=$?
+          if [ "$found" -ne 1 ] || [ -n "$(find "$runs" -name '*.key')" ]; then
+            echo "::error::a run dir holds key material; it is not uploaded"
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+      - name: Upload the kept run dirs
+        if: always() && steps.runs.outputs.upload == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-run-dirs
+          path: ~/.bsv-gate/runs/
+          if-no-files-found: ignore
+
+      # The same exact-title lookup as the freshness job: adds (or replaces) the `## Gate` section of the open
+      # freshness issue, or opens that issue when none is open.
+      - name: Add the gate failure to the freshness issue
+        if: ${{ !cancelled() && steps.key.outputs.has_key == 'true' && steps.gate.outcome != 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          UPLOADED: ${{ steps.runs.outputs.upload }}
+        run: |
+          out="$RUNNER_TEMP/gate-issue"
+          mkdir -p "$out"
+          number="$(gh issue list --state open --limit 200 --json number,title \
+            | jq -r --arg t "$ISSUE_TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh issue view "$number" --json body --jq .body > "$out/current.md"
+          else
+            printf 'Nightly freshness run: %s\n' "$RUN_URL" > "$out/current.md"
+          fi
+          OUT="$out" node --input-type=module - <<'JS'
+          import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+          const out = process.env.OUT
+          const read = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim() : '')
+          const records = existsSync('docs/evals') ? readdirSync('docs/evals').filter((f) => /^gate-.*\.md$/.test(f)).sort() : []
+          const record = records.length ? read(`docs/evals/${records.at(-1)}`) : ''
+          const log = read(`${process.env.RUNNER_TEMP}/gate.log`).split('\n').slice(-40).join('\n')
+          const section = [`## Gate`, '', `The testnet gate failed: ${process.env.RUN_URL}`, '']
+          if (process.env.UPLOADED === 'true') {
+            section.push('Its run dir was kept: download the `gate-run-dirs` artifact and run `pnpm gate recover --dir <run dir>` with the gate key.', '')
+          }
+          if (record) section.push('<details><summary>gate record</summary>', '', record.replace(/^#{1,2} /gm, '### '), '', '</details>', '')
+          if (log) section.push('```', log.replaceAll('```', "'''"), '```', '')
+          // Replace an earlier Gate section (up to the next level-2 heading), else append one.
+          const current = read(`${out}/current.md`)
+          const kept = current.replace(/^## Gate\r?\n[\s\S]*?(?=^## |(?![\s\S]))/m, '').trimEnd()
+          writeFileSync(`${out}/issue.md`, `${kept}\n\n${section.join('\n')}`)
+          JS
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$out/issue.md"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$out/issue.md"
+          fi
