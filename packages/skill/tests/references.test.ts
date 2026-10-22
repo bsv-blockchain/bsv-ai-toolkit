@@ -10,6 +10,9 @@ const must: Record<string, string[]> = {
   'wallet-brc100.md': ['waitForAuthentication', "WalletClient('auto'", 'babbage.groupPermissions', 'hashToDirectlySign', 'G-01'],
   'payments-brc29.md': ["'3241645161d8'", 'paymentRemittance', 'forSelf', 'fromHexEF', 'toBinaryAtomic', '10 s'],
   'arcade-0conf.md': ['SEEN_ON_NETWORK', 'competingTxs', '476', 'txn-already-known', 'text/plain', '350 ms'],
+  'simple-routing.md': ['0.7', 'network', 'arcadeUrl', 'integrate_simple'],
+  'testnet-to-mainnet.md': ['BSV_NETWORK', 'bsvfaucet.com', '24 h', 'network-guard.sh', '476'],
+  'common-errors.md': ['Atomic BEEF', 'isAuthenticated', 'FEE_TOO_HIGH', '429', 'fileURLToPath', 'require review'],
 }
 
 describe('authored references', () => {
@@ -63,5 +66,41 @@ describe('SKILL.md links the authored references', () => {
   it('keeps testnet keys out of the repository and gives a gate script one approval', () => {
     expect(skill).toMatch(/seed held outside the repository/)
     expect(skill).toMatch(/one approval for its whole run/)
+  })
+})
+
+describe('routing and operations references', () => {
+  const sections: Record<string, string[]> = {
+    'simple-routing.md': ['What @bsv/simple 0.7 covers', 'What it does not', 'Traps', 'When to drop to @bsv/sdk', 'Shape B recommendation', 'Prompts in @bsv/mcp'],
+    'testnet-to-mainnet.md': ['One variable', 'Faucet', 'Fee reality', 'Mainnet checklist', 'On 429 / 476 / FEE_TOO_HIGH'],
+  }
+  for (const [file, heads] of Object.entries(sections)) {
+    it(`${file} has its sections`, () => {
+      const t = read(file)
+      for (const h of heads) expect(t, h).toContain(`\n## ${h}\n`)
+    })
+  }
+
+  it('simple-routing.md states the wallet-toolbox Arcade caveat and the network spellings', () => {
+    const t = read('simple-routing.md')
+    for (const n of ['GorillaPool', 'Taal', 'arcUrl', 'arcGorillaPoolUrl', 'Bitails', 'WhatsOnChain first', 'GET /tx/{txid}', 'Setup.createWalletSQLite', 'go-wallet-toolbox']) expect(t, n).toContain(n)
+    expect(t).toMatch(/'testnet' \| 'main'/)
+    expect(t).toMatch(/'testnet' \| 'mainnet'/)
+    for (const p of ['add_simple_feature', 'debug_simple']) expect(t, p).toContain(p)
+  })
+
+  it('testnet-to-mainnet.md keeps the agent broadcast flag out of apps', () => {
+    const t = read('testnet-to-mainnet.md')
+    const flagLines = t.split('\n').filter((l) => l.includes('BSV_MCP_ALLOW_MAINNET_BROADCAST'))
+    expect(flagLines.length).toBeGreaterThan(0)
+    for (const l of flagLines) expect(l).toMatch(/agent|arcade_submit/)
+    expect(t).toContain('10M sats')
+  })
+
+  it('common-errors.md is a symptom, cause, fix table covering the known errors', () => {
+    const t = read('common-errors.md')
+    expect(t).toContain('| symptom | cause | fix |')
+    for (const n of ['WERR_INVALID_PARAMETER', 'Invalid isAuthenticated result', '466', '465', '461', '460', 'UTXO_SPENT', 'Undelayed createAction or signAction results require review', 'mainnet broadcast disabled; set BSV_MCP_ALLOW_MAINNET_BROADCAST=1']) expect(t, n).toContain(n)
+    expect(t).toMatch(/404.*wallet/i)
   })
 })
