@@ -11,7 +11,7 @@ repository owner merges, publishes and archives.
 | File | Goes to |
 |---|---|
 | `files/src/index.ts` | replaces `src/index.ts` |
-| `files/package.json` | replaces `package.json` (0.0.2 with `version` `0.0.3` and a `deprecated` field; nothing else differs) |
+| `files/package.json` | replaces `package.json` (0.0.2 with `version` `0.0.3`, a `deprecated` field and `@modelcontextprotocol/sdk` `^1.32.1`; nothing else differs) |
 | `files/README-banner.md` | prepended to `README.md` |
 | `PR-body.md` | the PR description |
 
@@ -31,7 +31,7 @@ start.
    cat "$KIT/files/README-banner.md" README.md > README.new && mv README.new README.md
    ```
 4. Refresh the lockfile and build: `npm install --package-lock-only && npm ci && npm run build`.
-5. Smoke-test: `node dist/index.js < /dev/null` prints the deprecation notice to stderr and exits 0.
+5. Work through the checklist in `PR-body.md`.
 6. Commit, push, and open the PR against `main` with `PR-body.md` as the description.
 7. The owner reviews and merges. The existing `push.yaml` publish job publishes 0.0.3 on the merge to `main`, because that
    version is not yet on npm. Check with `npm view @bsv/simple-mcp version`; if the job did not publish, the owner runs

@@ -11,8 +11,9 @@ stub that points users there, as version 0.0.3.
   then serves over stdio as before, so existing MCP clients still connect. It registers one resource, `simple://deprecated`
   (Markdown: how to install `@bsv/mcp` and where each piece moved), and no tools or prompts.
 - `src/resources/`, `src/tools/` and `src/prompts/` are removed.
-- `package.json`: `version` `0.0.3` and `"deprecated": "Replaced by @bsv/mcp 2.x"`; nothing else changes. `package-lock.json` is
-  refreshed to match.
+- `package.json`: `version` `0.0.3`, `"deprecated": "Replaced by @bsv/mcp 2.x"`, and `@modelcontextprotocol/sdk` raised from
+  `^1.11.0` to `^1.32.1`, because the stub uses `registerResource` with a `title`, which `^1.11` does not guarantee. Nothing else
+  changes. `package-lock.json` is refreshed to match.
 - `README.md` gains a deprecation banner with the install command and a table of where each resource and prompt moved:
 
 | `@bsv/simple-mcp` 0.0.2 | `@bsv/mcp` 2.x |
@@ -38,10 +39,13 @@ npm deprecate @bsv/simple-mcp "Replaced by @bsv/mcp 2.x: npm i -g @bsv/mcp"
 Archive this repository after the docs page is updated: the "Set up your AI" page (`/docs/build-with-ai`) must point at
 `@bsv/mcp` first, so nobody following the docs lands on an archived repo.
 
-### Checked
+### Checklist (run in this checkout before requesting review)
 
-- `npm run build` passes with the repository's own `tsconfig.json`.
-- Started over stdio: prints the notice, answers `initialize` as `@bsv/simple-mcp` 0.0.3, lists exactly one resource
-  (`simple://deprecated`), and exits when stdin closes.
+- [ ] `npm install --package-lock-only` refreshed `package-lock.json`, and `npm ci` passes.
+- [ ] `npm run build` passes with the repository's own `tsconfig.json`.
+- [ ] `node dist/index.js < /dev/null` prints the deprecation notice to stderr and exits 0.
+- [ ] Over stdio, `initialize` reports `@bsv/simple-mcp` 0.0.3 and `resources/list` returns exactly one resource,
+  `simple://deprecated`, with no tools.
+- [ ] `npx -y @bsv/mcp` starts the replacement server (stop it with Ctrl-C).
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

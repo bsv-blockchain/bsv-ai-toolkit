@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// bsv-mcp-versions-check [--json] [--max-age-days N]
+// node packages/mcp/build/cli/versions-check.js [--json] [--max-age-days N] (repo maintainers; not an installed bin)
 // Prints the versions_check rows (Markdown table, or JSON with --json). Exits 1 when any row drifts or any
 // verified date is older than N days (default 60), 2 on bad arguments.
 import { formatVersionsTable, loadVersionsFile, versionsCheck } from '../tools/versions.js'
 
-const USAGE = 'usage: bsv-mcp-versions-check [--json] [--max-age-days N]'
+const USAGE = 'usage: node packages/mcp/build/cli/versions-check.js [--json] [--max-age-days N]'
 
 function parseArgs(argv: string[]): { json: boolean; maxAgeDays: number } {
   let json = false
