@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@bsv/sdk": "3.2.1"
+    "@bsv/sdk": "3.0.0",
+    "runar-sdk": "0.4.6"
   }
 }

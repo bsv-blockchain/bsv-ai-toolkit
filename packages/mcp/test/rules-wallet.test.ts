@@ -23,7 +23,7 @@ function lint(project: string): Promise<GuardrailReport> {
 function runOn(rule: Rule, rel: string, text: string, shape: ShapeDetected = 'A') {
   const file: ProjectFile = { rel, abs: `/x/${rel}`, text, isClient: rel.startsWith('src/'), isTest: false }
   const meta = loadGuardrailMeta(CONTENT).find(m => m.id === rule.id)!
-  return rule.run({ files: [file], shape, root: '/x', meta }).findings
+  return rule.run({ files: [file], shape, root: '/x', meta, contentDir: CONTENT }).findings
 }
 
 async function expectFinding(project: string, id: string, file: string, severity: string, line?: number): Promise<Finding> {

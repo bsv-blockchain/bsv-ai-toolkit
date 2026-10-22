@@ -60,7 +60,7 @@ export async function runGuardrails(
     const rule = meta.detect === 'static' ? ruleSet.find(r => r.id === meta.id) : undefined
     if (!rule) { report.manualChecklist.push(meta.id); continue }
 
-    const result = rule.run({ files, shape, root, meta })
+    const result = rule.run({ files, shape, root, meta, contentDir: opts.contentDir })
     if (!result.applicable) { report.notApplicable.push(meta.id); continue }
     const kept: Finding[] = result.findings
       .filter(f => { const file = byRel.get(f.file); return !(file && isSuppressed(file, f.line, meta.id)) })
