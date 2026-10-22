@@ -47,9 +47,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`BSV_NETWORK must be "testnet" or "mainnet", got "${raw}"`)
   }
   const network: Network = raw
+  const arcadeUrl = nonEmpty(env.ARCADE_URL) ?? DEFAULT_ARCADE[network]
+  checkHost(network, arcadeUrl) // fail fast at startup; a ttn warning is surfaced per call by resolveNetwork
   return {
     network,
-    arcadeUrl: nonEmpty(env.ARCADE_URL) ?? DEFAULT_ARCADE[network],
+    arcadeUrl,
     allowMainnetBroadcast: env.BSV_MCP_ALLOW_MAINNET_BROADCAST === '1',
     reposDir: nonEmpty(env.BSV_REPOS_DIR),
     wocApiKey: nonEmpty(env.WOC_API_KEY),
@@ -65,9 +67,16 @@ export function resolveNetwork(
   // A configured ARCADE_URL belongs to the configured network; switching network without a URL uses that network's default.
   const arcadeUrl = nonEmpty(input.arcadeUrl) ?? (network === cfg.network ? cfg.arcadeUrl : DEFAULT_ARCADE[network])
 
+  const warning = checkHost(network, arcadeUrl)
+  return warning ? { network, arcadeUrl, warning } : { network, arcadeUrl }
+}
+
+// Throws on an unparseable URL or a host known to belong to the other network; returns a warning for a ttn host.
+function checkHost(network: Network, arcadeUrl: string): string | undefined {
   let host: string
   try {
-    host = new URL(arcadeUrl).hostname.toLowerCase()
+    // Lowercase and drop trailing dots so a fully-qualified 'host.' (or 'host%2E') cannot dodge the lists.
+    host = new URL(arcadeUrl).hostname.toLowerCase().replace(/\.+$/, '')
   } catch {
     throw new Error(`invalid arcadeUrl: ${arcadeUrl}`)
   }
@@ -77,7 +86,7 @@ export function resolveNetwork(
     throw new Error(`network/host mismatch: ${host} is a known ${other} Arcade host, but network is ${network}`)
   }
   if (KNOWN_HOSTS.ttn.includes(host)) {
-    return { network, arcadeUrl, warning: `ttn host: neither testnet nor mainnet (${host} is the Teranode test network)` }
+    return `ttn host: neither testnet nor mainnet (${host} is the Teranode test network)`
   }
-  return { network, arcadeUrl }
+  return undefined
 }
