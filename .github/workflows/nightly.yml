@@ -61,7 +61,10 @@ jobs:
           import { readFileSync, writeFileSync, appendFileSync } from 'node:fs'
           const out = process.env.OUT
           const source = 'https://bsv.writedocs.io/llms.txt'
-          let lines = []
+          // drift: docs-index ids missing from llms.txt (likely broken links). info: llms.txt pages the curated
+          // index does not list; report-only, never drift on its own.
+          const lines = []
+          const info = []
           try {
             const { ids } = JSON.parse(readFileSync('packages/mcp/content/docs-index.json', 'utf8'))
             const res = await fetch(source, { signal: AbortSignal.timeout(20_000) })
@@ -71,13 +74,15 @@ jobs:
             const indexed = new Set(Object.values(ids).map((e) => e.path))
             const unindexed = [...linked].filter((p) => !indexed.has(p)).sort()
             const unlisted = Object.entries(ids).filter(([, e]) => !linked.has(e.path)).map(([id, e]) => `${id} (${e.path})`).sort()
-            if (unindexed.length) lines.push('Linked from llms.txt, absent from docs-index.yaml:', '', ...unindexed.map((p) => `- \`/docs/${p}.md\``), '')
             if (unlisted.length) lines.push('docs-index.yaml ids whose path is absent from llms.txt:', '', ...unlisted.map((s) => `- \`${s}\``), '')
+            if (unindexed.length) info.push(`<details><summary>${unindexed.length} llms.txt pages not in docs-index.yaml (informational)</summary>`, '', ...unindexed.map((p) => `- \`/docs/${p}.md\``), '', '</details>', '')
           } catch (e) {
             lines.push(`Could not compare ${source} with docs-index: ${e.message}`, '')
           }
           writeFileSync(`${out}/llms.md`, lines.join('\n'))
-          console.log(lines.length ? lines.join('\n') : 'llms.txt and docs-index.yaml agree')
+          writeFileSync(`${out}/llms-info.md`, info.join('\n'))
+          console.log(lines.length ? lines.join('\n') : 'every docs-index id is in llms.txt')
+          if (info.length) console.log(info.join('\n'))
           appendFileSync(process.env.GITHUB_OUTPUT, `drift=${lines.length ? 'true' : 'false'}\n`)
           JS
 
@@ -111,7 +116,8 @@ jobs:
           if (process.env.FACTS_CODE !== '0') body.push('## Verified dates', '', '```', read('facts.txt'), '```', '')
           if (process.env.LINKS_CODE !== '0') body.push('## Links', '', '```', read('links.txt'), '```', '')
           const llms = read('llms.md')
-          if (llms) body.push('## llms.txt', '', llms, '')
+          const llmsInfo = read('llms-info.md')
+          if (llms || llmsInfo) body.push('## llms.txt', '', ...(llms ? [llms, ''] : []), ...(llmsInfo ? [llmsInfo, ''] : []))
           writeFileSync(`${out}/issue.md`, body.join('\n'))
           JS
           # Exact-title match over the open issues (search syntax would read `Freshness:` as a qualifier).
