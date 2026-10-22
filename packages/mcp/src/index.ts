@@ -22,6 +22,7 @@ console.error(`Using repository directory: ${BSV_REPOS_DIR}`);
 const server = new McpServer({
     name: "@bsv/mcp",
     version: "1.0.8",
+}, {
     capabilities: { tools: {}, prompts: {} },
 });
 console.error("BSV Developer Server initializing...");
