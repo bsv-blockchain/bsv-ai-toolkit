@@ -11,13 +11,34 @@ import { createServer } from '../src/server.js'
 const PROJECTS = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'projects')
 const SUMMARY_RE = /^check_guardrails: (\d+) errors, (\d+) warnings, shape (A|B|A\+B|unknown)$/
 
-const tmpRoots: string[] = []
+// Each tmp project has src/ok.ts plus `locked`, made unreadable (chmod 000) by the caller.
+const tmpRoots: { root: string; locked: string }[] = []
+function tmpProject(locked: 'file' | 'dir'): { root: string; locked: string } {
+  const root = mkdtempSync(join(tmpdir(), 'bsv-guardrails-'))
+  mkdirSync(join(root, 'src'))
+  writeFileSync(join(root, 'package.json'), '{"name":"x"}')
+  writeFileSync(join(root, 'src', 'ok.ts'), 'export const a = 1\n')
+  let path: string
+  if (locked === 'file') {
+    path = join(root, 'src', 'locked.ts')
+    writeFileSync(path, 'export const b = 2\n')
+  } else {
+    path = join(root, 'src', 'locked')
+    mkdirSync(path)
+    writeFileSync(join(path, 'b.ts'), 'export const b = 2\n')
+  }
+  const p = { root, locked: path }
+  tmpRoots.push(p)
+  return p
+}
 afterAll(() => {
-  for (const r of tmpRoots) {
-    chmodSync(join(r, 'src', 'locked.ts'), 0o644)
-    rmSync(r, { recursive: true, force: true })
+  for (const { root, locked } of tmpRoots) {
+    try { chmodSync(locked, 0o755) } catch { /* already gone or never locked */ }
+    rmSync(root, { recursive: true, force: true })
   }
 })
+// chmod 000 does not stop root, and Windows ignores it.
+const chmodBlocksReads = process.platform !== 'win32' && process.getuid?.() !== 0
 
 async function connect() {
   const server = createServer(loadConfig({}))
@@ -61,25 +82,36 @@ describe('check_guardrails', () => {
     expect(r.content[0].text).toMatch(/path not found/)
   })
 
+  it('relative path is an error', async () => {
+    const r = await check({ path: 'test/fixtures/projects/broken-a' })
+    expect(r.isError).toBe(true)
+    expect(r.content[0].text).toMatch(/^path must be absolute/)
+    expect(r.structuredContent).toBeUndefined()
+  })
+
   it('tool is registered with the name check_guardrails', async () => {
     const client = await connect()
     const names = (await client.listTools()).tools.map(t => t.name)
     expect(names).toContain('check_guardrails')
   })
 
-  // chmod 000 does not stop root, and Windows ignores it.
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('an unreadable file is skipped and noted', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bsv-guardrails-'))
-    tmpRoots.push(root)
-    mkdirSync(join(root, 'src'))
-    writeFileSync(join(root, 'package.json'), '{"name":"x"}')
-    writeFileSync(join(root, 'src', 'ok.ts'), 'export const a = 1\n')
-    writeFileSync(join(root, 'src', 'locked.ts'), 'export const b = 2\n')
-    chmodSync(join(root, 'src', 'locked.ts'), 0o000)
+  it.skipIf(!chmodBlocksReads)('an unreadable file is skipped and noted', async () => {
+    const { root, locked } = tmpProject('file')
+    chmodSync(locked, 0o000)
 
     const r = await check({ path: root })
     expect(r.isError).toBeFalsy()
     expect(firstLine(r)).toMatch(SUMMARY_RE)
-    expect(r.content[0].text).toMatch(/^note: skipped src\/locked\.ts \(EACCES/m)
+    expect(r.content[0].text).toMatch(/^note: skipped src\/locked\.ts \(EACCES\)$/m)
+  })
+
+  it.skipIf(!chmodBlocksReads)('an unreadable directory is skipped and noted', async () => {
+    const { root, locked } = tmpProject('dir')
+    chmodSync(locked, 0o000)
+
+    const r = await check({ path: root })
+    expect(r.isError).toBeFalsy()
+    expect(firstLine(r)).toMatch(SUMMARY_RE)
+    expect(r.content[0].text).toMatch(/^note: skipped src\/locked\/ \(EACCES\)$/m)
   })
 })

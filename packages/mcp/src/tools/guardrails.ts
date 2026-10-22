@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
@@ -23,7 +23,9 @@ export async function checkGuardrails(
   input: CheckInput,
   contentDir = CONTENT_DIR,
 ): Promise<{ report: GuardrailReport; summary: string }> {
-  const root = resolve(input.path)
+  // A relative path would resolve against the server's cwd (often / or $HOME), not the user's project.
+  if (!isAbsolute(input.path)) throw new Error(`path must be absolute: ${input.path}`)
+  const root = resolve(input.path) // normalise . and .. segments
   const st = await stat(root).catch((e: NodeJS.ErrnoException) => {
     if (e.code === 'ENOENT' || e.code === 'ENOTDIR') throw new Error(`path not found: ${root}`)
     throw e
@@ -56,7 +58,7 @@ function summarize(report: GuardrailReport, shape: CheckInput['shape'], skipped:
   list('not applicable', report.notApplicable)
   list('manual checklist', report.manualChecklist)
   for (const s of skipped.slice(0, MAX_SKIP_NOTES)) lines.push(`note: skipped ${s}`)
-  if (skipped.length > MAX_SKIP_NOTES) lines.push(`note: skipped ${skipped.length - MAX_SKIP_NOTES} more unreadable files`)
+  if (skipped.length > MAX_SKIP_NOTES) lines.push(`note: skipped ${skipped.length - MAX_SKIP_NOTES} more unreadable files or directories`)
   return lines.join('\n')
 }
 
@@ -71,7 +73,7 @@ export function registerGuardrailTools(server: McpServer, _cfg: Config): void {
         'Returns findings with fixes, plus the passed, not-applicable and manual-checklist guardrail ids. ' +
         'Suppress a finding with `// bsv-guardrail-ignore G-xx reason` on the line or the line above.',
       inputSchema: {
-        path: z.string().describe('Project root to check (absolute, or relative to the server working directory)'),
+        path: z.string().describe('Absolute path of the project root to check'),
         shape: z.enum(['A', 'B', 'auto']).default('auto').describe('Custody shape; auto detects it from the code'),
         include: z.array(z.string()).optional().describe('Glob patterns to check, relative to path (default: all text files)'),
         exclude: z.array(z.string()).optional().describe('Glob patterns to skip, relative to path'),
