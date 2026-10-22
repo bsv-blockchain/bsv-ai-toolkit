@@ -141,7 +141,7 @@ export function registerSearchTools(server: McpServer, cfg: Config): void {
         'per file as path:line:text.',
       inputSchema: {
         query: z.string().describe('Regular expression to search for'),
-        repository_name: z.string().optional().describe('Limit to one repository directory under BSV_REPOS_DIR, e.g. ts-sdk'),
+        repository_name: z.string().optional().describe('Limit to one repository directory under BSV_REPOS_DIR, e.g. ts-stack'),
         file_extension: z.string().optional().describe('Limit to one file type, e.g. ts or *.go'),
       },
     },
@@ -156,7 +156,7 @@ export function registerSearchTools(server: McpServer, cfg: Config): void {
         '(TypeScript, JavaScript, Python, Go, Rust, Java); searches src/, lib/ and source/ first.',
       inputSchema: {
         function_name: z.string().describe('Exact name of the function, method or constant'),
-        repository_name: z.string().optional().describe('Limit to one repository directory under BSV_REPOS_DIR, e.g. ts-sdk'),
+        repository_name: z.string().optional().describe('Limit to one repository directory under BSV_REPOS_DIR, e.g. ts-stack'),
       },
     },
     (input) => run(() => findFunctionDefinition(input, cfg)),

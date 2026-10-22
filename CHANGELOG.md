@@ -13,7 +13,7 @@ The repository becomes a pnpm monorepo and `@bsv/mcp` is rewritten around testne
 - `check_guardrails`: a read-only static check of a project (absolute path) against the guardrails `G-01`..`G-34`, with fixes, refs and a manual checklist.
 - `versions_check` and the `bsv-mcp-versions-check` command: pinned versions against npm, the Rúnar git head and every known Arcade host.
 - `docs_url`: resolves stable docs ids to a live page across docs hosts.
-- Resources: `bsv://facts/*`, `bsv://guardrails`, `bsv://guardrails{#id}`, `bsv://custody-shapes`, `bsv://threat-model`, `bsv://docs/index`, `bsv://simple/api`, `bsv://simple/gotchas`, `bsv://brc/{id}`. Every Markdown resource carries its `verified:` date.
+- Resources: `bsv://facts/*`, `bsv://guardrails`, `bsv://guardrails{#id}`, `bsv://custody-shapes`, `bsv://threat-model`, `bsv://docs/index`, `bsv://simple/api`, `bsv://simple/gotchas`, `bsv://brc/{id}`. Every content resource carries its `verified:` date (`bsv://brc/{id}` serves the upstream BRC text as-is).
 - Prompts: `review_against_guardrails`, `tokenize_with_1color`, and, folded in from `@bsv/simple-mcp` and rewritten for `@bsv/simple` 0.7 and testnet: `integrate_simple`, `add_simple_feature`, `debug_simple`.
 - Environment: `BSV_NETWORK` (`testnet` default), `ARCADE_URL`, `BSV_MCP_ALLOW_MAINNET_BROADCAST`, `WOC_API_KEY`. `arcade_submit` on mainnet needs `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`, and an Arcade host known to belong to the other network is refused.
 

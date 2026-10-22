@@ -2,7 +2,7 @@
 
 An MCP server for building BSV applications with AI coding agents, testnet first: Arcade broadcast and status tools, a static guardrail checker, BRC and docs lookup, and dated facts served as `bsv://` resources.
 
-Source, changelog and the companion `bsv-dev` skill: [github.com/bsv-blockchain/bsv-mcp](https://github.com/bsv-blockchain/bsv-mcp).
+Source, changelog and the companion `bsv-dev` skill (arrives with plan 1b): [github.com/bsv-blockchain/bsv-mcp](https://github.com/bsv-blockchain/bsv-mcp).
 
 ## Install
 
@@ -75,7 +75,7 @@ Each Markdown resource starts with `verified: YYYY-MM-DD` and `source: @bsv/mcp 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BSV_NETWORK` | `testnet` | `testnet` or `mainnet`. Picks the default Arcade and gates mainnet broadcast. Any other value stops the server at startup. |
-| `ARCADE_URL` | per network | Arcade base URL. Defaults: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`. |
+| `ARCADE_URL` | per network | Arcade base URL. Defaults: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
 | `BSV_MCP_ALLOW_MAINNET_BROADCAST` | unset | `1` lets `arcade_submit` broadcast on mainnet. |
 | `BSV_REPOS_DIR` | unset | Directory filled by `setup.sh`. Needed by `code_search` and `find_function_definition`; `brc_lookup` reads the `BRCs` clone there first. |
 | `WOC_API_KEY` | unset | Optional WhatsOnChain key, reserved for `versions_check`; no tool sends it today. |

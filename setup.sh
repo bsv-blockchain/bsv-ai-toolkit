@@ -45,7 +45,8 @@ if ! mkdir -p -- "$1"; then
   echo "error: cannot create $1" >&2
   exit 1
 fi
-TARGET_DIR="$(cd -- "$1" && pwd)"
+# CDPATH= keeps cd from resolving a relative name elsewhere (and from printing that path into TARGET_DIR).
+TARGET_DIR="$(CDPATH= cd -- "$1" && pwd)" || { echo "error: cannot enter $1" >&2; exit 1; }
 
 failures=0
 for url in "${REPOS[@]}"; do
