@@ -23,7 +23,7 @@ There is no way to point `@bsv/simple` at Arcade.
 - In the browser the user's wallet broadcasts.
 - `ServerWallet.create` builds wallet-toolbox `Services` with their defaults, which in `@bsv/wallet-toolbox` 2.14.9 broadcast through legacy ARC endpoints for `main` and `test`.
 
-When you need tracking (the `SEEN_ON_NETWORK` gate, `competingTxs`, rejection reasons), drop to `@bsv/sdk` + Arcade for that step: take the transaction the action returns, submit it to your own Arcade (`POST /tx`, as EF), and read `GET /tx/{txid}`. For a server wallet that broadcasts through Arcade first, build the wallet-toolbox wallet yourself with `arcadeUrl` in its services options. That alone is not enough: the toolbox still falls back to ARC and explorer broadcasters unless `arcUrl` and `arcGorillaPoolUrl` are blank, and its status reads ask WhatsOnChain first. For money decisions, keep submitting to your own Arcade and gating on its `GET /tx/{txid}`.
+When you need tracking (the `SEEN_ON_NETWORK` gate, `competingTxs`, rejection reasons), drop to `@bsv/sdk` + Arcade for that step: take the transaction the action returns, submit it to your own Arcade (`POST /tx`, as EF), and read `GET /tx/{txid}`. For a server wallet that broadcasts through Arcade first, build the wallet-toolbox wallet yourself with `arcadeUrl` in its services options. That alone is not enough: the toolbox still falls back to GorillaPool and Taal ARC (unless `arcUrl` and `arcGorillaPoolUrl` are blank), and then to Bitails and WhatsOnChain. No option disables those last two on `main` or `test`, and the toolbox's status reads ask WhatsOnChain first. For money decisions, keep submitting to your own Arcade and gating on its `GET /tx/{txid}`.
 
 ## `pay()` via MessageBox may return an empty txid
 
