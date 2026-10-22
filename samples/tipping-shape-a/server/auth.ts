@@ -8,10 +8,14 @@ import { ProtoWallet, PublicKey, Utils } from '@bsv/sdk'
 export const TIPS_PROTOCOL: [1, string] = [1, 'bsv tipping demo tips']
 export const SIGNATURE_KEY_ID = '1'
 
-/** Signed by the identity key that claims the creator page. */
-export const claimMessage = (identityKey: string) => `claim:${identityKey.toLowerCase()}`
-/** Signed by the creator after its wallet internalized the tip. */
-export const internalizedMessage = (txid: string) => `internalized:${txid.toLowerCase()}`
+// Both messages name the deployment's origin (PUBLIC_ORIGIN), so a signature made for one relay is useless on
+// another. The claim also carries a nonce from GET /api/config that changes after every successful claim, so a
+// claim signature cannot be replayed once the claim is reset.
+
+/** Signed by the identity key that claims the creator page: claim:<origin>:<identityKey>:<nonce>. */
+export const claimMessage = (origin: string, identityKey: string, nonce: string) => `claim:${origin}:${identityKey.toLowerCase()}:${nonce}`
+/** Signed by the creator after its wallet internalized the tip: internalized:<origin>:<txid>. */
+export const internalizedMessage = (origin: string, txid: string) => `internalized:${origin}:${txid.toLowerCase()}`
 
 const anyone = new ProtoWallet('anyone')
 

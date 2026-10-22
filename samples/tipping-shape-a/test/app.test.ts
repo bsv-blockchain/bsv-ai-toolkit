@@ -122,6 +122,7 @@ describe('loadServerConfig', () => {
       port: 9090,
       dataDir: '/data',
       creatorIdentityKey: key,
+      trustProxy: 'loopback, linklocal, uniquelocal',
     })
     expect(loadServerConfig({}, quiet)).toMatchObject({ publicOrigin: 'http://localhost:5173', port: 8080, dataDir: './data' })
     expect(loadServerConfig({}, quiet).creatorIdentityKey).toBeUndefined()

@@ -1,3 +1,4 @@
+import express from 'express'
 import { isIdentityKey } from './auth.js'
 
 // Relay settings from the environment. This is the app's own startup network check: BSV_NETWORK is the one
@@ -18,7 +19,16 @@ export interface ServerConfig {
    * signature) becomes the creator. Required on mainnet.
    */
   creatorIdentityKey?: string
+  /** Express 'trust proxy': which peers may set X-Forwarded-For (so req.ip, and the rate limit, see the client). */
+  trustProxy: boolean | number | string
 }
+
+/**
+ * TRUST_PROXY default: trust X-Forwarded-For only from loopback, link-local and private-network peers, which covers
+ * a reverse proxy on the same host or in the same compose network. Set TRUST_PROXY to the proxy's address(es) or a
+ * hop count when it sits elsewhere, or to false when nothing sits in front of the relay.
+ */
+export const DEFAULT_TRUST_PROXY = 'loopback, linklocal, uniquelocal'
 
 export const DEFAULT_ARCADE: Record<Network, string> = {
   testnet: 'https://arcade-testnet-us-1.bsvblockchain.tech',
@@ -69,6 +79,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
     publicOrigin: readOrigin(env),
     port: readPort(env.PORT),
     dataDir: nonEmpty(env.DATA_DIR) ?? './data',
+    trustProxy: readTrustProxy(env.TRUST_PROXY),
   }
   const creator = nonEmpty(env.CREATOR_IDENTITY_KEY)
   if (creator !== undefined) {
@@ -122,6 +133,18 @@ function readOrigin(env: NodeJS.ProcessEnv): string {
     throw new Error(`PUBLIC_ORIGIN must be an http(s) origin, got "${value}"`)
   }
   return url.origin
+}
+
+// 'true' / 'false', a hop count, or a comma-separated list of addresses, subnets or the names Express knows.
+function readTrustProxy(value: string | undefined): boolean | number | string {
+  const raw = nonEmpty(value?.trim()) ?? DEFAULT_TRUST_PROXY
+  const parsed = raw === 'true' ? true : raw === 'false' ? false : /^\d+$/.test(raw) ? Number(raw) : raw
+  try {
+    express().set('trust proxy', parsed) // Express validates the addresses here
+  } catch (e) {
+    throw new Error(`TRUST_PROXY is not valid (${e instanceof Error ? e.message : String(e)}): "${raw}"`)
+  }
+  return parsed
 }
 
 function readPort(value: string | undefined): number {

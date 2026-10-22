@@ -1,19 +1,20 @@
+import { randomBytes } from 'node:crypto'
 import express from 'express'
 import { REJECTED_MAY_NOT_BE_FINAL, type Arcade, type Outcome } from './arcade.js'
 import { claimMessage, internalizedMessage, isIdentityKey, verifyCreatorSignature } from './auth.js'
 import { efHexFromAtomicBeef, outputPaysScript } from './beef.js'
 import type { ServerConfig } from './config.js'
 import type { Db, Remittance, TipRow } from './db.js'
-import { RateLimiter } from './rate-limit.js'
+import { addressKey, RateLimiter } from './rate-limit.js'
 import type { Broadcaster } from './sse.js'
 
 export interface Limits {
   /** POST /api/tips per client address: burst, then refilled per minute. */
   tipBurst: number
   tipsPerMinute: number
-  /** Remittance candidates stored per txid. */
+  /** Remittance candidates stored per txid (each with the BEEF it arrived with). */
   remittancesPerTip: number
-  /** Tips kept; above this the oldest that are not seen-no-competitor are deleted. */
+  /** Tips kept; above this terminal tips, then the oldest that are not seen-no-competitor, are deleted. */
   maxTips: number
   /** terminal tips are deleted after this long without an update. */
   terminalMaxAgeMs: number
@@ -24,7 +25,7 @@ export interface Limits {
 export const DEFAULT_LIMITS: Limits = {
   tipBurst: 5,
   tipsPerMinute: 10,
-  remittancesPerTip: 16,
+  remittancesPerTip: 64,
   maxTips: 5000,
   terminalMaxAgeMs: 24 * 60 * 60 * 1000,
   statusFreshMs: 2000,
@@ -39,11 +40,13 @@ export interface ApiDeps {
   now?: () => number
 }
 
-// A tip's AtomicBEEF carries its unproven ancestors, so allow some room, but no more.
-const BODY_LIMIT = '1mb'
+// A tip's AtomicBEEF carries its unproven ancestors and their proofs: a little room, no more. Every candidate
+// stores its own BEEF, so this also bounds what one POST can make the relay keep.
+const BODY_LIMIT = '256kb'
 // How long POST /api/tips waits for SEEN_ON_NETWORK before answering with the status it has.
 const SEEN_WAIT_MS = 15_000
 const CREATOR_SETTING = 'creatorIdentityKey'
+const CLAIM_NONCE_SETTING = 'claimNonce'
 
 const TXID = /^[0-9a-f]{64}$/i
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
@@ -51,7 +54,7 @@ const MAX_DERIVATION_LENGTH = 256
 
 class BadRequest extends Error {}
 
-type Candidate = Omit<Remittance, 'receivedAt'>
+type Candidate = Omit<Remittance, 'receivedAt' | 'beefId'>
 
 interface PostedTip {
   txid: string
@@ -128,6 +131,12 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   const lastRead = new Map<string, number>()
 
   const creator = (): string | undefined => cfg.creatorIdentityKey ?? db.getSetting(CREATOR_SETTING)
+  const newClaimNonce = () => {
+    const nonce = randomBytes(16).toString('hex')
+    db.setSetting(CLAIM_NONCE_SETTING, nonce)
+    return nonce
+  }
+  const claimNonce = () => db.getSetting(CLAIM_NONCE_SETTING) ?? newClaimNonce()
 
   /** Stores an Arcade outcome and emits 'status' when it changed the row. Undefined if the tip was pruned meanwhile. */
   function store(txid: string, o: Outcome): TipRow | undefined {
@@ -149,9 +158,10 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   function submitOnce(txid: string, efHex: string): Promise<Outcome> {
     let pending = broadcasts.get(txid)
     if (pending === undefined) {
+      // A transient outcome (Arcade unreachable, 5xx, 429) says nothing about the transaction: keep what is stored.
       pending = arcade
         .broadcast(efHex, txid, SEEN_WAIT_MS)
-        .then(o => (store(txid, o), o))
+        .then(o => (o.transient || store(txid, o), o))
         .finally(() => broadcasts.delete(txid))
       broadcasts.set(txid, pending)
     }
@@ -183,11 +193,18 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   api.use(express.json({ limit: BODY_LIMIT }))
 
   api.get('/config', (_req, res) => {
-    res.json({ network: cfg.network, creatorIdentityKey: creator(), originator: cfg.publicOrigin, arcadeUrl: cfg.arcadeUrl })
+    res.json({
+      network: cfg.network,
+      creatorIdentityKey: creator(),
+      originator: cfg.publicOrigin,
+      arcadeUrl: cfg.arcadeUrl,
+      claimNonce: claimNonce(),
+    })
   })
 
-  // The first wallet to claim the creator page becomes the creator, unless CREATOR_IDENTITY_KEY fixes it.
-  // The claim carries the key's signature over claim:<identityKey>, so nobody can claim with a key they do not hold.
+  // The first wallet to claim the creator page becomes the creator, unless CREATOR_IDENTITY_KEY fixes it. The claim
+  // carries the key's signature over claim:<origin>:<identityKey>:<claimNonce>, so nobody can claim with a key they
+  // do not hold, and the signature is good for this relay and this nonce only.
   api.post('/creator', async (req, res) => {
     const key = req.body?.identityKey
     if (!isIdentityKey(key)) {
@@ -195,13 +212,15 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
       return
     }
     const identityKey = key.toLowerCase()
-    if (!(await verifyCreatorSignature(claimMessage(identityKey), req.body?.signature, identityKey))) {
-      res.status(403).json({ error: 'signature must be the identity key signing claim:<identityKey>' })
+    if (!(await verifyCreatorSignature(claimMessage(cfg.publicOrigin, identityKey, claimNonce()), req.body?.signature, identityKey))) {
+      res.status(403).json({ error: 'signature must be the identity key signing claim:<origin>:<identityKey>:<claimNonce>' })
       return
     }
     const current = creator()
-    if (current === undefined) db.setSetting(CREATOR_SETTING, identityKey)
-    else if (current !== identityKey) {
+    if (current === undefined) {
+      db.setSetting(CREATOR_SETTING, identityKey)
+      newClaimNonce() // this signature is spent
+    } else if (current !== identityKey) {
       res.status(409).json({ error: 'the creator page is already claimed by another identity key' })
       return
     }
@@ -209,7 +228,7 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   })
 
   api.post('/tips', async (req, res) => {
-    const client = req.ip ?? 'unknown'
+    const client = addressKey(req.ip)
     if (!tipLimiter.take(client, now())) {
       res.status(429).set('Retry-After', String(tipLimiter.retryAfter(client))).json({ error: 'too many tips from this address; retry shortly' })
       return
@@ -226,18 +245,19 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     let isNew = false
     if (db.getTip(tip.txid) === undefined) {
       db.prune({ now: now(), terminalMaxAgeMs: limits.terminalMaxAgeMs, maxTips: limits.maxTips - 1 })
-      isNew = db.insertTip({ txid: tip.txid, beefHex: tip.beefHex, txStatus: 'UNKNOWN', verdict: 'pending', competingTxs: [] }).inserted
+      isNew = db.insertTip({ txid: tip.txid, txStatus: 'UNKNOWN', verdict: 'pending', competingTxs: [] }).inserted
     }
-    // Anyone who sees the transaction can post it with another remittance, so each distinct one is a candidate.
-    const added = db.addRemittance(tip.txid, tip.remittance, limits.remittancesPerTip)
+    // Anyone who sees the transaction can post it with another remittance or another BEEF, so each distinct
+    // remittance is a candidate that keeps the BEEF it came with.
+    const added = db.addRemittance(tip.txid, tip.remittance, tip.beefHex, limits.remittancesPerTip)
     if (added === 'full') {
       res.status(409).json({ error: `this tip already has ${limits.remittancesPerTip} remittance candidates` })
       return
     }
 
-    let transient = false
+    let outcome: Outcome | undefined
     const current = db.getTip(tip.txid)
-    if (current !== undefined && !settled(current)) transient = (await submitOnce(tip.txid, tip.efHex)).transient
+    if (current !== undefined && !settled(current)) outcome = await submitOnce(tip.txid, tip.efHex)
     const row = db.getTip(tip.txid)
     if (row === undefined) {
       res.status(503).json({ error: 'the relay is at capacity; retry shortly' })
@@ -245,8 +265,10 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     }
     // A new tip, or a new candidate for one, is something for the creator page to collect.
     if (isNew || added === 'inserted') broadcaster.emit('tip', row)
-    // The row stays (verdict pending); the browser retries the POST, which submits again.
-    if (transient) res.status(502).json({ ...row, transient: true, error: 'Arcade did not take the transaction; retry' })
+    // The stored row is unchanged (verdict pending for a new tip); the browser retries the POST, which submits again.
+    if (outcome?.transient) {
+      res.status(502).json({ ...row, transient: true, error: `Arcade did not take the transaction (${outcome.txStatus}): ${outcome.note ?? 'retry'}` })
+    }
     else res.json(row)
   })
 
@@ -271,9 +293,21 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     res.json(db.getTip(txidOf(req)))
   })
 
+  // The BEEF a candidate arrived with (its remittance's beefId): the creator internalizes the candidate it matched
+  // with that candidate's own BEEF, never another poster's.
   api.get('/tips/:txid/beef', (req, res) => {
     const txid = txidOf(req)
-    res.json({ txid, beefHex: db.getBeef(txid) })
+    const id = req.query.id
+    if (typeof id !== 'string' || !/^[0-9a-f]{64}$/i.test(id)) {
+      res.status(400).json({ error: 'id must be the beefId (64 hex characters) of one of this tip\'s remittances' })
+      return
+    }
+    const beefHex = db.getBeef(txid, id.toLowerCase())
+    if (beefHex === undefined) {
+      res.status(404).json({ error: 'no remittance of this tip has that beefId' })
+      return
+    }
+    res.json({ txid, beefId: id.toLowerCase(), beefHex })
   })
 
   api.get('/tips/:txid/status', async (req, res) => {
@@ -300,16 +334,16 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
       res.status(409).json({ error: 'no creator has claimed this relay yet' })
       return
     }
-    if (!(await verifyCreatorSignature(internalizedMessage(txid), req.body?.signature, key))) {
-      res.status(403).json({ error: 'signature must be the creator signing internalized:<txid>' })
+    if (!(await verifyCreatorSignature(internalizedMessage(cfg.publicOrigin, txid), req.body?.signature, key))) {
+      res.status(403).json({ error: 'signature must be the creator signing internalized:<origin>:<txid>' })
       return
     }
     db.markInternalized(txid)
     res.json(db.getTip(txid))
   })
 
-  api.get('/events', (_req, res) => {
-    broadcaster.add(res)
+  api.get('/events', (req, res) => {
+    broadcaster.add(res, addressKey(req.ip))
   })
 
   api.use((_req, res) => {

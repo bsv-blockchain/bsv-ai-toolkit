@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import http from 'node:http'
@@ -7,15 +8,17 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MerklePath, P2PKH, PrivateKey, ProtoWallet, Transaction, UnlockingScript, Utils } from '@bsv/sdk'
 import type express from 'express'
+import Database from 'better-sqlite3'
 import request from 'supertest'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../server/app.js'
 import { Arcade, verdictOf } from '../server/arcade.js'
 import { claimMessage, internalizedMessage, isIdentityKey, SIGNATURE_KEY_ID, TIPS_PROTOCOL, verifyCreatorSignature } from '../server/auth.js'
 import { efHexFromAtomicBeef, outputPaysScript } from '../server/beef.js'
-import { KNOWN_HOSTS, loadServerConfig } from '../server/config.js'
+import { DEFAULT_TRUST_PROXY, KNOWN_HOSTS, loadServerConfig } from '../server/config.js'
 import { openDb, type Db } from '../server/db.js'
-import type { Limits } from '../server/routes.js'
+import { addressKey } from '../server/rate-limit.js'
+import { DEFAULT_LIMITS, type Limits } from '../server/routes.js'
 import { Broadcaster } from '../server/sse.js'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
@@ -24,6 +27,7 @@ const ARCADE = 'https://arcade-testnet-us-1.bsvblockchain.tech'
 const PLACEHOLDER = 'a'.repeat(64)
 const COMPETITOR = 'b'.repeat(64)
 const HOUR = 60 * 60 * 1000
+const ORIGIN = 'http://localhost:5173' // PUBLIC_ORIGIN's development default
 
 const quiet = () => {}
 const fixture = (name: string, txid: string): any =>
@@ -59,6 +63,13 @@ const sign = async (w: ProtoWallet, message: string) =>
     (await w.createSignature({ data: Utils.toArray(message, 'utf8'), protocolID: TIPS_PROTOCOL, keyID: SIGNATURE_KEY_ID, counterparty: 'anyone' }))
       .signature,
   )
+
+/** A signed creator claim for `identityKey`, with the relay's current nonce (unless overridden). */
+async function claimBody(app: express.Express, wallet: ProtoWallet, identityKey?: string, over: { origin?: string; nonce?: string } = {}) {
+  const key = identityKey ?? (await identityOf(wallet))
+  const nonce = over.nonce ?? (await request(app).get('/api/config')).body.claimNonce
+  return { identityKey: key, signature: await sign(wallet, claimMessage(over.origin ?? ORIGIN, key, nonce)) }
+}
 
 const SENDER = PrivateKey.fromRandom().toPublicKey().toString()
 const OFF_CURVE = `03${'cd'.repeat(32)}`
@@ -158,11 +169,12 @@ describe('POST /api/tips', () => {
     // POST is provisional: the verdict comes from GET /tx/{txid}.
     expect(arc.calls.map(c => `${c.method} ${c.url}`)).toEqual([`POST ${ARCADE}/tx`, `GET ${ARCADE}/tx/${t.txid}`])
     for (const c of arc.calls) expect(c.signal).toBeInstanceOf(AbortSignal)
-    expect(db.getBeef(t.txid)).toBe(t.beef)
+    const beefId = createHash('sha256').update(Buffer.from(t.beef, 'hex')).digest('hex')
     expect(db.getTip(t.txid)).toMatchObject({
       verdict: 'seen-no-competitor',
-      remittances: [{ outputIndex: 0, satoshis: 1000, senderIdentityKey: SENDER, derivationPrefix: 'cHJlZml4MDE=', derivationSuffix: 'c3VmZml4MDE=' }],
+      remittances: [{ beefId, outputIndex: 0, satoshis: 1000, senderIdentityKey: SENDER, derivationPrefix: 'cHJlZml4MDE=', derivationSuffix: 'c3VmZml4MDE=' }],
     })
+    expect(db.getBeef(t.txid, beefId)).toBe(t.beef)
   })
 
   it('POST /api/tips is idempotent by txid', async () => {
@@ -317,9 +329,12 @@ describe('POST /api/tips', () => {
     const { app, db, events, cfg } = relay(down)
     const res = await request(app).post('/api/tips').send(body(t))
     expect(res.status).toBe(502)
-    expect(res.body).toMatchObject({ transient: true, txid: t.txid, txStatus: 'UNREACHABLE', verdict: 'pending' })
-    expect(db.getTip(t.txid)).toMatchObject({ txStatus: 'UNREACHABLE', verdict: 'pending' })
+    // A transient outcome is not stored: the new row keeps its initial UNKNOWN/pending.
+    expect(res.body).toMatchObject({ transient: true, txid: t.txid, txStatus: 'UNKNOWN', verdict: 'pending' })
+    expect(res.body.error).toMatch(/UNREACHABLE/)
+    expect(db.getTip(t.txid)).toMatchObject({ txStatus: 'UNKNOWN', verdict: 'pending' })
     expect(events('tip')).toHaveLength(1)
+    expect(events('status')).toHaveLength(0)
 
     // The browser's retry submits again once Arcade is back; the tip is still announced once.
     const up = seen(t.txid)
@@ -383,7 +398,7 @@ describe('POST /api/tips', () => {
     const t = await tip()
     const arc = fakeArcade({ status: 202, json: {} })
     const { app } = relay(arc)
-    const res = await request(app).post('/api/tips').send(body(t, { beef: 'ab'.repeat(600 * 1024) }))
+    const res = await request(app).post('/api/tips').send(body(t, { beef: 'ab'.repeat(140 * 1024) })) // ~280 KB > 256 KB
     expect(res.status).toBe(413)
     expect(res.body.error).toMatch(/too large/)
     expect(arc.calls).toHaveLength(0)
@@ -400,6 +415,52 @@ describe('POST /api/tips', () => {
     clock.now += 6_000 // 10 per minute: one token back
     expect((await post()).status).toBe(400)
     expect((await post()).status).toBe(429)
+  })
+
+  it('rate-limits IPv6 clients by their /64, and IPv4-mapped clients by their IPv4 address', async () => {
+    const { app } = relay(fakeArcade({ status: 202, json: {} }), {}, {})
+    const post = (ip: string) => request(app).post('/api/tips').set('X-Forwarded-For', ip).send({})
+    for (let i = 1; i <= 5; i++) expect((await post(`2001:db8:1:2::${i}`)).status).toBe(400)
+    expect((await post('2001:db8:1:2:ffff:ffff:ffff:ffff')).status).toBe(429) // same /64, new address
+    expect((await post('2001:db8:1:3::1')).status).toBe(400) // the next /64
+    for (let i = 0; i < 5; i++) expect((await post('198.51.100.9')).status).toBe(400)
+    expect((await post('::ffff:198.51.100.9')).status).toBe(429)
+  })
+
+  it('TRUST_PROXY=false ignores X-Forwarded-For', async () => {
+    const { app } = relay(fakeArcade({ status: 202, json: {} }), { TRUST_PROXY: 'false' }, {})
+    for (let i = 0; i < 5; i++) expect((await request(app).post('/api/tips').set('X-Forwarded-For', `203.0.113.${i}`).send({})).status).toBe(400)
+    expect((await request(app).post('/api/tips').set('X-Forwarded-For', '203.0.113.99').send({})).status).toBe(429)
+  })
+})
+
+describe('BEEF per candidate', () => {
+  // The relay checks a BEEF's structure, not its merkle proofs: someone can wrap the real transaction and its real
+  // parents with a made-up BUMP. That BEEF must not replace the one the honest tipper sent.
+  it('a front-run with a fake BUMP does not replace the BEEF the honest candidate arrived with', async () => {
+    const honest = await tip()
+    const tx = Transaction.fromAtomicBEEF(Utils.toArray(honest.beef, 'hex'))
+    const parent = tx.inputs[0].sourceTransaction!
+    parent.merklePath = new MerklePath(123, [[{ offset: 0, hash: parent.id('hex'), txid: true }]])
+    const poisoned = Utils.toHex(tx.toAtomicBEEF())
+    expect(tx.id('hex')).toBe(honest.txid)
+    expect(poisoned).not.toBe(honest.beef)
+
+    const { app } = relay(seen(honest.txid))
+    expect((await request(app).post('/api/tips').send(body({ txid: honest.txid, beef: poisoned }, { remittance: { senderIdentityKey: SENDER, derivationPrefix: 'YXR0YWNrZXI=', derivationSuffix: 'eA==' } }))).status).toBe(200)
+    expect((await request(app).post('/api/tips').send(body(honest))).status).toBe(200)
+
+    const { remittances } = (await request(app).get(`/api/tips/${honest.txid}`)).body
+    expect(remittances.map((r: any) => r.derivationPrefix)).toEqual(['YXR0YWNrZXI=', 'cHJlZml4MDE='])
+    const beefOf = async (id: string) => (await request(app).get(`/api/tips/${honest.txid}/beef?id=${id}`)).body.beefHex
+    expect(await beefOf(remittances[0].beefId)).toBe(poisoned)
+    expect(await beefOf(remittances[1].beefId)).toBe(honest.beef)
+    expect((await request(app).get(`/api/tips/${honest.txid}/beef`)).status).toBe(400)
+    expect((await request(app).get(`/api/tips/${honest.txid}/beef?id=${'0'.repeat(64)}`)).status).toBe(404)
+  })
+
+  it('defaults: 64 candidates per tip', () => {
+    expect(DEFAULT_LIMITS.remittancesPerTip).toBe(64)
   })
 })
 
@@ -418,7 +479,8 @@ describe('fabricated tips', () => {
     expect(list.body).toHaveLength(1)
     expect(list.body[0].beefHex).toBeUndefined()
     expect(JSON.stringify(list.body)).not.toContain(fake.beef)
-    expect((await request(app).get(`/api/tips/${fake.txid}/beef`)).body).toEqual({ txid: fake.txid, beefHex: fake.beef })
+    const beefId = res.body.remittances[0].beefId
+    expect((await request(app).get(`/api/tips/${fake.txid}/beef?id=${beefId}`)).body).toEqual({ txid: fake.txid, beefId, beefHex: fake.beef })
     expect((await request(app).get(`/api/tips/${fake.txid}`)).body).toMatchObject({ txid: fake.txid, remittances: [expect.objectContaining({ satoshis: 700 })] })
 
     // A day later, the next new tip prunes it.
@@ -434,8 +496,8 @@ describe('fabricated tips', () => {
 
 describe('tips: list, detail, status, internalized', () => {
   function seed(db: Db, txid: string, beefHex = 'ab') {
-    db.insertTip({ txid, beefHex, txStatus: 'ACCEPTED_BY_NETWORK', verdict: 'on-network-not-seen', competingTxs: [] })
-    db.addRemittance(txid, { outputIndex: 0, satoshis: 1000, senderIdentityKey: SENDER, derivationPrefix: 'cA==', derivationSuffix: 'cw==' }, 16)
+    db.insertTip({ txid, txStatus: 'ACCEPTED_BY_NETWORK', verdict: 'on-network-not-seen', competingTxs: [] })
+    db.addRemittance(txid, { outputIndex: 0, satoshis: 1000, senderIdentityKey: SENDER, derivationPrefix: 'cA==', derivationSuffix: 'cw==' }, beefHex, 16)
   }
 
   it('GET /api/tips/:txid/status re-reads Arcade and emits status on change', async () => {
@@ -503,7 +565,7 @@ describe('tips: list, detail, status, internalized', () => {
     expect((await request(app).get(`/api/tips/${'e'.repeat(64)}/status`)).status).toBe(404)
     expect((await request(app).get('/api/tips/nothex/status')).status).toBe(400)
     expect((await request(app).get(`/api/tips/${'e'.repeat(64)}`)).status).toBe(404)
-    expect((await request(app).get(`/api/tips/${'e'.repeat(64)}/beef`)).status).toBe(404)
+    expect((await request(app).get(`/api/tips/${'e'.repeat(64)}/beef?id=${'0'.repeat(64)}`)).status).toBe(404)
     expect(arc.calls).toHaveLength(0)
     seed(db, txid)
     const res = await request(app).get(`/api/tips/${txid}/status`)
@@ -522,67 +584,84 @@ describe('tips: list, detail, status, internalized', () => {
     expect(list.body[0].remittances).toEqual([expect.objectContaining({ derivationPrefix: 'cA==' })])
   })
 
-  it('POST internalized needs the creator signature over internalized:<txid>', async () => {
+  it('POST internalized needs the creator signature over internalized:<origin>:<txid>', async () => {
     const { app, db } = relay(fakeArcade({ status: 202, json: {} }))
     const txid = '1'.repeat(64)
     seed(db, txid)
-    const creator = await identityOf(creatorWallet)
     const mark = (signature?: string, id = txid) => request(app).post(`/api/tips/${id}/internalized`).send(signature === undefined ? {} : { signature })
 
-    expect((await mark(await sign(creatorWallet, internalizedMessage(txid)))).status).toBe(409) // no creator yet
-    await request(app).post('/api/creator').send({ identityKey: creator, signature: await sign(creatorWallet, claimMessage(creator)) })
+    expect((await mark(await sign(creatorWallet, internalizedMessage(ORIGIN, txid)))).status).toBe(409) // no creator yet
+    expect((await request(app).post('/api/creator').send(await claimBody(app, creatorWallet))).status).toBe(200)
 
     expect((await mark()).status).toBe(403)
-    expect((await mark(await sign(otherWallet, internalizedMessage(txid)))).status).toBe(403)
-    expect((await mark(await sign(creatorWallet, internalizedMessage('2'.repeat(64))))).status).toBe(403)
-    expect((await mark(await sign(creatorWallet, claimMessage(creator)))).status).toBe(403)
+    expect((await mark(await sign(otherWallet, internalizedMessage(ORIGIN, txid)))).status).toBe(403)
+    expect((await mark(await sign(creatorWallet, internalizedMessage(ORIGIN, '2'.repeat(64))))).status).toBe(403)
+    expect((await mark(await sign(creatorWallet, internalizedMessage('https://other.example', txid)))).status).toBe(403)
+    expect((await mark(await sign(creatorWallet, `internalized:${txid}`))).status).toBe(403) // the round-1 form
     expect(db.getTip(txid)!.internalizedAt).toBeUndefined()
 
-    const ok = await mark(await sign(creatorWallet, internalizedMessage(txid)))
+    const ok = await mark(await sign(creatorWallet, internalizedMessage(ORIGIN, txid)))
     expect(ok.status).toBe(200)
     expect(ok.body.internalizedAt).toEqual(expect.any(String))
     expect(db.getTip(txid)!.internalizedAt).toBe(ok.body.internalizedAt)
-    expect((await mark(await sign(creatorWallet, internalizedMessage('9'.repeat(64))), '9'.repeat(64))).status).toBe(404)
+    expect((await mark(await sign(creatorWallet, internalizedMessage(ORIGIN, '9'.repeat(64))), '9'.repeat(64))).status).toBe(404)
+  })
+
+  it('a transient Arcade answer never overwrites a stored status', async () => {
+    const t = await tip()
+    const { app, db, events } = relay(fakeArcade(new TypeError('fetch failed')))
+    seed(db, t.txid, t.beef) // on-network-not-seen: a repeat POST submits again
+    const res = await request(app).post('/api/tips').send(body(t))
+    expect(res.status).toBe(502)
+    expect(db.getTip(t.txid)).toMatchObject({ txStatus: 'ACCEPTED_BY_NETWORK', verdict: 'on-network-not-seen' })
+    expect(events('status')).toHaveLength(0)
   })
 })
 
 describe('config and creator', () => {
-  it('GET /api/config answers network, originator and arcadeUrl', async () => {
+  it('GET /api/config answers network, originator, arcadeUrl and the claim nonce', async () => {
     const { app } = relay(fakeArcade({ status: 202, json: {} }), { PUBLIC_ORIGIN: 'https://tipping.example.com' })
     const res = await request(app).get('/api/config')
-    expect(res.body).toEqual({ network: 'testnet', originator: 'https://tipping.example.com', arcadeUrl: ARCADE })
+    expect(res.body).toEqual({ network: 'testnet', originator: 'https://tipping.example.com', arcadeUrl: ARCADE, claimNonce: expect.stringMatching(/^[0-9a-f]{32}$/) })
+    expect((await request(app).get('/api/config')).body.claimNonce).toBe(res.body.claimNonce)
   })
 
   it('creator claim: first claim wins, second different key is 409', async () => {
     const { app, db } = relay(fakeArcade({ status: 202, json: {} }))
     const creator = await identityOf(creatorWallet)
     const other = await identityOf(otherWallet)
-    const claim = async (identityKey: string, wallet?: ProtoWallet, message = claimMessage(identityKey)) =>
-      request(app).post('/api/creator').send({ identityKey, ...(wallet ? { signature: await sign(wallet, message) } : {}) })
+    const post = (b: object) => request(app).post('/api/creator').send(b)
 
-    expect((await claim('nope')).status).toBe(400)
-    expect((await claim(OFF_CURVE)).status).toBe(400)
-    expect((await claim(creator)).status).toBe(403) // no signature
-    expect((await claim(creator, otherWallet)).status).toBe(403) // someone else's key signing the claim
-    expect((await claim(creator, creatorWallet, claimMessage(other))).status).toBe(403) // the wrong message
+    expect((await post({ identityKey: 'nope' })).status).toBe(400)
+    expect((await post({ identityKey: OFF_CURVE })).status).toBe(400)
+    expect((await post({ identityKey: creator })).status).toBe(403) // no signature
+    expect((await post({ ...(await claimBody(app, otherWallet)), identityKey: creator })).status).toBe(403) // someone else's key signing
+    expect((await post(await claimBody(app, creatorWallet, creator, { origin: 'https://other.example' }))).status).toBe(403) // another relay
+    expect((await post(await claimBody(app, creatorWallet, creator, { nonce: 'f'.repeat(32) }))).status).toBe(403) // a stale nonce
     expect(db.getSetting('creatorIdentityKey')).toBeUndefined()
 
-    const first = await claim(creator.toUpperCase(), creatorWallet, claimMessage(creator))
+    const nonce = (await request(app).get('/api/config')).body.claimNonce
+    const signedClaim = await claimBody(app, creatorWallet)
+    const first = await post({ ...signedClaim, identityKey: creator.toUpperCase() })
     expect(first.status).toBe(200)
     expect(first.body).toEqual({ creatorIdentityKey: creator })
-    expect((await claim(creator, creatorWallet)).status).toBe(200)
-    expect((await claim(other, otherWallet)).status).toBe(409)
+    // The claim spent the nonce: the same signature does not work again, a fresh one does.
+    const next = (await request(app).get('/api/config')).body.claimNonce
+    expect(next).not.toBe(nonce)
+    expect((await post(signedClaim)).status).toBe(403)
+    expect((await post(await claimBody(app, creatorWallet))).status).toBe(200)
+    expect((await post(await claimBody(app, otherWallet))).status).toBe(409)
     expect((await request(app).get('/api/config')).body.creatorIdentityKey).toBe(creator)
     expect(db.getSetting('creatorIdentityKey')).toBe(creator)
+    expect(other).not.toBe(creator)
   })
 
   it('CREATOR_IDENTITY_KEY fixes the creator; a claim by another key is 409', async () => {
     const creator = await identityOf(creatorWallet)
-    const other = await identityOf(otherWallet)
     const { app } = relay(fakeArcade({ status: 202, json: {} }), { CREATOR_IDENTITY_KEY: creator })
     expect((await request(app).get('/api/config')).body.creatorIdentityKey).toBe(creator)
-    expect((await request(app).post('/api/creator').send({ identityKey: other, signature: await sign(otherWallet, claimMessage(other)) })).status).toBe(409)
-    expect((await request(app).post('/api/creator').send({ identityKey: creator, signature: await sign(creatorWallet, claimMessage(creator)) })).status).toBe(200)
+    expect((await request(app).post('/api/creator').send(await claimBody(app, otherWallet))).status).toBe(409)
+    expect((await request(app).post('/api/creator').send(await claimBody(app, creatorWallet))).status).toBe(200)
   })
 })
 
@@ -659,6 +738,32 @@ describe('SSE', () => {
     a.emit('close')
     expect(b.size).toBe(0)
   })
+
+  it('SSE allows a few streams per address', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const fakeRes = () => {
+      const res = Object.assign(new EventEmitter(), {
+        statusCode: 0,
+        status(code: number) { res.statusCode = code; return res },
+        set: () => res,
+        json: vi.fn(),
+        flushHeaders: vi.fn(),
+      })
+      return res
+    }
+    const b = new Broadcaster({ maxPerAddress: 2 })
+    const mine = [fakeRes(), fakeRes(), fakeRes()]
+    for (const r of mine) b.add(r as unknown as express.Response, '2001:db8:1:2::/64')
+    expect(mine.map(r => r.statusCode)).toEqual([200, 200, 429])
+    const theirs = fakeRes()
+    b.add(theirs as unknown as express.Response, '198.51.100.9')
+    expect(theirs.statusCode).toBe(200)
+    mine[0].emit('close') // a slot frees up
+    const again = fakeRes()
+    b.add(again as unknown as express.Response, '2001:db8:1:2::/64')
+    expect(again.statusCode).toBe(200)
+    for (const r of [...mine, theirs, again]) r.emit('close')
+  })
 })
 
 describe('arcade.ts', () => {
@@ -732,7 +837,7 @@ describe('beef.ts', () => {
 
 describe('db.ts', () => {
   const remittance = { outputIndex: 0, satoshis: 1000, senderIdentityKey: SENDER, derivationPrefix: "it's", derivationSuffix: 'cw==' }
-  const newTip = (txid: string, verdict = 'pending') => ({ txid, beefHex: 'ab', txStatus: 'UNKNOWN', verdict, competingTxs: [] })
+  const newTip = (txid: string, verdict = 'pending') => ({ txid, txStatus: 'UNKNOWN', verdict, competingTxs: [] })
 
   it('opens a WAL database file and inserts idempotently with parameters', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tipping-db-'))
@@ -741,10 +846,15 @@ describe('db.ts', () => {
       opened.push(db)
       const txid = '1'.repeat(64)
       expect(db.insertTip(newTip(txid))).toEqual({ inserted: true })
-      expect(db.insertTip({ ...newTip(txid), beefHex: 'cd' })).toEqual({ inserted: false })
+      expect(db.insertTip({ ...newTip(txid), verdict: 'terminal' })).toEqual({ inserted: false })
+      expect(db.getTip(txid)!.verdict).toBe('pending')
+      expect(db.addRemittance(txid, remittance, 'AB', 16)).toBe('inserted')
+      expect(db.addRemittance(txid, remittance, 'cd', 16)).toBe('exists') // a stored candidate keeps its first BEEF
+      const beefId = db.getTip(txid)!.remittances[0].beefId
+      expect(beefId).toBe(createHash('sha256').update(Buffer.from('ab', 'hex')).digest('hex'))
+      expect(db.getBeef(txid, beefId)).toBe('ab')
       expect(db.getBeef(txid)).toBe('ab')
-      expect(db.addRemittance(txid, remittance, 16)).toBe('inserted')
-      expect(db.addRemittance(txid, remittance, 16)).toBe('exists')
+      expect(db.getBeef('2'.repeat(64), beefId)).toBeUndefined() // only through a candidate of that tip
       expect(db.getTip(txid)).toMatchObject({ competingTxs: [], remittances: [expect.objectContaining({ derivationPrefix: "it's" })] })
       expect(db.getTip(txid)!.extraInfo).toBeUndefined()
       expect(db.getTip(txid)).not.toHaveProperty('beefHex')
@@ -769,7 +879,7 @@ describe('db.ts', () => {
     db.insertTip(newTip(ids[2]))
     db.insertTip(newTip(ids[3]))
     db.insertTip(newTip(ids[4], 'seen-no-competitor'))
-    for (const id of ids) db.addRemittance(id, remittance, 16)
+    for (const id of ids) db.addRemittance(id, remittance, 'ab', 16)
 
     // Not yet a day old: nothing to do under the cap.
     expect(db.prune({ now: Date.now(), terminalMaxAgeMs: 24 * HOUR, maxTips: 10 })).toBe(0)
@@ -784,15 +894,40 @@ describe('db.ts', () => {
     expect(db.getTip(ids[2])!.remittances).toEqual([])
   })
 
+  it('prune evicts terminal tips before older pending ones, and drops BEEFs no candidate uses', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tipping-db-'))
+    try {
+      const file = join(dir, 'tips.sqlite')
+      const db = openDb(file)
+      opened.push(db)
+      const ids = ['1', '2', '3'].map(c => c.repeat(64))
+      db.insertTip(newTip(ids[0])) // oldest, pending
+      db.insertTip(newTip(ids[1], 'terminal')) // recent, terminal
+      db.insertTip(newTip(ids[2]))
+      ids.forEach((id, i) => db.addRemittance(id, remittance, `0${i}`, 16))
+      expect(db.prune({ now: Date.now(), terminalMaxAgeMs: 24 * HOUR, maxTips: 2 })).toBe(1)
+      expect(db.listTips().map(t => t.txid).sort()).toEqual([ids[0], ids[2]].sort())
+      const raw = new Database(file, { readonly: true })
+      try {
+        expect(raw.prepare('SELECT beef_hex FROM beefs ORDER BY beef_hex').all()).toEqual([{ beef_hex: '00' }, { beef_hex: '02' }])
+      } finally {
+        raw.close()
+      }
+    } finally {
+      while (opened.length) opened.pop()!.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('addRemittance holds the cap', () => {
     const db = openDb(':memory:')
     opened.push(db)
     const txid = '1'.repeat(64)
     db.insertTip(newTip(txid))
-    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'a' }, 2)).toBe('inserted')
-    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'b' }, 2)).toBe('inserted')
-    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'c' }, 2)).toBe('full')
-    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'a' }, 2)).toBe('exists')
+    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'a' }, 'ab', 2)).toBe('inserted')
+    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'b' }, 'ab', 2)).toBe('inserted')
+    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'c' }, 'ab', 2)).toBe('full')
+    expect(db.addRemittance(txid, { ...remittance, derivationPrefix: 'a' }, 'ab', 2)).toBe('exists')
   })
 })
 
@@ -826,6 +961,30 @@ describe('config.ts', () => {
   })
 })
 
+describe('client addresses', () => {
+  it('addressKey: IPv4 as is, IPv4-mapped unwrapped, IPv6 by /64', () => {
+    expect(addressKey('203.0.113.7')).toBe('203.0.113.7')
+    expect(addressKey('::ffff:203.0.113.7')).toBe('203.0.113.7')
+    expect(addressKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64')
+    expect(addressKey('2001:DB8:1:2:bbbb:0:0:2')).toBe('2001:db8:1:2::/64')
+    expect(addressKey('2001:0db8:0001:0003::1')).toBe('2001:db8:1:3::/64')
+    expect(addressKey('2001:db8::1')).toBe('2001:db8:0:0::/64')
+    expect(addressKey('fe80::1%eth0')).toBe('fe80:0:0:0::/64')
+    expect(addressKey('64:ff9b::192.0.2.1')).toBe('64:ff9b:0:0::/64')
+    expect(addressKey(undefined)).toBe('unknown')
+  })
+
+  it('TRUST_PROXY: default, booleans, hop counts, address lists; invalid refuses to boot', () => {
+    expect(loadServerConfig({}, quiet).trustProxy).toBe(DEFAULT_TRUST_PROXY)
+    expect(DEFAULT_TRUST_PROXY).toBe('loopback, linklocal, uniquelocal')
+    expect(loadServerConfig({ TRUST_PROXY: 'false' }, quiet).trustProxy).toBe(false)
+    expect(loadServerConfig({ TRUST_PROXY: 'true' }, quiet).trustProxy).toBe(true)
+    expect(loadServerConfig({ TRUST_PROXY: '2' }, quiet).trustProxy).toBe(2)
+    expect(loadServerConfig({ TRUST_PROXY: '10.0.0.5, 172.16.0.0/12' }, quiet).trustProxy).toBe('10.0.0.5, 172.16.0.0/12')
+    expect(() => loadServerConfig({ TRUST_PROXY: 'not-an-address' }, quiet)).toThrow(/TRUST_PROXY/)
+  })
+})
+
 describe('relay boundaries', () => {
   it('relay never calls whatsonchain', () => {
     const files: string[] = []
@@ -838,6 +997,7 @@ describe('relay boundaries', () => {
     }
     walk(join(SAMPLE, 'server'))
     expect(files.length).toBeGreaterThanOrEqual(10)
+    expect(files.some(f => f.endsWith('rate-limit.ts'))).toBe(true)
     for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/whatsonchain|\bwoc\b/i)
   })
 })

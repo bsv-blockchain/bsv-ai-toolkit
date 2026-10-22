@@ -1,11 +1,16 @@
+import { createHash } from 'node:crypto'
 import Database from 'better-sqlite3'
 
 // The relay's store. A tip is one transaction (keyed by txid) with Arcade's view of it; the remittances that
 // tippers posted for it are candidates, because anyone who sees the transaction can post it with a different
-// remittance. The creator's wallet tries each candidate (forSelf) and internalizes the one that is its own.
+// remittance, or with the same transaction wrapped in a different BEEF (the relay checks a BEEF's structure, not
+// its merkle proofs). So each candidate keeps the BEEF it arrived with, and the creator's wallet tries each
+// candidate (forSelf) and internalizes the one that is its own, with that candidate's BEEF.
 // Every statement is prepared with parameters; no value is ever spliced into SQL.
 
 export interface Remittance {
+  /** sha256 (hex) of the BEEF bytes this candidate arrived with; GET /api/tips/:txid/beef?id=<beefId>. */
+  beefId: string
   outputIndex: number
   satoshis: number
   senderIdentityKey: string
@@ -40,28 +45,33 @@ export interface TipStatus {
 
 export interface NewTip extends TipStatus {
   txid: string
-  /** The AtomicBEEF hex; served on demand (GET /api/tips/:txid/beef), never in lists or events. */
-  beefHex: string
 }
 
 export interface PruneOptions {
   now: number
   /** terminal tips not updated for this long are deleted */
   terminalMaxAgeMs: number
-  /** above this many tips, the oldest that are not seen-no-competitor are deleted */
+  /** above this many tips, terminal tips and then the oldest that are not seen-no-competitor are deleted */
   maxTips: number
 }
 
 export interface Db {
   insertTip(tip: NewTip): { inserted: boolean }
-  /** Adds a candidate unless it is already stored ('exists') or the tip has `maxPerTip` candidates ('full'). */
-  addRemittance(txid: string, r: Omit<Remittance, 'receivedAt'>, maxPerTip: number): 'inserted' | 'exists' | 'full'
+  /**
+   * Adds a candidate with the AtomicBEEF hex it arrived with, unless it is already stored ('exists', keeping its
+   * first BEEF) or the tip has `maxPerTip` candidates ('full').
+   */
+  addRemittance(txid: string, r: Omit<Remittance, 'receivedAt' | 'beefId'>, beefHex: string, maxPerTip: number): 'inserted' | 'exists' | 'full'
   getTip(txid: string): TipRow | undefined
-  getBeef(txid: string): string | undefined
+  /** The BEEF of one of this tip's candidates (by beefId), or of its first candidate when beefId is omitted. */
+  getBeef(txid: string, beefId?: string): string | undefined
   listTips(limit?: number): TipRow[]
   updateStatus(txid: string, s: TipStatus): void
   markInternalized(txid: string): void
-  /** Deletes old terminal tips, then the oldest unseen tips above the cap. Returns how many tips it deleted. */
+  /**
+   * Deletes old terminal tips, then (above the cap) terminal tips and then the oldest unseen tips, and any BEEF no
+   * candidate uses any more. Returns how many tips it deleted.
+   */
   prune(opts: PruneOptions): number
   getSetting(key: string): string | undefined
   setSetting(key: string, value: string): void
@@ -71,7 +81,6 @@ export interface Db {
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tips (
   txid TEXT PRIMARY KEY,
-  beef_hex TEXT NOT NULL,
   tx_status TEXT NOT NULL,
   verdict TEXT NOT NULL,
   competing_json TEXT NOT NULL DEFAULT '[]',
@@ -83,8 +92,10 @@ CREATE TABLE IF NOT EXISTS tips (
 );
 CREATE INDEX IF NOT EXISTS tips_received ON tips (received_at);
 CREATE INDEX IF NOT EXISTS tips_verdict_updated ON tips (verdict, updated_at);
+CREATE TABLE IF NOT EXISTS beefs (sha256 TEXT PRIMARY KEY, beef_hex TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS remittances (
   txid TEXT NOT NULL REFERENCES tips (txid) ON DELETE CASCADE,
+  beef_sha256 TEXT NOT NULL REFERENCES beefs (sha256),
   output_index INTEGER NOT NULL,
   sender_identity_key TEXT NOT NULL,
   derivation_prefix TEXT NOT NULL,
@@ -93,6 +104,7 @@ CREATE TABLE IF NOT EXISTS remittances (
   received_at TEXT NOT NULL,
   PRIMARY KEY (txid, output_index, sender_identity_key, derivation_prefix, derivation_suffix)
 );
+CREATE INDEX IF NOT EXISTS remittances_beef ON remittances (beef_sha256);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
@@ -109,6 +121,7 @@ interface RawTip {
 }
 
 interface RawRemittance {
+  beef_sha256: string
   output_index: number
   satoshis: number
   sender_identity_key: string
@@ -127,12 +140,13 @@ export function openDb(file: string): Db {
   db.exec(SCHEMA)
 
   const insertTip = db.prepare(`
-    INSERT INTO tips (txid, beef_hex, tx_status, verdict, competing_json, extra_info, note, received_at, updated_at)
-    VALUES (@txid, @beefHex, @txStatus, @verdict, @competingJson, @extraInfo, @note, @now, @now)
+    INSERT INTO tips (txid, tx_status, verdict, competing_json, extra_info, note, received_at, updated_at)
+    VALUES (@txid, @txStatus, @verdict, @competingJson, @extraInfo, @note, @now, @now)
     ON CONFLICT(txid) DO NOTHING`)
+  const insertBeef = db.prepare('INSERT INTO beefs (sha256, beef_hex) VALUES (?, ?) ON CONFLICT DO NOTHING')
   const insertRemittance = db.prepare(`
-    INSERT INTO remittances (txid, output_index, sender_identity_key, derivation_prefix, derivation_suffix, satoshis, received_at)
-    VALUES (@txid, @outputIndex, @senderIdentityKey, @derivationPrefix, @derivationSuffix, @satoshis, @now)
+    INSERT INTO remittances (txid, beef_sha256, output_index, sender_identity_key, derivation_prefix, derivation_suffix, satoshis, received_at)
+    VALUES (@txid, @beefId, @outputIndex, @senderIdentityKey, @derivationPrefix, @derivationSuffix, @satoshis, @now)
     ON CONFLICT DO NOTHING`)
   const remittanceExists = db.prepare<[string, number, string, string, string], { one: number }>(`
     SELECT 1 AS one FROM remittances
@@ -142,7 +156,10 @@ export function openDb(file: string): Db {
     'SELECT * FROM remittances WHERE txid = ? ORDER BY received_at, rowid',
   )
   const getTip = db.prepare<[string], RawTip>(`SELECT ${TIP_COLUMNS} FROM tips WHERE txid = ?`)
-  const getBeef = db.prepare<[string], { beef_hex: string }>('SELECT beef_hex FROM tips WHERE txid = ?')
+  const getBeef = db.prepare<[string, string], { beef_hex: string }>(`
+    SELECT b.beef_hex FROM remittances r JOIN beefs b ON b.sha256 = r.beef_sha256 WHERE r.txid = ? AND r.beef_sha256 = ? LIMIT 1`)
+  const getFirstBeef = db.prepare<[string], { beef_hex: string }>(`
+    SELECT b.beef_hex FROM remittances r JOIN beefs b ON b.sha256 = r.beef_sha256 WHERE r.txid = ? ORDER BY r.received_at, r.rowid LIMIT 1`)
   // rowid breaks ties between tips received in the same millisecond.
   const listTips = db.prepare<[number], RawTip>(`SELECT ${TIP_COLUMNS} FROM tips ORDER BY received_at DESC, rowid DESC LIMIT ?`)
   const update = db.prepare(`
@@ -152,9 +169,12 @@ export function openDb(file: string): Db {
   const internalized = db.prepare('UPDATE tips SET internalized_at = COALESCE(internalized_at, @now), updated_at = @now WHERE txid = @txid')
   const pruneTerminal = db.prepare("DELETE FROM tips WHERE verdict = 'terminal' AND updated_at < ?")
   const countTips = db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM tips')
+  // Terminal tips go first, then the oldest of the rest; a tip seen with no competitor is never evicted.
   const pruneOldest = db.prepare(`
     DELETE FROM tips WHERE rowid IN (
-      SELECT rowid FROM tips WHERE verdict != 'seen-no-competitor' ORDER BY received_at, rowid LIMIT ?)`)
+      SELECT rowid FROM tips WHERE verdict != 'seen-no-competitor'
+      ORDER BY CASE verdict WHEN 'terminal' THEN 0 ELSE 1 END, received_at, rowid LIMIT ?)`)
+  const pruneBeefs = db.prepare('DELETE FROM beefs WHERE sha256 NOT IN (SELECT beef_sha256 FROM remittances)')
   const getSetting = db.prepare<[string], { value: string }>('SELECT value FROM settings WHERE key = ?')
   const setSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
 
@@ -169,6 +189,7 @@ export function openDb(file: string): Db {
       receivedAt: r.received_at,
       updatedAt: r.updated_at,
       remittances: remittancesOf.all(r.txid).map(m => ({
+        beefId: m.beef_sha256,
         outputIndex: m.output_index,
         satoshis: m.satoshis,
         senderIdentityKey: m.sender_identity_key,
@@ -184,17 +205,22 @@ export function openDb(file: string): Db {
   }
 
   // Count and insert in one transaction, so the cap holds.
-  const addRemittance = db.transaction((txid: string, r: Omit<Remittance, 'receivedAt'>, maxPerTip: number) => {
-    if (remittanceExists.get(txid, r.outputIndex, r.senderIdentityKey, r.derivationPrefix, r.derivationSuffix)) return 'exists' as const
-    if (countRemittances.get(txid)!.n >= maxPerTip) return 'full' as const
-    insertRemittance.run({ txid, ...r, now: now() })
-    return 'inserted' as const
-  })
+  const addRemittance = db.transaction(
+    (txid: string, r: Omit<Remittance, 'receivedAt' | 'beefId'>, beefHex: string, maxPerTip: number) => {
+      if (remittanceExists.get(txid, r.outputIndex, r.senderIdentityKey, r.derivationPrefix, r.derivationSuffix)) return 'exists' as const
+      if (countRemittances.get(txid)!.n >= maxPerTip) return 'full' as const
+      const beefId = createHash('sha256').update(Buffer.from(beefHex, 'hex')).digest('hex')
+      insertBeef.run(beefId, beefHex.toLowerCase())
+      insertRemittance.run({ txid, beefId, ...r, now: now() })
+      return 'inserted' as const
+    },
+  )
 
   const prune = db.transaction(({ now: at, terminalMaxAgeMs, maxTips }: PruneOptions) => {
     let deleted = pruneTerminal.run(new Date(at - terminalMaxAgeMs).toISOString()).changes
     const excess = countTips.get()!.n - maxTips
     if (excess > 0) deleted += pruneOldest.run(excess).changes
+    if (deleted > 0) pruneBeefs.run()
     return deleted
   })
 
@@ -202,7 +228,6 @@ export function openDb(file: string): Db {
     insertTip(tip) {
       const info = insertTip.run({
         txid: tip.txid,
-        beefHex: tip.beefHex,
         txStatus: tip.txStatus,
         verdict: tip.verdict,
         competingJson: JSON.stringify(tip.competingTxs),
@@ -212,13 +237,13 @@ export function openDb(file: string): Db {
       })
       return { inserted: info.changes === 1 }
     },
-    addRemittance: (txid, r, maxPerTip) => addRemittance(txid, r, maxPerTip),
+    addRemittance: (txid, r, beefHex, maxPerTip) => addRemittance(txid, r, beefHex, maxPerTip),
     getTip(txid) {
       const r = getTip.get(txid)
       return r === undefined ? undefined : toRow(r)
     },
-    getBeef(txid) {
-      return getBeef.get(txid)?.beef_hex
+    getBeef(txid, beefId) {
+      return (beefId === undefined ? getFirstBeef.get(txid) : getBeef.get(txid, beefId))?.beef_hex
     },
     listTips(limit = 100) {
       return listTips.all(limit).map(toRow)

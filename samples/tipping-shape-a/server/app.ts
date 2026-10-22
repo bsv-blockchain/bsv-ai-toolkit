@@ -37,8 +37,9 @@ export function createApp(cfg: ServerConfig, deps: AppDeps): express.Express {
   const app = express()
   app.disable('x-powered-by')
   // Behind the reverse proxy HOSTING.md requires, req.ip must be the client, not the proxy, or the per-address
-  // rate limit becomes one global bucket. Trust X-Forwarded-For only from loopback and private-network peers.
-  app.set('trust proxy', 'loopback, linklocal, uniquelocal')
+  // rate limit becomes one global bucket. TRUST_PROXY (default: loopback, link-local and private-network peers)
+  // says whose X-Forwarded-For to believe; see DEFAULT_TRUST_PROXY in config.ts.
+  app.set('trust proxy', cfg.trustProxy)
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, network: cfg.network, arcadeUrl: cfg.arcadeUrl, version: VERSION })
