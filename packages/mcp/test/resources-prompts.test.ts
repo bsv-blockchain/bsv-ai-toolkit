@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { loadConfig } from '../src/config.js'
@@ -23,6 +25,7 @@ const STATIC_URIS = [
   'bsv://simple/gotchas',
 ]
 const PROMPTS = ['review_against_guardrails', 'tokenize_with_1color', 'integrate_simple', 'add_simple_feature', 'debug_simple']
+const BROKEN_A = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'projects', 'broken-a')
 const PREFIX = /^verified: \d{4}-\d{2}-\d{2}\nsource: @bsv\/mcp v2\.0\.0\n\n/
 
 let client: Client
@@ -90,6 +93,28 @@ describe('resources', () => {
   })
 })
 
+describe('guardrail refs', () => {
+  it('a check_guardrails finding ref resolves to that rule', async () => {
+    const r = await client.callTool({ name: 'check_guardrails', arguments: { path: BROKEN_A } })
+    const findings = (r.structuredContent as { findings: { id: string; ref: string }[] }).findings
+    expect(findings.length).toBeGreaterThan(0)
+    const { id, ref } = findings[0]
+    expect(ref).toBe(`bsv://guardrails#${id}`)
+    const { text, mimeType } = await readText(ref)
+    expect(mimeType).toBe('text/markdown')
+    expect(text).toMatch(PREFIX)
+    expect(text.match(/^## G-\d{2} .+$/gm)).toEqual([expect.stringMatching(new RegExp(`^## ${id} `))])
+  })
+
+  it('every guardrail id has a fragment resource; unknown ids are rejected', async () => {
+    for (let n = 1; n <= 34; n++) {
+      const id = `G-${String(n).padStart(2, '0')}`
+      expect((await readText(`bsv://guardrails#${id}`)).text).toMatch(new RegExp(`^## ${id} `, 'm'))
+    }
+    await expect(client.readResource({ uri: 'bsv://guardrails#G-99' })).rejects.toThrow(/unknown guardrail: G-99/)
+  })
+})
+
 describe('prompts', () => {
   it('lists the five prompts', async () => {
     const { prompts } = await client.listPrompts()
@@ -121,8 +146,22 @@ describe('prompts', () => {
       expect(text).toContain('bsv://simple/gotchas')
       expect(text).toContain("network: 'testnet'")
       expect(text).toContain('@bsv/sdk')
-      expect(text).toContain('arcade_submit')
       expect(text).toContain('SEEN_ON_NETWORK')
+      expect(text).toContain("map `mainnet` to `'main'`")
+      expect(text).toContain("`Overlay.create` takes `'testnet'|'mainnet'`")
+    }
+  })
+
+  it('money paths gate on the app\'s own Arcade client; the MCP tools are the dev-time equivalent', async () => {
+    const texts = [
+      await promptText('integrate_simple', { framework: 'node' }),
+      await promptText('add_simple_feature', { feature: 'payments' }),
+      await promptText('tokenize_with_1color', { mode: 'deploy' }),
+    ]
+    for (const text of texts) {
+      expect(text).toContain("In app code, submit to the app's own Arcade client (`POST /tx` as EF hex) and gate on `GET /tx/{txid}`")
+      expect(text).toContain('While developing, `arcade_submit`/`arcade_status` do the same from here.')
+      expect(text).not.toMatch(/gate on `arcade_status`/)
     }
   })
 

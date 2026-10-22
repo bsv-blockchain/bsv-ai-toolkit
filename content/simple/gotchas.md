@@ -15,6 +15,7 @@ Read from the `@bsv/simple` 0.7.0 package source on 2026-10-22. Each item says w
 - The spelling is `'testnet' | 'main'`, unlike the SDK wallet's `'testnet' | 'mainnet'` and wallet-toolbox's `'test' | 'main'`.
 - In the browser, `network` is only a label. `createWallet` does not ask the wallet which network it is on, and a local wallet is often on mainnet. Call `wallet.getClient().getNetwork({})` yourself and refuse money paths on a mismatch.
 - `Overlay.create` defaults its `network` to `'mainnet'`; pass `'testnet'`.
+- Mapping from the kit's `BSV_NETWORK` (`testnet` | `mainnet`): `@bsv/simple` wallets take `'testnet'` | `'main'` (map `mainnet` to `'main'`); `Overlay.create` takes `'testnet'` | `'mainnet'` unchanged.
 
 ## No `arcadeUrl` option
 

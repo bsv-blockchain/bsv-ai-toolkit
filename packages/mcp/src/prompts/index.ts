@@ -6,10 +6,14 @@ function userMessage(text: string): GetPromptResult {
   return { messages: [{ role: 'user', content: { type: 'text', text } }] }
 }
 
+// App code owns its runtime gate; the MCP tools are the dev-time equivalent.
+const ARCADE_GATE =
+  "In app code, submit to the app's own Arcade client (`POST /tx` as EF hex) and gate on `GET /tx/{txid}`: final at `SEEN_ON_NETWORK` or later with no `competingTxs`; never wait for `MINED`. " +
+  'While developing, `arcade_submit`/`arcade_status` do the same from here.'
+
 // The kit's rules for every money path, shared by the build prompts.
 const BROADCAST_RULES = [
-  'Broadcast and status go through Arcade: submit with the `arcade_submit` tool (or the app\'s own Arcade client, `POST /tx` as EF) and check with `arcade_status`. ' +
-    'A transaction is final for the app at `SEEN_ON_NETWORK` or later with no `competingTxs`; do not wait for `MINED`.',
+  `Broadcast and status go through Arcade. ${ARCADE_GATE}`,
   'Never use the legacy ARC API, and never treat WhatsOnChain as the source of truth for a txid you know: Arcade answers for it.',
   'Never ask for, read, print, log or commit a private key, WIF or seed phrase. Server keys come from the environment and stay out of the repo.',
 ].join('\n- ')
@@ -18,9 +22,10 @@ const SIMPLE_RULES = [
   'Read `bsv://simple/api` and `bsv://simple/gotchas` before writing code.',
   "Pass `network: 'testnet'` to `createWallet`, `ServerWallet.create` and `ServerWalletManager` (they default to `'main'`, real money), and `'testnet'` to `Overlay.create`. " +
     'Take the value from one `BSV_NETWORK` setting; mainnet only by explicit configuration.',
+  "Network values: the kit's `BSV_NETWORK` is `testnet|mainnet`; `@bsv/simple` wallets take `'testnet'|'main'` (map `mainnet` to `'main'`); `Overlay.create` takes `'testnet'|'mainnet'`.",
   'In the browser, `network` is only a label: call `wallet.getClient().getNetwork({})` and refuse money paths when the wallet is on another network.',
   '`@bsv/simple` has no Arcade option. For any step that needs Arcade tracking (the 0-conf gate, `competingTxs`, rejection reasons), drop to `@bsv/sdk` for that step: ' +
-    'take the transaction the action returns and submit it with `arcade_submit`.',
+    `take the transaction the action returns. ${ARCADE_GATE}`,
 ].join('\n- ')
 
 const FINISH = 'When done, call `check_guardrails` with the project\'s absolute path and fix every `error` finding.'
@@ -50,7 +55,8 @@ const FRAMEWORK: Record<'next' | 'express' | 'react' | 'node', string> = {
 const FEATURE: Record<'payments' | 'tokens' | 'inscriptions' | 'messagebox' | 'certificates' | 'did' | 'overlay', string> = {
   payments:
     'Payments: for a payment the app must verify, use `createPaymentRequest` + `sendDirectPayment`, and `receiveDirectPayment` on the recipient side. ' +
-    'Submit the transaction with `arcade_submit` and gate on `arcade_status`. `pay()` and `sendMessageBoxPayment` can return an empty or marker txid: never treat either as proof of payment. ' +
+    ARCADE_GATE +
+    ' `pay()` and `sendMessageBoxPayment` can return an empty or marker txid: never treat either as proof of payment. ' +
     'For ordinary payments omit `basket` so the output lands in the spendable balance (`wallet payment`).',
   tokens:
     'Tokens: `createToken` makes encrypted PushDrop tokens, not 1Color fungible tokens. For 1Color, use the `tokenize_with_1color` prompt instead. ' +

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { parse as parseYaml } from 'yaml'
 import type { Config } from '../config.js'
 import { CONTENT_DIR } from '../content.js'
@@ -58,31 +58,39 @@ function refLabel(ref: string): string {
   return `\`${ref}\``
 }
 
-/** Renders `guardrails.json` as Markdown, one `## G-xx <title>` section per rule. */
-export function renderGuardrails(version: string, contentDir = CONTENT_DIR): string {
+function renderGuardrailSection(g: Guardrail): string {
+  return [
+    `## ${g.id} ${g.title}`,
+    '',
+    `**Rule:** ${g.rule}`,
+    '',
+    `**Why:** ${g.why}`,
+    '',
+    `- Shape: ${g.shape}`,
+    `- Detect: ${g.detect}`,
+    `- Severity: ${g.severity}`,
+    `- Refs: ${g.refs.map(refLabel).join(', ') || 'none'}`,
+  ].join('\n')
+}
+
+/**
+ * Renders `guardrails.json` as Markdown: `full` has one `## G-xx <title>` section per rule, and `sections` maps
+ * each id to its own prefixed section, served at `bsv://guardrails#G-xx` (the `ref` every finding carries).
+ */
+export function renderGuardrails(version: string, contentDir = CONTENT_DIR): { full: string; sections: Map<string, string> } {
   const rules = JSON.parse(readFileSync(join(contentDir, 'guardrails.json'), 'utf8')) as Guardrail[]
-  const { verified } = loadVersionsFile(contentDir)
-  const sections = rules.map((g) =>
-    [
-      `## ${g.id} ${g.title}`,
-      '',
-      `**Rule:** ${g.rule}`,
-      '',
-      `**Why:** ${g.why}`,
-      '',
-      `- Shape: ${g.shape}`,
-      `- Detect: ${g.detect}`,
-      `- Severity: ${g.severity}`,
-      `- Refs: ${g.refs.map(refLabel).join(', ') || 'none'}`,
-    ].join('\n'),
-  )
+  const head = prefix(loadVersionsFile(contentDir).verified, version)
   const intro = [
     '# Guardrails',
     '',
     'Each rule names the custody shape it applies to (A, B or both; see `bsv://custody-shapes`) and how it is checked: ' +
       '`static` rules are checked by the `check_guardrails` tool, `manual` and `contract` rules by review.',
   ].join('\n')
-  return prefix(verified, version) + [intro, ...sections].join('\n\n') + '\n'
+  const rendered = rules.map((g) => [g.id, renderGuardrailSection(g)] as const)
+  return {
+    full: head + [intro, ...rendered.map(([, text]) => text)].join('\n\n') + '\n',
+    sections: new Map(rendered.map(([id, text]) => [id, head + text + '\n'])),
+  }
 }
 
 /** `docs-index.json` wrapped so the body stays valid JSON: `{ verified, source, index }`. */
@@ -91,7 +99,7 @@ export function renderDocsIndex(version: string, contentDir = CONTENT_DIR): stri
   return JSON.stringify({ verified, source: `@bsv/mcp v${version}`, index: loadDocsIndex(contentDir) }, null, 2) + '\n'
 }
 
-/** Registers the 15 static `bsv://` resources and the `bsv://brc/{id}` template. Content is read once, here. */
+/** Registers the 15 static `bsv://` resources and the `bsv://guardrails{#id}` and `bsv://brc/{id}` templates. Content is read once, here. */
 export function registerResources(server: McpServer, cfg: Config, fetchImpl: typeof fetch): void {
   for (const r of MARKDOWN) {
     const { title, text } = loadMarkdownResource(r.file, cfg.version)
@@ -105,7 +113,19 @@ export function registerResources(server: McpServer, cfg: Config, fetchImpl: typ
     'guardrails',
     'bsv://guardrails',
     { title: 'Guardrails G-01..G-34', description: 'Every guardrail with its rule, reason, shape, detection and refs', mimeType: 'text/markdown' },
-    async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: guardrails }] }),
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: guardrails.full }] }),
+  )
+  // Findings from check_guardrails carry `ref: bsv://guardrails#G-xx`; the SDK matches the whole URI, fragment included.
+  server.registerResource(
+    'guardrail',
+    new ResourceTemplate('bsv://guardrails{#id}', { list: undefined }),
+    { title: 'Guardrail', description: 'One guardrail section, e.g. bsv://guardrails#G-09', mimeType: 'text/markdown' },
+    async (uri, { id }) => {
+      const key = String(id).replace(/^#/, '') // the SDK's {#id} match keeps the leading '#' (1.32.1)
+      const text = guardrails.sections.get(key)
+      if (text === undefined) throw new Error(`unknown guardrail: ${key} (ids are G-01..G-34)`)
+      return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text }] }
+    },
   )
 
   const docsIndex = renderDocsIndex(cfg.version)
