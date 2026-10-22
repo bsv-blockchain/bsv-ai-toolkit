@@ -39,3 +39,18 @@ export function outputPaysScript(beefHex: string, outputIndex: number): { lockin
   if (typeof out.satoshis !== 'number') throw new Error(`output ${outputIndex} has no satoshis`)
   return { lockingScriptHex: out.lockingScript.toHex(), satoshis: out.satoshis }
 }
+
+/**
+ * Arcade's rawTx (Extended Format, with placeholder parents) re-read as a plain transaction, hex. The hash must be
+ * `txid`. Throws on anything else.
+ */
+export function plainHexFromArcadeRawTx(rawTx: string, txid: string): string {
+  let tx: Transaction
+  try {
+    tx = Transaction.fromHexEF(rawTx)
+  } catch (e) {
+    throw new Error(`Arcade's rawTx for ${txid} is not Extended Format: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  if (tx.id('hex') !== txid.toLowerCase()) throw new Error(`Arcade's rawTx for ${txid} hashes to ${tx.id('hex')}`)
+  return tx.toHex()
+}

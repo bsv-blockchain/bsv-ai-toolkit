@@ -1,5 +1,5 @@
 import type { TipRow } from '../api'
-import type { CollectState } from '../collect'
+import type { CollectInfo, CollectState } from '../collect'
 
 /** The first and last characters of a txid or key. */
 export const short = (hex: string) => (hex.length > 16 ? `${hex.slice(0, 8)}…${hex.slice(-6)}` : hex)
@@ -15,18 +15,35 @@ export function verdictLabel(verdict: string): 'seen on network' | 'failed' | 'p
 /** "received" only once the creator's wallet internalized the tip (here, or reported to the relay, signed). */
 export function tipBadge(tip: TipRow, collect?: CollectState): string {
   if (collect === 'accepted' || tip.internalizedAt !== undefined) return 'received'
+  if (collect === 'failed') return 'failed'
   return verdictLabel(tip.verdict)
 }
 
-const COLLECT_TEXT: Record<CollectState, string> = {
-  collecting: 'collecting…',
-  accepted: '',
-  'not-for-me': 'not for this wallet',
-  'gave-up': 'not collected yet: reload to try again',
-  failed: '',
+/**
+ * The amount: what this wallet received, else the output amount the relay validated for the candidates (they can
+ * differ only when someone posted the transaction with a claim on another output).
+ */
+export function tipAmount(tip: TipRow, collect?: CollectInfo): string {
+  if (collect?.satoshis !== undefined) return String(collect.satoshis)
+  return [...new Set(tip.remittances.map(r => r.satoshis))].join(' / ')
 }
 
-export function TipList({ tips, collect = {} }: { tips: TipRow[]; collect?: Record<string, CollectState> }) {
+function collectText(info: CollectInfo | undefined): string {
+  switch (info?.state) {
+    case 'collecting':
+      return 'collecting…'
+    case 'not-for-me':
+      return 'not for this wallet'
+    case 'gave-up':
+      return `not collected yet${info.error ? `: ${info.error}` : ''}. It is tried again when the relay next sees it on the network, or reload the page.`
+    case 'failed':
+      return info.error ?? ''
+    default:
+      return ''
+  }
+}
+
+export function TipList({ tips, collect = {} }: { tips: TipRow[]; collect?: Record<string, CollectInfo> }) {
   if (tips.length === 0) return <p>No tips yet.</p>
   return (
     <table className="tips">
@@ -40,18 +57,19 @@ export function TipList({ tips, collect = {} }: { tips: TipRow[]; collect?: Reco
       </thead>
       <tbody>
         {tips.map(tip => {
-          const state = collect[tip.txid]
-          const badge = tipBadge(tip, state)
+          const info = collect[tip.txid]
+          const badge = tipBadge(tip, info?.state)
+          const text = collectText(info)
           return (
             <tr key={tip.txid}>
               <td>
                 <code title={tip.txid}>{short(tip.txid)}</code>
               </td>
-              <td>{tip.remittances[0]?.satoshis ?? ''}</td>
+              <td>{tipAmount(tip, info)}</td>
               <td>{tip.txStatus}</td>
               <td>
                 <span className={`badge badge-${badge.replaceAll(' ', '-')}`}>{badge}</span>
-                {state && COLLECT_TEXT[state] && <small> {COLLECT_TEXT[state]}</small>}
+                {text && <small> {text}</small>}
               </td>
             </tr>
           )

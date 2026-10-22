@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import express from 'express'
 import { REJECTED_MAY_NOT_BE_FINAL, type Arcade, type Outcome } from './arcade.js'
 import { claimMessage, internalizedMessage, isIdentityKey, verifyCreatorSignature } from './auth.js'
-import { efHexFromAtomicBeef, outputPaysScript } from './beef.js'
+import { efHexFromAtomicBeef, outputPaysScript, plainHexFromArcadeRawTx } from './beef.js'
 import type { ServerConfig } from './config.js'
 import type { Db, Remittance, TipRow } from './db.js'
 import { addressKey, RateLimiter } from './rate-limit.js'
@@ -22,6 +22,9 @@ export interface Limits {
   statusFreshMs: number
   /** All stored BEEFs together (bytes); a POST whose BEEF would exceed it gets 503. */
   beefBytesBudget: number
+  /** GET /api/tx/:id and POST /api/tips/:txid/rebroadcast per client address: burst, then refilled per minute. */
+  readBurst: number
+  readsPerMinute: number
 }
 
 export const DEFAULT_LIMITS: Limits = {
@@ -33,6 +36,8 @@ export const DEFAULT_LIMITS: Limits = {
   statusFreshMs: 2000,
   // 256 MiB: some 2,000 of the largest BEEFs a POST may carry, far more than ordinary tips need.
   beefBytesBudget: 256 * 1024 * 1024,
+  readBurst: 30,
+  readsPerMinute: 120,
 }
 
 export interface ApiDeps {
@@ -129,9 +134,11 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   const limits: Limits = { ...DEFAULT_LIMITS, ...deps.limits }
   const now = deps.now ?? Date.now
   const tipLimiter = new RateLimiter(limits.tipBurst, limits.tipsPerMinute)
+  const readLimiter = new RateLimiter(limits.readBurst, limits.readsPerMinute)
   // One Arcade submission per txid at a time, and one status read per txid at a time.
   const broadcasts = new Map<string, Promise<Outcome>>()
   const statusReads = new Map<string, Promise<Reply>>()
+  const ancestorReads = new Map<string, Promise<Reply>>()
   const lastRead = new Map<string, number>()
 
   const creator = (): string | undefined => cfg.creatorIdentityKey ?? db.getSetting(CREATOR_SETTING)
@@ -172,10 +179,15 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     return pending
   }
 
-  async function readStatus(txid: string): Promise<Reply> {
+  /** Arcade's view of a stored tip. `repost`: submit the stored EF again first (the second read of the two-read rule). */
+  async function readStatus(txid: string, repost = false): Promise<Reply> {
     let o: Outcome | undefined
     try {
-      o = await arcade.read(txid)
+      if (repost) {
+        const beef = db.getBeef(txid)
+        if (beef === undefined) return { code: 404, body: { error: 'no tip with this txid' } }
+        o = await arcade.broadcast(efHexFromAtomicBeef(beef, txid), txid, 0)
+      } else o = await arcade.read(txid)
       // Arcade has no record (its first submit never got through): submit the stored EF again, then read once.
       if (o === undefined) {
         const beef = db.getBeef(txid)
@@ -191,6 +203,45 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     lastRead.set(txid, at)
     const row = store(txid, o)
     return row === undefined ? { code: 404, body: { error: 'no tip with this txid' } } : { code: 200, body: statusView(row) }
+  }
+
+  /** An ancestor transaction from Arcade, re-read as plain hex, with its merkle path when Arcade has one. */
+  async function readAncestor(txid: string): Promise<Reply> {
+    let s: Awaited<ReturnType<Arcade['status']>>
+    try {
+      s = await arcade.status(txid)
+    } catch (e) {
+      return { code: 502, body: { transient: true, error: `Arcade status read failed: ${e instanceof Error ? e.message : String(e)}` } }
+    }
+    if ('notFound' in s) return { code: 404, body: { error: 'Arcade has no record of this txid' } }
+    if (typeof s.rawTx !== 'string' || s.rawTx === '') return { code: 404, body: { error: 'Arcade holds no rawTx for this txid' } }
+    let rawTx: string
+    try {
+      rawTx = plainHexFromArcadeRawTx(s.rawTx, txid)
+    } catch (e) {
+      return { code: 502, body: { error: e instanceof Error ? e.message : String(e) } }
+    }
+    const body: { txid: string; rawTx: string; merklePath?: string } = { txid, rawTx }
+    if (typeof s.merklePath === 'string' && s.merklePath !== '') body.merklePath = s.merklePath
+    return { code: 200, body }
+  }
+
+  /** One in-flight read per key; answers every caller with its reply. */
+  function coalesced(map: Map<string, Promise<Reply>>, key: string, read: () => Promise<Reply>): Promise<Reply> {
+    let pending = map.get(key)
+    if (pending === undefined) {
+      pending = read().finally(() => map.delete(key))
+      map.set(key, pending)
+    }
+    return pending
+  }
+
+  /** False (and a 429 sent) when this client is over the read limit. */
+  function readAllowed(req: express.Request, res: express.Response): boolean {
+    const client = addressKey(req.ip)
+    if (readLimiter.take(client, now())) return true
+    res.status(429).set('Retry-After', String(readLimiter.retryAfter(client))).json({ error: 'too many reads from this address; retry shortly' })
+    return false
   }
 
   const api = express.Router()
@@ -324,12 +375,29 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
       res.json(statusView(db.getTip(txid)!))
       return
     }
-    let pending = statusReads.get(txid)
-    if (pending === undefined) {
-      pending = readStatus(txid).finally(() => statusReads.delete(txid))
-      statusReads.set(txid, pending)
+    const { code, body } = await coalesced(statusReads, txid, () => readStatus(txid))
+    res.status(code).json(body)
+  })
+
+  // The two-read dead rule's re-post: submit the stored EF to Arcade again, then read its status.
+  api.post('/tips/:txid/rebroadcast', async (req, res) => {
+    if (!readAllowed(req, res)) return
+    const txid = txidOf(req)
+    const { code, body } = await coalesced(statusReads, `repost:${txid}`, () => readStatus(txid, true))
+    res.status(code).json(body)
+  })
+
+  // An ancestor a tip's BEEF names by txid only, for the creator page to complete the BEEF: Arcade is the source
+  // for a known txid, and the browser asks this origin rather than Arcade (no CORS, no private ARCADE_URL).
+  // `:id`, not `:txid`: the transaction need not be a stored tip.
+  api.get('/tx/:id', async (req, res) => {
+    const txid = String(req.params.id).toLowerCase()
+    if (!TXID.test(txid)) {
+      res.status(400).json({ error: 'txid must be 64 hex characters' })
+      return
     }
-    const { code, body } = await pending
+    if (!readAllowed(req, res)) return
+    const { code, body } = await coalesced(ancestorReads, txid, () => readAncestor(txid))
     res.status(code).json(body)
   })
 

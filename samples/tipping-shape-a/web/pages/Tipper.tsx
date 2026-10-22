@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { relayApi, type RelayApi } from '../api'
 import { short, verdictLabel } from '../components/TipList'
 import type { AppConfig, Network } from '../config'
-import { MIN_TIP_SATS, postPending, sendTip, unsentTips, type TipOutcome } from '../tip'
+import { forgetTip, MIN_TIP_SATS, postPending, resumableTips, sendTip, stuckTips, type PendingTip, type TipOutcome } from '../tip'
 import { login, networkMismatch, type Session } from '../wallet'
 
 const EXPLORER: Record<Network, string> = { testnet: 'https://test.whatsonchain.com', mainnet: 'https://whatsonchain.com' }
@@ -11,6 +11,45 @@ const EXPLORER: Record<Network, string> = { testnet: 'https://test.whatsonchain.
 export const explorerTxUrl = (network: Network, txid: string) => `${EXPLORER[network]}/tx/${txid}`
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** Saved tip records that cannot be re-posted; [] when this browser has no localStorage. */
+function readStuck(network: Network): PendingTip[] {
+  try {
+    return stuckTips(network)
+  } catch {
+    return []
+  }
+}
+
+/** Tips the wallet may have sent that never reached the relay: shown with what is known, never hidden. */
+function Unfinished({ records, network, onForget }: { records: PendingTip[]; network: Network; onForget: (key: string) => void }) {
+  if (records.length === 0) return null
+  return (
+    <section aria-label="unfinished tips">
+      <h3>Unfinished tips</h3>
+      <p>
+        These tips did not reach the relay, so the creator cannot collect them from here. If your wallet shows one of
+        them as sent, keep this record: it holds the details the creator needs.
+      </p>
+      <ul>
+        {records.map(r => (
+          <li key={r.key}>
+            {r.satoshis} sats, started {new Date(r.createdAt).toLocaleString()}
+            {r.txid && (
+              <>
+                , transaction <a href={explorerTxUrl(network, r.txid)} target="_blank" rel="noreferrer"><code>{r.txid}</code></a>
+              </>
+            )}
+            : {r.lastError ?? 'the page closed before the wallet answered'}{' '}
+            <button type="button" onClick={() => onForget(r.key)}>
+              Forget
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 function Outcome({ outcome, network }: { outcome: TipOutcome; network: Network }) {
   const link = <a href={explorerTxUrl(network, outcome.txid)} target="_blank" rel="noreferrer">view on WhatsOnChain</a>
@@ -26,6 +65,7 @@ function Outcome({ outcome, network }: { outcome: TipOutcome; network: Network }
     <p>
       Tip <code title={outcome.txid}>{short(outcome.txid)}</code>: <strong>{verdictLabel(outcome.row.verdict)}</strong>. The creator
       collects it automatically. ({link})
+      {outcome.walletError && <> Your wallet reported a problem sending it ({outcome.walletError}); the relay took it to Arcade itself.</>}
     </p>
   )
 }
@@ -46,6 +86,7 @@ export function Tipper({ config, initialSession, api, connect = login }: TipperP
   const [reviewing, setReviewing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [outcomes, setOutcomes] = useState<TipOutcome[]>([])
+  const [stuck, setStuck] = useState(() => readStuck(config.network))
 
   const mismatch = session && networkMismatch(session.network, config.network)
   const creator = config.creatorIdentityKey
@@ -58,10 +99,11 @@ export function Tipper({ config, initialSession, api, connect = login }: TipperP
     if (session === undefined || mismatch !== undefined) return
     let live = true
     void (async () => {
-      for (const pending of unsentTips(config.network)) {
+      for (const pending of resumableTips(config.network)) {
         const out = await postPending(pending, relay)
         if (live) setOutcomes(o => [out, ...o.filter(x => x.txid !== out.txid)])
       }
+      if (live) setStuck(readStuck(config.network))
     })()
     return () => {
       live = false
@@ -99,6 +141,7 @@ export function Tipper({ config, initialSession, api, connect = login }: TipperP
       setError(`The tip was not sent: ${message(e)}`)
     } finally {
       setBusy(false)
+      setStuck(readStuck(config.network))
     }
   }
 
@@ -151,6 +194,14 @@ export function Tipper({ config, initialSession, api, connect = login }: TipperP
       {outcomes.map(o => (
         <Outcome key={o.txid} outcome={o} network={config.network} />
       ))}
+      <Unfinished
+        records={stuck}
+        network={config.network}
+        onForget={key => {
+          forgetTip(key)
+          setStuck(readStuck(config.network))
+        }}
+      />
     </section>
   )
 }

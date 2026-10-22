@@ -43,13 +43,13 @@ export interface TipPost {
   remittance: { senderIdentityKey: string; derivationPrefix: string; derivationSuffix: string }
 }
 
-/** GET /tx/{txid} on Arcade, the fields buildAtomicBeef reads. rawTx is Extended Format. */
-export interface ArcadeTxStatus {
-  txid?: string
-  txStatus?: string
-  rawTx?: string
+/** GET /api/tx/:txid: an ancestor transaction from the relay's Arcade, already re-read as a plain transaction. */
+export interface AncestorTx {
+  txid: string
+  /** Plain (not Extended Format) transaction hex. */
+  rawTx: string
+  /** BUMP hex, when Arcade has the transaction's merkle path. */
   merklePath?: string
-  competingTxs?: string[]
 }
 
 /** A relay answer other than 2xx; status 0 when the relay could not be reached. */
@@ -81,6 +81,10 @@ export interface RelayApi {
   beef(txid: string, beefId: string): Promise<string>
   /** The relay's live Arcade read for a stored tip. */
   status(txid: string): Promise<TipStatusView>
+  /** The relay submits the stored tip to Arcade again, then reads its status (the two-read rule's re-post). */
+  rebroadcast(txid: string): Promise<TipStatusView>
+  /** An ancestor transaction, from the relay's Arcade; undefined when Arcade has no rawTx for it. */
+  ancestor(txid: string): Promise<AncestorTx | undefined>
   claimCreator(identityKey: string, signature: string): Promise<{ creatorIdentityKey: string }>
   markInternalized(txid: string, signature: string): Promise<TipRow>
 }
@@ -131,20 +135,17 @@ export function relayApi(fetchImpl: typeof fetch = (input, init) => fetch(input,
     getTip: txid => call('GET', tip(txid)),
     beef: async (txid, beefId) => (await call<{ beefHex: string }>('GET', `${tip(txid)}/beef?id=${encodeURIComponent(beefId)}`)).beefHex,
     status: txid => call('GET', `${tip(txid)}/status`),
+    rebroadcast: txid => call('POST', `${tip(txid)}/rebroadcast`),
+    ancestor: async txid => {
+      try {
+        return await call<AncestorTx>('GET', `/api/tx/${encodeURIComponent(txid)}`)
+      } catch (e) {
+        if (e instanceof RelayError && e.status === 404) return undefined
+        throw e
+      }
+    },
     claimCreator: (identityKey, signature) => call('POST', '/api/creator', { identityKey, signature }),
     markInternalized: (txid, signature) => call('POST', `${tip(txid)}/internalized`, { signature }),
   }
 }
 
-/**
- * Arcade's GET /tx/{txid}, for an ancestor a tip's BEEF names by txid only (undefined on 404). Arcade, never an
- * indexer, is the source for a txid we know. The browser calls it directly, so the Arcade instance must allow CORS.
- */
-export function arcadeStatus(arcadeUrl: string, fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {
-  return async (txid: string): Promise<ArcadeTxStatus | undefined> => {
-    const res = await fetchImpl(`${arcadeUrl.replace(/\/+$/, '')}/tx/${encodeURIComponent(txid)}`, { signal: AbortSignal.timeout(10_000) })
-    if (res.status === 404) return undefined
-    if (!res.ok) throw new Error(`Arcade GET /tx/${txid}: HTTP ${res.status}`)
-    return (await res.json()) as ArcadeTxStatus
-  }
-}

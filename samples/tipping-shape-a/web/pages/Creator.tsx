@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { arcadeStatus, relayApi, type RelayApi, type TipRow, type TipStatusView } from '../api'
-import { claimCreator, Collector, type CollectState, type CreatorRole } from '../collect'
+import { relayApi, type RelayApi, type TipRow, type TipStatusView } from '../api'
+import { claimCreator, Collector, type CollectInfo, type CreatorRole } from '../collect'
 import { short, TipList } from '../components/TipList'
 import type { AppConfig } from '../config'
 import { login, networkMismatch, type Session } from '../wallet'
@@ -28,19 +28,35 @@ export function Creator({ config, initialSession, api, connect = login }: Creato
   const [role, setRole] = useState<CreatorRole>()
   const [error, setError] = useState<string>()
   const [tips, setTips] = useState<TipRow[]>([])
-  const [states, setStates] = useState<Record<string, CollectState>>({})
+  const [states, setStates] = useState<Record<string, CollectInfo>>({})
+  const [claiming, setClaiming] = useState(false)
 
   const mismatch = session && networkMismatch(session.network, config.network)
 
-  async function onConnect() {
+  async function claim(s: Session) {
+    if (networkMismatch(s.network, config.network) !== undefined) return
+    setClaiming(true)
     setError(undefined)
     try {
-      const s = await connect()
-      setSession(s)
-      if (networkMismatch(s.network, config.network) === undefined) setRole(await claimCreator(s.wallet, s.identityKey, relay))
+      setRole(await claimCreator(s.wallet, s.identityKey, relay))
     } catch (e) {
-      setError(`Could not connect as the creator: ${message(e)}`)
+      setError(`Could not claim or check the creator page: ${message(e)}`)
+    } finally {
+      setClaiming(false)
     }
+  }
+
+  async function onConnect() {
+    setError(undefined)
+    let s: Session
+    try {
+      s = await connect()
+    } catch (e) {
+      setError(`Could not connect a wallet: ${message(e)}`)
+      return
+    }
+    setSession(s)
+    await claim(s)
   }
 
   useEffect(() => {
@@ -49,8 +65,8 @@ export function Creator({ config, initialSession, api, connect = login }: Creato
       wallet: session.wallet,
       identityKey: session.identityKey,
       api: relay,
-      deps: { originator: config.originator, network: config.network, arcadeStatus: arcadeStatus(config.arcadeUrl) },
-      onChange: (txid, state) => setStates(s => ({ ...s, [txid]: state })),
+      deps: { originator: config.originator, network: config.network },
+      onChange: (txid, info) => setStates(s => ({ ...s, [txid]: info })),
     })
     let live = true
     const refresh = () =>
@@ -64,7 +80,7 @@ export function Creator({ config, initialSession, api, connect = login }: Creato
       )
     // One stream; EventSource reconnects by itself, and every (re)open lists the tips in case events were missed.
     const events = new EventSource('/api/events')
-    events.addEventListener('open', () => void refresh())
+    events.addEventListener('open', () => void refresh().then(() => collector.retryGaveUp()))
     events.addEventListener('tip', e => {
       const row = JSON.parse((e as MessageEvent<string>).data) as TipRow
       setTips(t => upsert(t, row))
@@ -73,13 +89,14 @@ export function Creator({ config, initialSession, api, connect = login }: Creato
     events.addEventListener('status', e => {
       const s = JSON.parse((e as MessageEvent<string>).data) as TipStatusView
       setTips(t => t.map(tip => (tip.txid === s.txid ? { ...tip, ...s } : tip)))
+      collector.onStatus(s)
     })
     return () => {
       live = false
       events.close()
       collector.stop()
     }
-  }, [session, mismatch, role, relay, config.originator, config.network, config.arcadeUrl])
+  }, [session, mismatch, role, relay, config.originator, config.network])
 
   return (
     <section aria-label="creator">
@@ -106,6 +123,11 @@ export function Creator({ config, initialSession, api, connect = login }: Creato
         </p>
       )}
       {error && <p role="alert">{error}</p>}
+      {session !== undefined && mismatch === undefined && role === undefined && !claiming && (
+        <button type="button" onClick={() => void claim(session)}>
+          Try again
+        </button>
+      )}
       {role?.role === 'creator' && (
         <>
           <p>Tips are collected into your wallet automatically while this page is open.</p>

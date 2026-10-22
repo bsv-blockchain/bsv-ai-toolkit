@@ -32,9 +32,13 @@ export interface PendingTip {
   lastError?: string
 }
 
-export type TipOutcome =
+export type TipOutcome = (
   | { posted: true; txid: string; row: TipRow }
   | { posted: false; txid: string; error: string }
+) & {
+  /** The wallet built the transaction but reported a problem broadcasting it (WERR_REVIEW_ACTIONS). */
+  walletError?: string
+}
 
 export interface TipDeps {
   /** Default: localStorage. */
@@ -107,7 +111,8 @@ export async function sendTip(
   }
   save(storage, record) // write-ahead: createAction broadcasts before it returns
 
-  let result: Awaited<ReturnType<WalletInterface['createAction']>>
+  let result: { txid?: string; tx?: number[] | Uint8Array }
+  let walletError: string | undefined
   try {
     result = await wallet.createAction({
       description: 'Tip to creator',
@@ -115,24 +120,38 @@ export async function sendTip(
       options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
     })
   } catch (e) {
-    // Kept: if the wallet broadcast before failing, this derivation is the only way to collect the payment.
-    save(storage, { ...record, lastError: message(e) })
-    throw e
+    // WERR_REVIEW_ACTIONS: the wallet built and signed the transaction but its own broadcast did not fully succeed
+    // (it may still retry). It carries the txid and the AtomicBEEF, so the relay can take it to Arcade.
+    const { txid, tx, reviewActionResults } = e as { txid?: unknown; tx?: unknown; reviewActionResults?: Array<{ status?: unknown }> }
+    const status = reviewActionResults?.[0]?.status
+    walletError = `${message(e)}${typeof status === 'string' ? ` (${status})` : ''}`
+    const signed = Array.isArray(tx) || tx instanceof Uint8Array ? Array.from(tx as ArrayLike<number>) : undefined
+    if (typeof txid !== 'string' || signed === undefined) {
+      // Kept, and listed on the page: if the wallet broadcast before failing, this derivation is the only way to
+      // collect the payment.
+      save(storage, { ...record, txid: typeof txid === 'string' ? txid : undefined, lastError: walletError })
+      throw e
+    }
+    result = { txid, tx: signed }
   }
   if (result.txid === undefined || result.tx === undefined) {
     save(storage, { ...record, txid: result.txid, lastError: 'the wallet returned no transaction' })
     throw new Error(`the wallet returned no transaction${result.txid ? ` for ${result.txid}` : ''}`)
   }
+  const bytes = Array.from(result.tx)
   record.txid = result.txid
-  record.beef = Utils.toHex(result.tx)
-  const tx = Transaction.fromAtomicBEEF(result.tx)
+  record.beef = Utils.toHex(bytes)
+  const tx = Transaction.fromAtomicBEEF(bytes)
   record.outputIndex = tx.outputs.findIndex(o => o.lockingScript.toHex() === lockingScript && o.satoshis === satoshis)
   if (tx.id('hex') !== result.txid || record.outputIndex < 0) {
-    save(storage, { ...record, lastError: 'the wallet returned a transaction that does not pay the tip' })
+    // Listed on the page with this error, and never handed to the relay: its remittance would not match.
+    save(storage, { ...record, outputIndex: -1, lastError: 'the wallet returned a transaction that does not pay the planned tip' })
     throw new Error(`transaction ${result.txid} does not pay the tip`)
   }
+  if (walletError !== undefined) record.lastError = `the wallet reported: ${walletError}`
   save(storage, record)
-  return postPending(record, api, deps)
+  const out = await postPending(record, api, deps)
+  return walletError === undefined ? out : { ...out, walletError }
 }
 
 /**
@@ -143,13 +162,13 @@ export async function postPending(record: PendingTip, api: RelayApi, deps: TipDe
   const storage = deps.storage ?? localStorage
   const sleep = deps.sleep ?? sleepMs
   const attempts = deps.postAttempts ?? 5
-  if (record.txid === undefined || record.beef === undefined) throw new Error('this tip was never broadcast by the wallet')
-  const { txid } = record
+  const { txid, beef } = record
+  if (txid === undefined || beef === undefined || record.outputIndex < 0) throw new Error('this tip has no transaction the relay could take')
   for (let attempt = 1; ; attempt++) {
     try {
       const row = await api.postTip({
         txid,
-        beef: record.beef,
+        beef,
         outputIndex: record.outputIndex,
         satoshis: record.satoshis,
         remittance: {
@@ -169,7 +188,22 @@ export async function postPending(record: PendingTip, api: RelayApi, deps: TipDe
   }
 }
 
-/** Tips the wallet broadcast that the relay does not have yet (for this network). */
-export function unsentTips(network: Network, storage: KeyValueStore = localStorage): PendingTip[] {
-  return pendingTips(storage).filter(t => t.network === network && t.txid !== undefined && t.beef !== undefined)
+const resumable = (t: PendingTip) => t.txid !== undefined && t.beef !== undefined && t.outputIndex >= 0
+
+/** Tips the wallet returned a transaction for that the relay does not have yet (this network): re-post these. */
+export function resumableTips(network: Network, storage: KeyValueStore = localStorage): PendingTip[] {
+  return pendingTips(storage).filter(t => t.network === network && resumable(t))
+}
+
+/**
+ * Tips that cannot be re-posted (this network): the wallet failed or the page closed before it returned a
+ * transaction, or its transaction does not pay the planned output. Shown on the page, never dropped silently.
+ */
+export function stuckTips(network: Network, storage: KeyValueStore = localStorage): PendingTip[] {
+  return pendingTips(storage).filter(t => t.network === network && !resumable(t))
+}
+
+/** Deletes a saved tip record (the user chose to forget it). */
+export function forgetTip(key: string, storage: KeyValueStore = localStorage): void {
+  if (key.startsWith(PENDING_PREFIX)) storage.removeItem(key)
 }

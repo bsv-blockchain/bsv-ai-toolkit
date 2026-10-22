@@ -625,6 +625,51 @@ describe('tips: list, detail, status, internalized', () => {
     expect((await mark(await sign(creatorWallet, internalizedMessage(ORIGIN, '9'.repeat(64))), '9'.repeat(64))).status).toBe(404)
   })
 
+  it('POST rebroadcast submits the stored EF again, then reads the status', async () => {
+    const t = await tip()
+    const arc = fakeArcade({ status: 202, json: fixture('submit-202', t.txid) }, [{ status: 200, json: fixture('status-rejected', t.txid) }])
+    const { app } = relay(arc)
+    await request(app).post('/api/tips').send(body(t))
+    arc.calls.length = 0
+    const res = await request(app).post(`/api/tips/${t.txid}/rebroadcast`)
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ txid: t.txid, txStatus: 'REJECTED', verdict: 'terminal' })
+    expect(arc.calls.map(c => `${c.method} ${c.url.replace(ARCADE, '')}`)).toEqual(['POST /tx', `GET /tx/${t.txid}`])
+    expect(arc.calls[0].body).toBe(t.child.toHexEF())
+    expect((await request(app).post(`/api/tips/${'9'.repeat(64)}/rebroadcast`)).status).toBe(404)
+  })
+
+  it('GET /api/tx/:id serves an ancestor from Arcade as plain hex with its merkle path', async () => {
+    const t = await tip()
+    const parent = t.child.inputs[0].sourceTransaction!
+    const parentId = parent.id('hex')
+    const efParent = new Transaction()
+    efParent.addInput({ sourceTransaction: parent, sourceOutputIndex: 0, unlockingScript: new UnlockingScript(), sequence: 0xffffffff })
+    efParent.addOutput({ lockingScript: new P2PKH().lock(PrivateKey.fromRandom().toAddress('testnet')), satoshis: 4000 })
+    const ancestorId = efParent.id('hex')
+    const path = new MerklePath(900001, [[{ offset: 0, hash: ancestorId, txid: true }]]).toHex()
+    const arc = fakeArcade({ status: 500 }, [
+      { status: 200, json: { txid: ancestorId, txStatus: 'MINED', rawTx: efParent.toHexEF(), merklePath: path } },
+      { status: 404, json: { title: 'not found' } },
+      { status: 200, json: { txid: ancestorId, txStatus: 'SEEN_ON_NETWORK' } },
+      { status: 200, json: { txid: ancestorId, txStatus: 'MINED', rawTx: efParent.toHexEF() } }, // asked for another txid
+      new Error('connect ECONNREFUSED'),
+    ])
+    const { app } = relay(arc, {}, { tipBurst: 1000, readBurst: 5, readsPerMinute: 1 })
+    const ok = await request(app).get(`/api/tx/${ancestorId.toUpperCase()}`)
+    expect(ok.status).toBe(200)
+    expect(ok.body).toEqual({ txid: ancestorId, rawTx: efParent.toHex(), merklePath: path }) // EF re-read as plain
+    expect(arc.calls[0]).toMatchObject({ method: 'GET', url: `${ARCADE}/tx/${ancestorId}`, signal: expect.any(AbortSignal) })
+    expect((await request(app).get(`/api/tx/${ancestorId}`)).status).toBe(404) // Arcade never saw it
+    expect((await request(app).get(`/api/tx/${ancestorId}`)).body.error).toMatch(/no rawTx/)
+    expect((await request(app).get(`/api/tx/${parentId}`)).body.error).toMatch(new RegExp(`hashes to ${ancestorId}`))
+    expect((await request(app).get(`/api/tx/${ancestorId}`)).body).toMatchObject({ transient: true })
+    expect((await request(app).get('/api/tx/nothex')).status).toBe(400)
+    const limited = await request(app).get(`/api/tx/${ancestorId}`)
+    expect(limited.status).toBe(429)
+    expect(limited.headers['retry-after']).toMatch(/^\d+$/)
+  })
+
   it('a transient Arcade answer never overwrites a stored status', async () => {
     const t = await tip()
     const { app, db, events } = relay(fakeArcade(new TypeError('fetch failed')))
