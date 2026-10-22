@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { Hash, PrivateKey, Utils } from '@bsv/sdk'
 import type { Wallet } from '@bsv/wallet-toolbox'
 
@@ -19,12 +19,12 @@ export interface RootKey {
   source: 'env' | 'file' | 'created'
 }
 
+/** The public values the gate derives from its root key: safe to print. */
 export interface Derived {
-  /** Testnet P2PKH address of the root key: the faucet pays it, `gate sweep` moves it into the tipper wallet. */
+  /** Testnet P2PKH address of the root key: the gate's coins live here between runs (the faucet pays it). */
   fundingAddress: string
   tipperIdentityKey: string
-  /** sha256(root key bytes || utf8 'creator'): the creator wallet's root, derived so one secret covers both (G-24). */
-  creatorRootKeyHex: string
+  /** The identity key of the creator wallet, whose root is derived from the gate's root key (creatorRootKey). */
   creatorIdentityKey: string
 }
 
@@ -42,19 +42,10 @@ export class GateUsageError extends Error {
 
 const ENV_KEY = 'BSV_TESTNET_GATE_KEY'
 
-/** The gate's directory: the key file and the wallets' SQLite files live here, outside the repo. */
-export const gateHome = () => join(homedir(), '.bsv-gate')
-
-/** BSV_GATE_KEY_FILE, else ~/.bsv-gate/tipping-shape-a.key. */
+/** BSV_GATE_KEY_FILE, else ~/.bsv-gate/tipping-shape-a.key (outside any repo). */
 export function keyFilePath(env: Env = process.env): string {
   const set = env.BSV_GATE_KEY_FILE?.trim()
-  return set ? set : join(gateHome(), 'tipping-shape-a.key')
-}
-
-/** BSV_GATE_DATA_DIR, else ~/.bsv-gate: where the tipper and creator wallets keep their SQLite storage. */
-export function gateDataDir(env: Env = process.env): string {
-  const set = env.BSV_GATE_DATA_DIR?.trim()
-  return set ? set : gateHome()
+  return set ? set : join(homedir(), '.bsv-gate', 'tipping-shape-a.key')
 }
 
 /** 64 hex characters that are a valid secp256k1 scalar (1 ≤ k < n). Never echoes the value. */
@@ -72,11 +63,37 @@ function parseRootKey(raw: string, where: string): string {
   return hex
 }
 
+const POSIX = process.platform !== 'win32'
+
+/** True when `path` sits inside a git work tree (a .git directory or file in it or any parent). */
+function insideGitWorkTree(path: string): boolean {
+  for (let dir = dirname(resolve(path)); ; dir = dirname(dir)) {
+    if (exists(join(dir, '.git'))) return true
+    if (dirname(dir) === dir) return false
+  }
+}
+
 /**
- * Reads a key file that only its owner can read. Refuses symlinks (O_NOFOLLOW), non-files and group/world-readable
- * modes, checked on the open descriptor so the file cannot be swapped between the check and the read.
+ * Where a key file may live: never inside a git work tree (one `git add -A` from publishing it), and never in an
+ * existing directory that group or others can write (they could replace the file).
+ */
+function checkKeyLocation(path: string): void {
+  if (insideGitWorkTree(path)) {
+    throw new GateUsageError(`key file ${path} is inside a git work tree; keep it outside every repo (set BSV_GATE_KEY_FILE)`)
+  }
+  const dir = dirname(resolve(path))
+  if (POSIX && exists(dir) && (lstatSync(dir).mode & 0o022) !== 0) {
+    throw new GateUsageError(`key directory ${dir} is writable by group or others; run: chmod 700 ${dir}`)
+  }
+}
+
+/**
+ * Reads a key file that only its owner can read. Refuses symlinks (O_NOFOLLOW), non-files, files owned by another
+ * user and group/world-readable modes, checked on the open descriptor so the file cannot be swapped between the
+ * check and the read.
  */
 function readKeyFile(path: string): string {
+  checkKeyLocation(path)
   let fd: number
   try {
     fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
@@ -86,7 +103,10 @@ function readKeyFile(path: string): string {
   try {
     const st = fstatSync(fd)
     if (!st.isFile()) throw new GateUsageError(`key file ${path} is not a regular file`)
-    if (process.platform !== 'win32' && (st.mode & 0o077) !== 0) {
+    if (POSIX && typeof process.getuid === 'function' && st.uid !== process.getuid()) {
+      throw new GateUsageError(`key file ${path} belongs to another user`)
+    }
+    if (POSIX && (st.mode & 0o077) !== 0) {
       const mode = (st.mode & 0o777).toString(8).padStart(4, '0')
       throw new GateUsageError(`key file ${path} is readable by group or others (mode ${mode}); run: chmod 600 ${path}`)
     }
@@ -102,9 +122,11 @@ function readKeyFile(path: string): string {
  * name removed. Returns false when another file got there first.
  */
 function writeKeyFileExclusive(path: string, hex: string): boolean {
+  checkKeyLocation(path)
   const dir = dirname(path)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const tmp = join(dir, `.${randomBytes(8).toString('hex')}.key.tmp`)
+  // Ends in .key, so the repo's *.key ignore rule covers it too.
+  const tmp = join(dir, `.${randomBytes(8).toString('hex')}.tmp.key`)
   const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
   try {
     try {
@@ -148,38 +170,40 @@ export function loadOrCreateRootKey(opts: { create: boolean; env?: Env }): RootK
   if (!opts.create) {
     throw new GateUsageError(`no gate key: set ${ENV_KEY} or create the key file ${path} with \`pnpm gate init\``)
   }
-  let hex: string
-  do hex = PrivateKey.fromRandom().toHex()
-  while (hex.length !== 64)
+  const hex = parseRootKey(PrivateKey.fromRandom().toHex(), 'the new key') // toHex pads to 32 bytes
   // Lost a race with another init: use the key that won.
-  if (!writeKeyFileExclusive(path, parseRootKey(hex, 'the new key'))) return { rootKeyHex: readKeyFile(path), source: 'file' }
+  if (!writeKeyFileExclusive(path, hex)) return { rootKeyHex: readKeyFile(path), source: 'file' }
   return { rootKeyHex: hex, source: 'created' }
 }
 
-/** Everything public the gate derives from its root key. Deterministic. */
+/**
+ * The creator wallet's root key: sha256(root key bytes || utf8 'creator'), so one secret covers both gate wallets
+ * deterministically (G-24). Private: it never leaves this module.
+ */
+function creatorRootKey(rootKeyHex: string): string {
+  const root = parseRootKey(rootKeyHex, 'the root key')
+  return parseRootKey(Utils.toHex(Hash.sha256([...Utils.toArray(root, 'hex'), ...Utils.toArray('creator', 'utf8')])), 'the derived creator key')
+}
+
+/** The public values derived from the root key (safe to print). Deterministic. */
 export function derive(rootKeyHex: string): Derived {
   const root = PrivateKey.fromHex(parseRootKey(rootKeyHex, 'the root key'))
   // Setup.getKeyPair(rootKeyHex).address is the mainnet form; the faucet needs the testnet address of the same key.
-  const fundingAddress = root.toPublicKey().toAddress('testnet')
-  const creatorRootKeyHex = parseRootKey(
-    Utils.toHex(Hash.sha256([...Utils.toArray(root.toHex(), 'hex'), ...Utils.toArray('creator', 'utf8')])),
-    'the derived creator key',
-  )
   return {
-    fundingAddress,
+    fundingAddress: root.toPublicKey().toAddress('testnet'),
     tipperIdentityKey: root.toPublicKey().toString(),
-    creatorRootKeyHex,
-    creatorIdentityKey: PrivateKey.fromHex(creatorRootKeyHex).toPublicKey().toString(),
+    creatorIdentityKey: PrivateKey.fromHex(creatorRootKey(rootKeyHex)).toPublicKey().toString(),
   }
 }
 
 /**
- * A headless @bsv/wallet-toolbox wallet with SQLite storage under `dataDir` (one file per wallet and identity).
+ * A headless @bsv/wallet-toolbox wallet with SQLite storage under `dataDir` (one file per wallet and identity;
+ * the gate uses a fresh temp dir per command).
  * Built the way Setup.createWallet + Setup.createWalletSQLite build one (wallet-toolbox 2.14.9,
  * out/src/Setup.js), with these divergences, each marked below:
- * - Services: Arcade (`arcadeUrl`) is the primary broadcaster and the ARC fallbacks are off (Ruling C4). Bitails
- *   and WhatsOnChain stay in the toolbox's fallback lists (they cannot be disabled); the gate's pass/fail comes
- *   from the relay's Arcade verdict, not from the toolbox.
+ * - Services: Arcade (`arcadeUrl`) is the only broadcaster: the ARC URLs are blanked (C4) and the Bitails and
+ *   WhatsOnChain post fallbacks removed after construction (C20). Reads keep the toolbox's providers; the gate's
+ *   pass/fail comes from the relay's Arcade verdict, not from the toolbox.
  * - No .env: the root key is passed in; SetupEnv (identity keys, devKeys, taalApiKey) is not used.
  * - No throwaway wallet: Setup.createStorageKnex builds and destroys a second wallet only to resolve options.
  * The Monitor is created as Setup creates it and, as there, never started: every gate action broadcasts at once
@@ -197,7 +221,7 @@ export async function openGateWallet(
   // when it loads (a .env in the working directory fills unset variables); the gate reads its settings before this.
   const { Monitor, Services, Setup, StorageKnex, Wallet, WalletStorageManager, randomBytesHex } = await import('@bsv/wallet-toolbox')
   const chain = 'test'
-  const rootHex = name === 'tipper' ? parseRootKey(rootKeyHex, 'the root key') : derive(rootKeyHex).creatorRootKeyHex
+  const rootHex = name === 'tipper' ? parseRootKey(rootKeyHex, 'the root key') : creatorRootKey(rootKeyHex)
   // The toolbox is CommonJS and loads @bsv/sdk's CommonJS build; its key objects must come from that same build
   // (the ESM build's classes are different classes), so the key deriver is made with the toolbox's copy.
   const cjsSdk = createRequire(import.meta.url)('@bsv/sdk') as typeof import('@bsv/sdk')
@@ -216,6 +240,13 @@ export async function openGateWallet(
     arcUrl: '',
     arcGorillaPoolUrl: '',
   })
+  // Divergence (C20): the toolbox still adds Bitails and WhatsOnChain as broadcast fallbacks (they cannot be
+  // configured away), so the post collection is cut down to Arcade alone: a post Arcade refuses fails the action
+  // instead of going out elsewhere. Reads (rawTx, merkle path, status, UTXO checks) keep the toolbox's providers.
+  for (const { name: provider } of [...services.postBeefServices.services]) {
+    if (provider !== 'ArcadeBeef') services.postBeefServices.remove(provider)
+  }
+  if (services.postBeefServices.count !== 1) throw new Error('the gate wallet must broadcast through Arcade alone')
   const monitor = new Monitor(Monitor.createDefaultWalletMonitorOptions(chain, storage, services))
   const wallet = new Wallet({ chain, keyDeriver, storage, services, monitor })
 
