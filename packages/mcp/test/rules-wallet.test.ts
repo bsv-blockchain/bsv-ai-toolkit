@@ -195,6 +195,23 @@ describe('G-08 digests signed from the wire', () => {
     expect(run('// never createSignature({ hashToDirectlySign: msg.digest })\nexport const x = 1\n')).toEqual([])
   })
 
+  it.each([
+    'const digest = stateDigest(channel, msg.move)\nawait wallet.createSignature({ hashToDirectlySign: digest })\n',
+    'await wallet.createSignature({ hashToDirectlySign: Hash.hash256(buildPreimage(ch, msg.n)) })\n',
+    'const preimage = TS.format({ sourceTXID: params.txid, sourceOutputIndex: 0 })\nawait wallet.createSignature({ hashToDirectlySign: Hash.hash256(preimage) })\n',
+    'const body = buildState(ch, n)\nawait wallet.createSignature({ hashToDirectlySign: body.preimage })\n',
+  ])('accepts a digest rebuilt from wire data: %s', text => {
+    expect(run(text)).toEqual([])
+  })
+
+  it.each([
+    'createSignature({ hashToDirectlySign: Utils.toArray(msg.digest, "hex") })',
+    'createSignature({ hashToDirectlySign: Buffer.from(req.body.hash, "hex") })',
+    'const d = hexToBytes(payload.digest)\ncreateSignature({ hashToDirectlySign: d })',
+  ])('flags a wire digest behind a decoder: %s', text => {
+    expect(run(text)).toHaveLength(1)
+  })
+
   it('not applicable without createSignature', () => {
     expect(applicable('export const digest = msg.digest\n')).toBe(false)
     expect(applicable('await wallet.createSignature({ data })\n')).toBe(true)
