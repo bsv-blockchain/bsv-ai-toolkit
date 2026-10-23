@@ -3,7 +3,7 @@ name: Build and Test
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
 
 permissions:
@@ -14,20 +14,24 @@ jobs:
   test:
     name: Build & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
-        node-version: [20, 22, 24]
+        node-version: ['22.23.4', '24.22.1']
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v7
+    - uses: actions/setup-node@v7
       with:
         node-version: ${{ matrix.node-version }}
         registry-url: 'https://registry.npmjs.org'
+    - name: Verify patched native Node runtime
+      run: node -e "const a=require('node:assert/strict'),z=require('node:zlib');a.equal(process.version,'v${{ matrix.node-version }}');a.equal(z.brotliDecompressSync(z.brotliCompressSync(Buffer.from('security'))).toString(),'security');a.equal(require('node:crypto').randomBytes(32).length,32)"
     - run: npm ci
+    - run: npm run build
     - run: npm run lint:ci --if-present
     - run: npm run test:coverage --if-present
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v7.1.1
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage/lcov.info
@@ -38,12 +42,13 @@ jobs:
     name: Publish
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    timeout-minutes: 15
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v7
+    - uses: actions/setup-node@v7
       with:
-        node-version: '24'
+        node-version: '24.22.1'
         registry-url: 'https://registry.npmjs.org'
     - run: npm ci
     - run: npm run build
