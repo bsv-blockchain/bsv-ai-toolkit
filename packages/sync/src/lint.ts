@@ -7,7 +7,7 @@ import type { ZodType } from 'zod'
 import { BrcCategoriesFile, DocsIndexFile, GuardrailSchema, VerifiedDate, VersionsFile } from './schema.js'
 
 const MARKDOWN_WITH_FRONTMATTER = ['facts/*.md', 'custody-shapes.md', 'threat-model.md', 'simple/*.md']
-const GUARDRAIL_IDS = Array.from({ length: 34 }, (_, i) => 'G-' + String(i + 1).padStart(2, '0'))
+const GUARDRAIL_IDS = Array.from({ length: 38 }, (_, i) => 'G-' + String(i + 1).padStart(2, '0'))
 
 export async function lintContent(contentDir: string): Promise<{ errors: string[] }> {
   const errors: string[] = []
@@ -95,7 +95,7 @@ async function lintGuardrails(dir: string, errors: string[]): Promise<void> {
   for (let i = 0; i < length; i++) {
     if (ids[i] !== GUARDRAIL_IDS[i]) {
       errors.push(
-        `guardrails.yaml: ids must be exactly G-01..G-34 in order; at position ${i + 1} expected ${GUARDRAIL_IDS[i] ?? '(end of list)'}, found ${ids[i] ?? '(nothing)'}`,
+        `guardrails.yaml: ids must be exactly G-01..G-38 in order; at position ${i + 1} expected ${GUARDRAIL_IDS[i] ?? '(end of list)'}, found ${ids[i] ?? '(nothing)'}`,
       )
       break
     }

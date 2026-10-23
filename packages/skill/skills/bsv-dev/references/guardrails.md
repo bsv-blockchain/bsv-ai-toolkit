@@ -4,7 +4,7 @@
 
 verified: 2026-10-22
 
-Rules G-01..G-34 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 wallet, shape B an app-side server wallet (see `custody-shapes.md`). Detect: `static` rules are flagged by the `check_guardrails` tool, `manual` rules are a review checklist, `contract` rules apply to contract code and are reviewed by hand.
+Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 wallet, shape B an app-side server wallet (see `custody-shapes.md`). Detect: `static` rules are flagged by the `check_guardrails` tool, `manual` rules are a review checklist, `contract` rules apply to contract code and are reviewed by hand.
 
 ## Rules
 
@@ -313,3 +313,39 @@ Rules G-01..G-34 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 - **Detect:** static
 - **Severity:** warn
 - **Refs:** none
+
+### G-35 Channel states stay off-chain, newest first
+
+- **Rule:** A payment channel never depends on Arcade or a node holding, ordering or replacing a non-final transaction: the parties hold every signed state; the close is final (`nSequence 0xffffffff`, `nLockTime 0`); non-final states are ordered newest-first by decreasing `nLockTime` or an earlier height on a schedule both parties signed; the newest state is posted the moment it matures, retrying on 476.
+- **Why:** Post-Genesis `nSequence` is only a finality flag, Arcade answers a non-final transaction with 476 and persists nothing, and Teranode rejects it; the only defence against a stale state is that the newest one reaches the network first.
+- **Shape:** both
+- **Detect:** manual
+- **Severity:** warn
+- **Refs:** `fact:payment-channels`, `fact:consensus`, `fact:arcade`
+
+### G-36 Lock times in seconds or heights, never milliseconds
+
+- **Rule:** Every `nLockTime` an app sets is an integer number of Unix seconds (`>= 500000000`) or a block height (`< 500000000`), validated in range before signing; a value derived from `Date.now()` is divided by 1000; a height gate also asserts `< 500000000`.
+- **Why:** A millisecond lock time overflows the uint32 field and wraps to a value that can make a state final at once or lock it for years, and a timestamp passes a height comparison.
+- **Shape:** both
+- **Detect:** static
+- **Severity:** error
+- **Refs:** `fact:payment-channels`, `fact:consensus`
+
+### G-37 Sign channel states only over the channel
+
+- **Rule:** A state signature is `createSignature({ hashToDirectlySign })` over a digest the signer rebuilt itself from the channel outpoint, value, script, state and lock time, with an ANYONECANPAY sighash (`0xc1`, `0xc2` or `0xc3`) so whoever closes adds the fee; the signer refuses unless the channel output's value and script equal what it computed, never signs a digest received over the wire, and never signs two states at one index over one outpoint.
+- **Why:** The preimage binds the signature to the outpoint, value and script, so a signature made for the channel can never spend a deposit or a foreign script; an ANYONECANPAY flag keeps the fee payer's inputs out of the signed data; one signature per index is what stops a rewritten history.
+- **Shape:** both
+- **Detect:** manual
+- **Severity:** warn
+- **Refs:** `fact:payment-channels`, `fact:consensus`
+
+### G-38 Every channel has a watcher, a timeout exit and backups
+
+- **Rule:** Each party persists, write-ahead, the opening transaction (AtomicBEEF), the channel outpoint, every signature it received and the newest state signed by both, plus any pre-signed refund; a watcher (a client tab, a bot or a server) posts the newest state at its maturity; the channel has a lifetime after which funds return without the counterparty (a pre-signed `nLockTime` refund or a covenant timeout); the payee of a one-way channel closes before that expiry with a margin for median-time-past lag.
+- **Why:** A state nobody can produce is worthless, a state nobody posts loses to an older one, and a channel with no expiry strands funds when the counterparty disappears.
+- **Shape:** both
+- **Detect:** manual
+- **Severity:** warn
+- **Refs:** `fact:payment-channels`, `fact:arcade`

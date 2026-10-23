@@ -14,11 +14,16 @@ describe('lintContent', () => {
     const { errors } = await lintContent(d)
     expect(errors.some(e => e.includes('facts/x.md') && e.includes('verified'))).toBe(true)
   })
-  it('requires G-01..G-34 in order', async () => {
+  it('requires G-01..G-38 in order', async () => {
     const d = mkdtempSync(join(tmpdir(), 'c-'))
     writeFileSync(join(d, 'guardrails.yaml'), '- id: G-02\n  title: t\n  shape: both\n  rule: r\n  why: w\n  detect: manual\n  severity: warn\n  refs: []\n')
     const { errors } = await lintContent(d)
     expect(errors.some(e => e.includes('G-01'))).toBe(true)
+    const short = mkdtempSync(join(tmpdir(), 'c-'))
+    const item = (n: number) => `- id: G-${String(n).padStart(2, '0')}\n  title: t\n  shape: both\n  rule: r\n  why: w\n  detect: manual\n  severity: warn\n  refs: []\n`
+    writeFileSync(join(short, 'guardrails.yaml'), Array.from({ length: 34 }, (_, i) => item(i + 1)).join('\n'))
+    const tail = (await lintContent(short)).errors.filter(e => e.startsWith('guardrails.yaml'))
+    expect(tail.some(e => e.includes('G-01..G-38') && e.includes('expected G-35'))).toBe(true)
   })
 })
 

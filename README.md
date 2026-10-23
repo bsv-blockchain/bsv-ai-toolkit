@@ -8,7 +8,7 @@ Tools and dated knowledge for building BSV applications with AI coding agents, t
 
 | Path | What it is |
 | --- | --- |
-| `content/` | The single source of facts and rules: dated facts (`facts/*.md`), the guardrails `G-01`..`G-34` (`guardrails.yaml`), pinned versions (`versions.json`), the docs index, custody shapes and the threat model. Facts are edited here and nowhere else. |
+| `content/` | The single source of facts and rules: dated facts (`facts/*.md`), the guardrails `G-01`..`G-38` (`guardrails.yaml`), pinned versions (`versions.json`), the docs index, custody shapes and the threat model. Facts are edited here and nowhere else. |
 | `packages/mcp/` | `@bsv/mcp` 2.0.0, the MCP server. `packages/mcp/content/` is a generated snapshot of `content/` that ships in the npm package. |
 | `packages/skill/` | The `bsv-dev` skill 0.1.0 and Claude Code plugin: `skills/bsv-dev/` (`SKILL.md`, the generated `references/`, assets and scripts), the commands `/bsv-review` and `/bsv-design`, and the plugin manifest, which bundles `bsv-mcp` and `bsv-docs`. Unreleased until v2.0.0 is tagged. |
 | `packages/sync/` | Private build step: renders `content/` into `packages/mcp/content/` and the skill's references, and lints facts and links. |
@@ -91,8 +91,8 @@ For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [-
 
 | URI | Content |
 | --- | --- |
-| `bsv://facts/{arcade,networks,whatsonchain,wallet-limits,consensus,fees,runar,tokens-1color,versions}` | Dated facts, one resource per file |
-| `bsv://guardrails` | Every guardrail `G-01`..`G-34`: rule, reason, custody shape, how it is checked, refs |
+| `bsv://facts/{arcade,networks,whatsonchain,wallet-limits,consensus,fees,runar,tokens-1color,versions,payment-channels}` | Dated facts, one resource per file |
+| `bsv://guardrails` | Every guardrail `G-01`..`G-38`: rule, reason, custody shape, how it is checked, refs |
 | `bsv://guardrails{#id}` | One guardrail, e.g. `bsv://guardrails#G-09`; this is the `ref` every finding carries |
 | `bsv://custody-shapes` | Shape A (the user's wallet holds the keys) and shape B (a server wallet does) |
 | `bsv://threat-model` | What a BSV app defends against, what it does not, and what it must tell users |
