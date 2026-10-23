@@ -132,10 +132,10 @@ For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [-
 
 ## Development
 
-Requires Node 22 or later (the tipping sample needs 22.9 or later) and pnpm. The repo pins pnpm 11.22.0 in `packageManager`; run `corepack enable` once and corepack picks that version.
+Requires Node 22 or later (the tipping sample needs 22.9 or later) and pnpm. The repo pins pnpm 11.22.0 in `packageManager`; run `corepack enable` once and corepack picks that version. Node 25 and later no longer bundle corepack; there, or wherever corepack is missing, run `npm install -g pnpm@11.22.0` instead.
 
 ```bash
-corepack enable
+corepack enable            # or, on Node 25+ or without corepack: npm install -g pnpm@11.22.0
 pnpm install
 pnpm build                 # every package
 pnpm test                  # every package; live-service tests run only with BSV_MCP_NETWORK_TESTS=1
