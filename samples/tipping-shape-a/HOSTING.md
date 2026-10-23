@@ -68,7 +68,7 @@ The relay's limits are fixed in code, not set by environment variables. Change t
 | Limit | Value | Where |
 | --- | --- | --- |
 | `POST /api/tips` per client address (IPv4 address, or IPv6 /64) | burst 5, then 10 a minute | `server/routes.ts` `DEFAULT_LIMITS` |
-| `GET /api/tx/:txid` and `POST /api/tips/:txid/rebroadcast` per client address | burst 30, then 120 a minute | `server/routes.ts` |
+| `GET /api/tips/:txid/status`, `GET /api/tx/:txid` and `POST /api/tips/:txid/rebroadcast` per client address, one shared bucket | burst 30, then 120 a minute | `server/routes.ts` |
 | Request body | 256 kB | `server/routes.ts` `BODY_LIMIT` |
 | Remittance candidates per tip | 64 | `server/routes.ts` |
 | Tips kept | 5,000; terminal tips are deleted after 24 hours without an update | `server/routes.ts` |
@@ -105,7 +105,9 @@ location /api/events {
 
 ## Health
 
-`GET /health` answers `{"ok":true,"network":"testnet","arcadeUrl":"…","version":"…"}`. The image's `HEALTHCHECK` calls it every 30 s. It shows the process is serving and which network it runs on. It does not check Arcade.
+`GET /health` answers `{"ok":true,"network":"testnet","arcadeOrigin":"…","version":"…"}`. The image's `HEALTHCHECK` calls it every 30 s. It shows the process is serving and which network it runs on. It does not check Arcade.
+
+Anyone who can reach `/health` sees the Arcade origin (scheme, host and port of `ARCADE_URL`); its path, query and any credentials are never shown.
 
 ## Secrets
 

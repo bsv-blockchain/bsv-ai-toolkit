@@ -157,7 +157,6 @@ const asWallet = (w: FakeWallet) => w as unknown as WalletInterface
 const config = (over: Partial<AppConfig> = {}): AppConfig => ({
   network: 'testnet',
   originator: ORIGIN,
-  arcadeUrl: ARCADE,
   claimNonce: '0'.repeat(32),
   ...over,
 })
@@ -441,6 +440,42 @@ describe('tip.ts', () => {
     expect(await postPending(pendingTips(storage)[0], relay, { storage })).toMatchObject({ posted: true, txid: out.txid })
     expect(pendingTips(storage)).toEqual([])
   })
+  it('a 413 is permanent: the tip is listed as one the relay cannot take, offers Copy details, and is never re-posted', async () => {
+    const storage = new MemoryStorage()
+    vi.stubGlobal('localStorage', storage)
+    const w = new FakeWallet()
+    const relay = okRelay()
+    relay.postTip = async tip => {
+      relay.calls.push({ method: 'postTip', args: tip })
+      throw new RelayError('POST /api/tips: HTTP 413: request body too large', 413)
+    }
+    const out = await sendTip(asWallet(w), config(), creatorKey, 1000, relay, { storage })
+    expect(out).toMatchObject({ posted: false, permanent: true, error: expect.stringContaining('413') })
+    expect(relayCalls(relay, 'postTip')).toHaveLength(1)
+
+    // Not re-posted on the next visit: listed instead, with what to do.
+    expect(resumableTips('testnet', storage)).toEqual([])
+    const [refused] = stuckTips('testnet', storage)
+    expect(refused).toMatchObject({ txid: out.txid, lastStatus: 413 })
+    const list = Unfinished({ records: [refused], network: 'testnet', onForget: () => {}, onCopy: () => {} })
+    const item = elementsOf(list).find(e => e.type === 'li')!
+    expect(textOf(item)).toMatch(/the relay cannot take this tip/)
+    expect(textOf(item)).toMatch(/Copy details/)
+    expect(textOf(item)).not.toMatch(/HTTP 413: request body too large/)
+    expect(elementsOf(list).filter(e => e.type === 'button').map(b => textOf(b))).toEqual(['Copy details', 'Forget'])
+    const html = renderToString(
+      createElement(Tipper, { config: config({ creatorIdentityKey: creatorKey }), initialSession: { wallet: asWallet(w), identityKey: w.identityKey, network: 'testnet' } }),
+    )
+    expect(html).toContain('the relay cannot take this tip')
+
+    // A transient failure stays resumable.
+    relay.postTip = async () => {
+      throw new RelayError('POST /api/tips: HTTP 502', 502)
+    }
+    await postPending(refused, relay, { storage, postAttempts: 1 })
+    expect(resumableTips('testnet', storage).map(t => t.txid)).toEqual([out.txid])
+  })
+
   it('a wallet broadcast problem that carries the transaction still hands the tip to the relay', async () => {
     const w = new FakeWallet()
     const storage = new MemoryStorage()
@@ -864,6 +899,31 @@ describe('collect.ts', () => {
     c.retryGaveUp()
     await vi.waitFor(() => expect(c.info.get(u.txid)).toEqual({ state: 'accepted', satoshis: 1234 }))
     expect(collect).toHaveBeenCalledTimes(3)
+  })
+
+  it('Collector still shows a collected tip when the browser refuses to store it', async () => {
+    const creator = new FakeWallet()
+    const t = await makeTip(new FakeWallet(), creator.identityKey)
+    const relay = fakeRelay(t.row, { [t.row.remittances[0].beefId]: t.beef })
+    const storage = new MemoryStorage()
+    storage.setItem = () => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const c = new Collector({
+      wallet: asWallet(creator),
+      identityKey: creator.identityKey,
+      api: relay,
+      deps: collectDeps(),
+      storage,
+      collect: async () => ({ result: 'accepted' as const, satoshis: 1000 }),
+    })
+    c.onTip(t.row)
+    await vi.waitFor(() => expect(c.info.get(t.txid)).toEqual({ state: 'accepted', satoshis: 1000 }))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(t.txid))
+    // Within this page it is remembered anyway: a repeat event does not collect it again.
+    c.onTip({ ...t.row, remittances: [...t.row.remittances, { ...t.row.remittances[0], derivationPrefix: newDerivation().derivationPrefix }] })
+    expect(c.states.get(t.txid)).toBe('accepted')
   })
 })
 

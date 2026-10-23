@@ -9,7 +9,6 @@ export interface AppConfig {
    * in development the page and the relay can sit on different ports, so never use location.origin instead.
    */
   originator: string
-  arcadeUrl: string
   /** Signed into the creator claim; it changes after every successful claim. Read it right before signing. */
   claimNonce: string
 }
@@ -22,14 +21,13 @@ export async function fetchConfig(fetchImpl: typeof fetch = (input, init) => fet
   if (body.network !== 'testnet' && body.network !== 'mainnet') {
     throw new Error(`GET /api/config: unexpected network ${JSON.stringify(body.network)}`)
   }
-  if (typeof body.originator !== 'string' || typeof body.arcadeUrl !== 'string' || typeof body.claimNonce !== 'string') {
-    throw new Error('GET /api/config: originator, arcadeUrl and claimNonce are required')
+  if (typeof body.originator !== 'string' || typeof body.claimNonce !== 'string') {
+    throw new Error('GET /api/config: originator and claimNonce are required')
   }
   return {
     network: body.network,
     creatorIdentityKey: typeof body.creatorIdentityKey === 'string' ? body.creatorIdentityKey : undefined,
     originator: body.originator,
-    arcadeUrl: body.arcadeUrl,
     claimNonce: body.claimNonce,
   }
 }

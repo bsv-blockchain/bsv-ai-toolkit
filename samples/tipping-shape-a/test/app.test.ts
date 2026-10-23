@@ -38,7 +38,14 @@ describe('relay app', () => {
   it('GET /health returns ok with the network', async () => {
     const res = await request(app()).get('/health')
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ ok: true, network: 'testnet', arcadeUrl: TESTNET_ARCADE, version: '0.1.0' })
+    expect(res.body).toEqual({ ok: true, network: 'testnet', arcadeOrigin: TESTNET_ARCADE, version: '0.1.0' })
+  })
+
+  it('GET /health names the Arcade origin only, never its userinfo, path or query', async () => {
+    const cfg = loadServerConfig({ ARCADE_URL: 'https://user:s3cret@arcade.example.com:8443/private/v1?token=abc' }, quiet)
+    const res = await request(createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl, noFetch), webDir })).get('/health')
+    expect(res.body.arcadeOrigin).toBe('https://arcade.example.com:8443')
+    for (const leak of ['user', 's3cret', 'private', 'token', 'abc']) expect(res.text).not.toContain(leak)
   })
 
   it('manifest is served with manifest+json, open CORS and no-store', async () => {

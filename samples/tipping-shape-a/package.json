@@ -11,12 +11,12 @@
     "scripts/network-guard.sh"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.9"
   },
   "scripts": {
-    "dev": "concurrently -n web,relay \"vite\" \"tsx watch server/index.ts\"",
+    "dev": "concurrently -n web,relay \"vite\" \"tsx watch --env-file-if-exists=.env server/index.ts\"",
     "build": "vite build && tsc -p tsconfig.server.json",
-    "start": "bash scripts/network-guard.sh && node dist/server/index.js",
+    "start": "node --env-file-if-exists=.env -e \"process.exit(require('node:child_process').spawnSync('bash', ['scripts/network-guard.sh'], { stdio: 'inherit' }).status ?? 1)\" && node --env-file-if-exists=.env dist/server/index.js",
     "test": "vitest run",
     "gate": "tsx scripts/gate.ts",
     "guardrails": "node ../../packages/mcp/build/cli/check-guardrails.js ."

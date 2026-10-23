@@ -22,7 +22,7 @@ export interface Limits {
   statusFreshMs: number
   /** All stored BEEFs together (bytes); a POST whose BEEF would exceed it gets 503. */
   beefBytesBudget: number
-  /** GET /api/tx/:id and POST /api/tips/:txid/rebroadcast per client address: burst, then refilled per minute. */
+  /** GET /api/tips/:txid/status, GET /api/tx/:id and POST /api/tips/:txid/rebroadcast per client address: burst, then refilled per minute. */
   readBurst: number
   readsPerMinute: number
 }
@@ -252,7 +252,6 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
       network: cfg.network,
       creatorIdentityKey: creator(),
       originator: cfg.publicOrigin,
-      arcadeUrl: cfg.arcadeUrl,
       claimNonce: claimNonce(),
     })
   })
@@ -369,6 +368,7 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   })
 
   api.get('/tips/:txid/status', async (req, res) => {
+    if (!readAllowed(req, res)) return
     const txid = txidOf(req)
     const at = lastRead.get(txid)
     if (at !== undefined && now() - at < limits.statusFreshMs) {

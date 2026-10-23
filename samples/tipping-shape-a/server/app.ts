@@ -41,8 +41,10 @@ export function createApp(cfg: ServerConfig, deps: AppDeps): express.Express {
   // says whose X-Forwarded-For to believe; see DEFAULT_TRUST_PROXY in config.ts.
   app.set('trust proxy', cfg.trustProxy)
 
+  // The Arcade origin only: an ARCADE_URL may carry credentials or a private path, and /health is public.
+  const arcadeOrigin = new URL(cfg.arcadeUrl).origin
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, network: cfg.network, arcadeUrl: cfg.arcadeUrl, version: VERSION })
+    res.json({ ok: true, network: cfg.network, arcadeOrigin, version: VERSION })
   })
 
   // Before express.static and the SPA fallback, so these headers always apply. Wallets fetch the manifest

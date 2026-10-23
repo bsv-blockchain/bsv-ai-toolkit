@@ -576,6 +576,21 @@ describe('tips: list, detail, status, internalized', () => {
     expect(post.body).toBe(t.child.toHexEF())
   })
 
+  it('GET /api/tips/:txid/status is rate limited like the other Arcade reads', async () => {
+    const txid = 'd'.repeat(64)
+    const arc = fakeArcade({ status: 202, json: {} }, [{ status: 200, json: fixture('status-seen', txid) }])
+    const { app, db, clock } = relay(arc, {}, { tipBurst: 1000, readBurst: 2, readsPerMinute: 1 })
+    seed(db, txid)
+    for (let i = 0; i < 2; i++) {
+      expect((await request(app).get(`/api/tips/${txid}/status`)).status).toBe(200)
+      clock.now += 2_000 // past the fresh window: each read would reach Arcade
+    }
+    const limited = await request(app).get(`/api/tips/${txid}/status`)
+    expect(limited.status).toBe(429)
+    expect(limited.headers['retry-after']).toMatch(/^\d+$/)
+    expect(arc.calls).toHaveLength(2)
+  })
+
   it('status of an unknown tip is 404 and an Arcade failure is 502 transient', async () => {
     const txid = 'd'.repeat(64)
     const arc = fakeArcade(new TypeError('fetch failed'), [new TypeError('fetch failed')])
@@ -682,11 +697,15 @@ describe('tips: list, detail, status, internalized', () => {
 })
 
 describe('config and creator', () => {
-  it('GET /api/config answers network, originator, arcadeUrl and the claim nonce', async () => {
+  it('GET /api/config answers network, originator and the claim nonce, never ARCADE_URL', async () => {
     const { app } = relay(fakeArcade({ status: 202, json: {} }), { PUBLIC_ORIGIN: 'https://tipping.example.com' })
     const res = await request(app).get('/api/config')
-    expect(res.body).toEqual({ network: 'testnet', originator: 'https://tipping.example.com', arcadeUrl: ARCADE, claimNonce: expect.stringMatching(/^[0-9a-f]{32}$/) })
+    expect(res.body).toEqual({ network: 'testnet', originator: 'https://tipping.example.com', claimNonce: expect.stringMatching(/^[0-9a-f]{32}$/) })
     expect((await request(app).get('/api/config')).body.claimNonce).toBe(res.body.claimNonce)
+
+    const secret = relay(fakeArcade({ status: 202, json: {} }), { ARCADE_URL: 'https://user:s3cret@arcade.example.com/private/v1?token=abc' })
+    const text = (await request(secret.app).get('/api/config')).text
+    for (const leak of ['arcade.example.com', 'user', 's3cret', 'private', 'token', 'abc']) expect(text).not.toContain(leak)
   })
 
   it('creator claim: first claim wins, second different key is 409', async () => {

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { relayApi, type RelayApi } from '../api'
 import { short, verdictLabel } from '../components/TipList'
 import type { AppConfig, Network } from '../config'
-import { forgetWithConsent, MIN_TIP_SATS, postPending, resumableTips, sendTip, stuckTips, tipDetails, type PendingTip, type TipOutcome } from '../tip'
+import { forgetWithConsent, MIN_TIP_SATS, postPending, refusedForGood, resumableTips, sendTip, stuckTips, tipDetails, type PendingTip, type TipOutcome } from '../tip'
 import { login, networkMismatch, type Session } from '../wallet'
 
 const EXPLORER: Record<Network, string> = { testnet: 'https://test.whatsonchain.com', mainnet: 'https://whatsonchain.com' }
@@ -67,7 +67,10 @@ export function Unfinished({ records, network, onForget, onCopy, copiedKey }: Un
                 , transaction <a href={explorerTxUrl(network, r.txid)} target="_blank" rel="noreferrer"><code>{r.txid}</code></a>
               </>
             )}
-            : {r.lastError ?? 'the page closed before the wallet answered'}{' '}
+            :{' '}
+            {refusedForGood(r)
+              ? 'the relay cannot take this tip: its transaction is larger than the relay accepts, and trying again will not change that. Use Copy details and send them to the creator, who can collect it with their wallet.'
+              : (r.lastError ?? 'the page closed before the wallet answered')}{' '}
             {tipDetails(r) !== undefined && (
               <>
                 <button type="button" onClick={() => onCopy(r)}>
@@ -88,6 +91,14 @@ export function Unfinished({ records, network, onForget, onCopy, copiedKey }: Un
 
 function Outcome({ outcome, network }: { outcome: TipOutcome; network: Network }) {
   const link = <a href={explorerTxUrl(network, outcome.txid)} target="_blank" rel="noreferrer">view on WhatsOnChain</a>
+  if (!outcome.posted && outcome.permanent) {
+    return (
+      <p role="alert">
+        Your wallet sent tip <code>{outcome.txid}</code>, but the relay cannot take it ({outcome.error}). Its details are
+        listed under Unfinished tips below. ({link})
+      </p>
+    )
+  }
   if (!outcome.posted) {
     return (
       <p role="alert">

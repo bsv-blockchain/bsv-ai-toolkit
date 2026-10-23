@@ -363,7 +363,14 @@ export class Collector {
     }
     this.running.delete(txid)
     // Remembered even when the page is closing: the wallet has the money, and a reload must not collect it again.
-    if (outcome.result === 'accepted') this.storage.setItem(this.collectedKey, JSON.stringify([...this.collectedTxids(), txid]))
+    // A browser that refuses the write (storage full or blocked) must not hide that: the tip still shows as collected.
+    if (outcome.result === 'accepted') {
+      try {
+        this.storage.setItem(this.collectedKey, JSON.stringify([...this.collectedTxids(), txid]))
+      } catch (e) {
+        console.warn(`${txid} is collected, but this browser did not store that (${message(e)}); a reload may try it again`)
+      }
+    }
     if (this.abort.signal.aborted) return
     if (outcome.result === 'gave-up') console.warn(`${txid} not collected yet: ${outcome.error ?? 'no reason given'}`)
     this.set(txid, { state: outcome.result, error: outcome.error, satoshis: outcome.satoshis })

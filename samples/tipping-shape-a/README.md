@@ -13,13 +13,15 @@ One Node process serves the web app, `/manifest.json`, `/api` and `/health` on o
 
 ## Run locally
 
-You need Node 22+, pnpm, and BSV Desktop (or another BRC-100 wallet) switched to **testnet**, with some testnet coins in it.
+You need Node 22.9 or later, pnpm, and BSV Desktop (or another BRC-100 wallet) switched to **testnet**, with some testnet coins in it.
 
 ```bash
 cp env.example .env   # optional; the defaults are testnet and http://localhost:5173
 pnpm install          # from the repo root
 pnpm dev              # in this folder: web on http://localhost:5173, relay on :8080
 ```
+
+`pnpm dev` and `pnpm start` read `.env` in this folder when it exists. A variable already set in the shell wins over `.env`.
 
 A tip needs two identities: the creator and a tipper. Use two browser profiles, each connected to a different wallet, or two wallets.
 

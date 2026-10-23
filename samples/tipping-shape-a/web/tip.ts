@@ -30,11 +30,13 @@ export interface PendingTip {
   /** AtomicBEEF hex, as the wallet returned it. */
   beef?: string
   lastError?: string
+  /** The relay's HTTP status for the last refused POST, when it answered one. */
+  lastStatus?: number
 }
 
 export type TipOutcome = (
   | { posted: true; txid: string; row: TipRow }
-  | { posted: false; txid: string; error: string }
+  | { posted: false; txid: string; error: string; /** The relay can never take this tip (see refusedForGood). */ permanent?: true }
 ) & {
   /** The wallet built the transaction but reported a problem broadcasting it (WERR_REVIEW_ACTIONS). */
   walletError?: string
@@ -56,6 +58,12 @@ const MAX_WAIT_MS = 60_000
 
 const sleepMs = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/**
+ * True when the relay's last answer for this tip can never change: 413, its BEEF is larger than the relay takes.
+ * Such a tip is listed with its details, never re-posted.
+ */
+export const refusedForGood = (t: Pick<PendingTip, 'lastStatus'>) => t.lastStatus === 413
 
 function save(storage: KeyValueStore, record: PendingTip) {
   storage.setItem(record.key, JSON.stringify(record))
@@ -181,23 +189,29 @@ export async function postPending(record: PendingTip, api: RelayApi, deps: TipDe
       return { posted: true, txid, row }
     } catch (e) {
       const error = message(e)
-      save(storage, { ...record, lastError: error })
+      const lastStatus = e instanceof RelayError ? e.status : undefined
+      save(storage, { ...record, lastError: error, lastStatus })
+      if (refusedForGood({ lastStatus })) return { posted: false, txid, error, permanent: true }
       if (!(e instanceof RelayError) || !e.transient || attempt >= attempts) return { posted: false, txid, error }
       await sleep(Math.min(e.retryAfterMs ?? BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length) - 1], MAX_WAIT_MS))
     }
   }
 }
 
-const resumable = (t: PendingTip) => t.txid !== undefined && t.beef !== undefined && t.outputIndex >= 0
+const resumable = (t: PendingTip) => t.txid !== undefined && t.beef !== undefined && t.outputIndex >= 0 && !refusedForGood(t)
 
-/** Tips the wallet returned a transaction for that the relay does not have yet (this network): re-post these. */
+/**
+ * Tips the wallet returned a transaction for that the relay does not have yet (this network): re-post these. A tip
+ * the relay refused for good (refusedForGood) is not one of them.
+ */
 export function resumableTips(network: Network, storage: KeyValueStore = localStorage): PendingTip[] {
   return pendingTips(storage).filter(t => t.network === network && resumable(t))
 }
 
 /**
  * Tips that cannot be re-posted (this network): the wallet failed or the page closed before it returned a
- * transaction, or its transaction does not pay the planned output. Shown on the page, never dropped silently.
+ * transaction, its transaction does not pay the planned output, or the relay refused it for good. Shown on the page,
+ * never dropped silently.
  */
 export function stuckTips(network: Network, storage: KeyValueStore = localStorage): PendingTip[] {
   return pendingTips(storage).filter(t => t.network === network && !resumable(t))
