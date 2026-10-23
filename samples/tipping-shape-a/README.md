@@ -9,7 +9,7 @@ One Node process serves the web app, `/manifest.json`, `/api` and `/health` on o
 - **Connect and network check.** The page connects a BRC-100 wallet (such as BSV Desktop), waits until it is unlocked, and refuses to tip or collect when the wallet's network differs from the app's `BSV_NETWORK`.
 - **One grouped permission.** `public/manifest.json` grants one level-1 protocol, BRC-29 for the user's own payments, one basket, and a small monthly allowance. Login raises the prompt once.
 - **A BRC-29 tip.** The tipper's wallet pays a key derived for the creator. The derivation is saved in the browser before the wallet broadcasts. The relay takes the transaction to its own Arcade and reads the status.
-- **Collection at 0-conf.** The creator page (`/creator`) hears about each tip over server-sent events. Once Arcade reports the transaction `SEEN_ON_NETWORK` with no competing transaction, the page collects it with `internalizeAction`, with automatic retries at 10, 30 and 60 s. The tip list shows each tip's status as it changes.
+- **Collection at 0-conf.** The creator page (`/creator`) hears about each tip over server-sent events. Once Arcade reports the transaction `SEEN_ON_NETWORK` or later with no competing transaction, the page collects it with `internalizeAction`, with automatic retries at 10, 30 and 60 s. The tip list shows each tip's status as it changes.
 
 ## Run locally
 
@@ -33,7 +33,7 @@ A tip needs two identities: the creator and a tipper. Use two browser profiles, 
 
 ## Trust model
 
-The relay cannot spend, redirect or forge a tip. Tippers sign in their own wallets, and the creator collects in theirs. Whoever serves this JavaScript can ask the wallet to sign under the app's grouped permission, so the manifest keeps the allowance small. A tip is final for the app at `SEEN_ON_NETWORK` with no competing transaction. See [TRUST.md](TRUST.md) for the full statement and the residual risks.
+The relay cannot spend, redirect or forge a tip. Tippers sign in their own wallets, and the creator collects in theirs. Whoever serves this JavaScript can ask the wallet to sign under the app's grouped permission, so the manifest keeps the allowance small. A tip is final for the app at `SEEN_ON_NETWORK` or later with no competing transaction. See [TRUST.md](TRUST.md) for the full statement and the residual risks.
 
 ## Guardrails
 
