@@ -4,6 +4,7 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
 
 | # | Check | Owner | Evidence |
 | --- | --- | --- | --- |
+| 0 | `push.yaml` and `npm-publish.yml` deleted in this PR; Deggen confirms | HUMAN: Connor, before merge | |
 | 1 | Skill installs on a clean machine (after item 3) | HUMAN: Connor | |
 | 2 | Claude Code plugin installs (after item 3) | HUMAN: Connor | |
 | 3 | `@bsv/mcp@2.0.0` on npm with provenance | HUMAN: Deggen, then Connor | |
@@ -14,8 +15,14 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
 | 8 | Gate run recorded, `probeTxid` set | HUMAN: Connor | |
 | 9 | `@bsv/simple-mcp` 0.0.3 published and deprecated | HUMAN: simple-mcp owner | |
 | 10 | Briefing delivered to WriteChoice | HUMAN: Connor | |
+| 11 | Authored `why` text in `content/guardrails.yaml` read | HUMAN: Connor, before the `v2.0.0` tag (item 3) | |
 
 ## Items
+
+- [ ] **0. `push.yaml` and `npm-publish.yml` are deleted in this PR, and Deggen agrees before it merges.**
+  Owner: HUMAN: Connor, before the PR merges.
+  The PR that adds `ci.yml`, `nightly.yml`, `release.yml` and `sample-ghcr.yml` deletes `.github/workflows/push.yaml` and `.github/workflows/npm-publish.yml`, so a merge to `main` never triggers a publish. Check that neither file is on the branch, then confirm with Deggen, who ran the go-broadcast sync that brought `push.yaml` in, that the sync is no longer active and nothing else depends on either workflow.
+  Evidence: the branch's `.github/workflows/` listing, and the date and channel of Deggen's confirmation.
 
 - [ ] **1. `npx skills add bsv-blockchain/bsv-mcp` works on a clean machine.**
   Owner: HUMAN: Connor. After item 3: the skill installs from this repository once v2.0.0 is released.
@@ -28,7 +35,7 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   Evidence: date, `claude --version`, `claude mcp list` output.
 
 - [ ] **3. `@bsv/mcp@2.0.0` is on npm with provenance.**
-  Owner: HUMAN: Deggen (trusted publisher), then Connor tags `v2.0.0`.
+  Owner: HUMAN: Deggen (trusted publisher), then Connor tags `v2.0.0` (after item 11).
   Deggen configures npm trusted publishing for `@bsv/mcp`, naming this repository and the workflow file `release.yml`, with no environment. Connor then tags `v2.0.0` on `main`, and `release.yml` publishes (see [Release](../../README.md#release)). Check with `npm view @bsv/mcp@2.0.0 dist.attestations`.
   Evidence: the `release.yml` run URL and the `npm view` output.
 
@@ -75,3 +82,8 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   Owner: HUMAN: Connor.
   Send [`docs/writechoice/briefing.md`](../writechoice/briefing.md) and the draft page [`coding-with-agents.md`](../writechoice/coding-with-agents.md).
   Evidence: the date sent and to whom.
+
+- [ ] **11. Connor has read the authored `why` text in `content/guardrails.yaml`.**
+  Owner: HUMAN: Connor, before the `v2.0.0` tag (item 3).
+  Each guardrail's `why` is authored prose that ships in `@bsv/mcp` and the skill. Read every `why` in `content/guardrails.yaml` for accuracy and tone; fix any in `content/`, then run `pnpm sync`.
+  Evidence: the date read and the commit of any fix (or "no changes").

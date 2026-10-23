@@ -1,7 +1,6 @@
 {
   "name": "@bsv/simple-mcp",
   "version": "0.0.3",
-  "deprecated": "Replaced by @bsv/mcp 2.x",
   "description": "MCP server for @bsv/simple — AI-assisted BSV blockchain development",
   "main": "dist/index.js",
   "bin": {

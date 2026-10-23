@@ -49,7 +49,7 @@ A transaction is final for an app at `SEEN_ON_NETWORK` or later with no `competi
 
 Suppress a `check_guardrails` finding with `// bsv-guardrail-ignore G-xx reason` (or the `#`, `<!--`, `/*` comment forms) on the flagged line or the line above.
 
-For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [--max-age-days N]` (after `pnpm build`) prints the `versions_check` table and exits 1 on drift or on a verified date older than N days (default 60).
+For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [--max-age-days N]` (after `pnpm build`) prints the `versions_check` table and exits 1 on drift or on a verified date older than N days (default 60). With `GITHUB_TOKEN` set, it sends that token to `api.github.com` (and nowhere else) to lift GitHub's unauthenticated rate limit.
 
 ## Resources
 

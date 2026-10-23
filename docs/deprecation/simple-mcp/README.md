@@ -11,7 +11,7 @@ repository owner merges, publishes and archives.
 | File | Goes to |
 |---|---|
 | `files/src/index.ts` | replaces `src/index.ts` |
-| `files/package.json` | replaces `package.json` (0.0.2 with `version` `0.0.3`, a `deprecated` field and `@modelcontextprotocol/sdk` `^1.32.1`; nothing else differs) |
+| `files/package.json` | replaces `package.json` (0.0.2 with `version` `0.0.3` and `@modelcontextprotocol/sdk` `^1.32.1`; nothing else differs. It has no `deprecated` field: `npm publish` ignores one, and only `npm deprecate` (step 8) marks versions deprecated) |
 | `files/README-banner.md` | prepended to `README.md` |
 | `PR-body.md` | the PR description |
 

@@ -11,7 +11,7 @@ stub that points users there, as version 0.0.3.
   then serves over stdio as before, so existing MCP clients still connect. It registers one resource, `simple://deprecated`
   (Markdown: how to install `@bsv/mcp` and where each piece moved), and no tools or prompts.
 - `src/resources/`, `src/tools/` and `src/prompts/` are removed.
-- `package.json`: `version` `0.0.3`, `"deprecated": "Replaced by @bsv/mcp 2.x"`, and `@modelcontextprotocol/sdk` raised from
+- `package.json`: `version` `0.0.3` and `@modelcontextprotocol/sdk` raised from
   `^1.11.0` to `^1.32.1`, because the stub uses `registerResource` with a `title`, which `^1.11` does not guarantee. Nothing else
   changes. `package-lock.json` is refreshed to match.
 - `README.md` gains a deprecation banner with the install command and a table of where each resource and prompt moved:
