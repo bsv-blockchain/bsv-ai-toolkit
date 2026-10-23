@@ -68,3 +68,5 @@ When both shapes would work, prefer A: it keeps the operator out of custody.
 ## Both shapes may coexist
 
 One app can use both, one per money path. A common split: users pay from their own wallets (A) to a BRC-29 key derived for the server, the server collects with `internalizeAction` and pays out automatically (B). Keep the boundary explicit: the server never signs for user funds, and the user's wallet never trusts a server-reported status that it can read from Arcade itself.
+
+A payment channel is shape A at both ends: each party's wallet signs states silently under a level-1 protocol. An operator may fund and referee the channel (shape B for that money, within the bounded budgets above) or only relay messages between the parties. See the `payment-channels` facts.

@@ -31,6 +31,17 @@ These happen and need code:
 - **The user's own conflicting broadcast.** A user can spend the same coin from another app or device. That is a normal double-spend: one side gets `DOUBLE_SPEND_ATTEMPTED`, and the app recovers (refund path, re-plan) rather than treating it as an attack.
 - **Unavailable services.** Time out every Arcade and indexer call, retry on 503 and on network errors with a bounded schedule, and never mark money state from a non-terminal answer.
 
+## Channel residuals
+
+A payment channel keeps its states off-chain, so it carries risks a single payment does not:
+
+- **Stale-state race.** Any matured state is valid, and the first one the network sees wins. The newest state must mature first, and its holder must post it at maturity; an older state posted later is then a double spend.
+- **Median-time-past lag.** A lock time in seconds matures up to about an hour after its nominal time, and neighbouring states mature in the same block. Prefer height schedules where each party must defend itself.
+- **Liveness bound.** There are no relative lock times, so a party must act within the window after a maturity point; one that is offline longer can lose to an older state or a timeout exit.
+- **Twin openings.** The last signer of a co-signed opening can broadcast a twin with another txid. Follow the confirmed spender of the funding coin; signatures over the other twin are void.
+
+Details and the constructions: the `payment-channels` facts and the skill's `payment-channels.md`.
+
 ## Served-code trust
 
 Under a BRC-73 grouped grant the wallet signs silently for the app's protocols. Whoever serves the app's JavaScript can therefore request those signatures: a compromised host, build pipeline or dependency can sign anything the grant allows, up to the monthly spending allowance. This is the main residual risk of shape A. Say so in every app's trust model, keep grants narrow (specific level-1 protocols, a small allowance), and keep real stakes behind an explicit prompt.

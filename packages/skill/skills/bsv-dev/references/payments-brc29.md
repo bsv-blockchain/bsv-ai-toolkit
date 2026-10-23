@@ -110,3 +110,5 @@ Refuse to sign when it does not match.
 ## HTTP 402
 
 To sell per-request API access, use BRC-121 through `@bsv/402-pay` 0.3.x (0.3.3 on npm, verified 2026-10-22). The server receives with a shape B server wallet; the paying client may be a user's wallet or another server. `@bsv/simple` 0.7.0 has no 402 helper. Resolve the docs id `guides.payments` with `docs_url` for the walkthrough; `reference.wallet-api` documents `createAction` and `internalizeAction`.
+
+One client paying one server many times in a session may be better served by a one-way payment channel; the trade-off and the construction are in `payment-channels.md`.
