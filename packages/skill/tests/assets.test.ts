@@ -79,19 +79,26 @@ describe('assets', () => {
     }
   })
 
-  it('the three snippets carry the same eight rules', () => {
+  it('the three snippets carry the same nine rules', () => {
     const mdc = read('bsv.mdc')
     expect(mdc).toMatch(/^---\ndescription: BSV development rules\nalwaysApply: true\n---\n/)
+    for (const file of ['CLAUDE.md.snippet', 'AGENTS.md.snippet']) {
+      expect(read(file), file).toMatch(/^<!-- bsv-dev rules: begin -->\n[\s\S]*\n<!-- bsv-dev rules: end -->\n$/)
+    }
     const claude = rules(read('CLAUDE.md.snippet'))
-    expect(claude).toHaveLength(8)
+    expect(claude).toHaveLength(9)
     expect(rules(read('AGENTS.md.snippet'))).toEqual(claude)
     expect(rules(mdc)).toEqual(claude)
     expect(claude[0]).toContain('https://bsv.writedocs.io/llms.txt')
-    expect(claude[3]).toMatch(/^In the browser, /)
+    expect(claude[0]).toContain('open the same path on bsv.writedocs.io instead')
+    expect(claude[1]).toMatch(/^When the `bsv-docs` and `bsv-mcp` MCP servers are connected, /)
+    expect(claude[2]).toContain('check that `wallet.getNetwork()` returns `testnet`')
+    expect(claude[3]).toMatch(/^For the user's wallet, .*from the browser or a local script\.$/)
     expect(claude[4]).toMatch(/shape A.*shape B/)
-    expect(claude[5]).toContain('never the legacy ARC API')
-    expect(claude[6]).toMatch(/SEEN_ON_NETWORK.*never/)
-    expect(claude[7]).toMatch(/check_guardrails.*absolute/)
+    expect(claude[5]).toMatch(/https:\/\/bsvfaucet\.com.*never work around either/)
+    expect(claude[6]).toContain('never the legacy ARC API')
+    expect(claude[7]).toMatch(/SEEN_ON_NETWORK.*never/)
+    expect(claude[8]).toMatch(/^If `bsv-mcp` is connected, run `check_guardrails`.*absolute/)
   })
 
   it('env.example has no key variables', () => {
