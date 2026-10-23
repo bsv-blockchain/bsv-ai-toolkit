@@ -251,10 +251,10 @@ An app that broadcasts through Arcade therefore cannot park a channel state on t
 | --- | --- | --- | --- | --- |
 | `0x41` | ALL\|FORKID | every input and every output | the fee payer's own inputs; a referee's attestation | yes |
 | `0xc1` | ALL\|ANYONECANPAY\|FORKID | this input and every output | a balance update between parties with no covenant, with the payer's change output fixed | yes: every output is committed |
-| `0xc2` | NONE\|ANYONECANPAY\|FORKID | version, this input's outpoint, scriptCode, value, this input's `nSequence`, and `nLockTime`; no outputs | a signature over a state carried in `nSequence`, which a covenant checks with a plain `OP_CHECKSIG` | no: safe only when a covenant pins the outputs, or the input carries no value |
-| `0xc3` | SINGLE\|ANYONECANPAY\|FORKID | this input, the output at the same index, and `nLockTime` | a signed record at input 0 and output 0 that lets whoever closes add fee inputs and change at index 1 or later | only that one output: safe when it covers every satoshi of the input, a covenant pins the outputs, or the input carries no value (a 1-sat record channel) |
+| `0xc2` | NONE\|ANYONECANPAY\|FORKID | version, this input's outpoint, scriptCode, value, this input's `nSequence`, and `nLockTime`; no outputs | a signature over a state carried in `nSequence`, which a covenant checks with a plain `OP_CHECKSIG` | no: safe only when a covenant pins outputs that carry the input's whole value, or the input carries no value |
+| `0xc3` | SINGLE\|ANYONECANPAY\|FORKID | this input, the output at the same index, and `nLockTime` | a signed record at input 0 and output 0 that lets whoever closes add fee inputs and change at index 1 or later | only that one output: safe when it covers every satoshi of the input, a covenant pins outputs that carry the input's whole value, or the input carries no value (a 1-sat record channel) |
 
-A value split between two parties with no covenant must be signed `0xc1` (or `0x41`). With `0xc2` the closer chooses every output; with `0xc3` the closer can add an output that takes whatever the committed output leaves.
+A value split between two parties with no covenant must be signed `0xc1` (or `0x41`). A Rúnar stateful transition does not pin its change output, so the covenant must pin outputs that account for the whole input value before `0xc2` or `0xc3` is safe (see the `runar` facts). With `0xc2` the closer chooses every output; with `0xc3` the closer can add an output that takes whatever the committed output leaves.
 
 The wiki's streaming example asks for a `SIGHASH_ANYONECANPAY | SIGHASH_NONE` signature; on BSV that is `0xc2`, because FORKID is always set.
 

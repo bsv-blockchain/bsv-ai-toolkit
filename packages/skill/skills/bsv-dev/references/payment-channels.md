@@ -82,7 +82,7 @@ const expiry = assertSeconds(Math.floor(Date.now() / 1000) + 24 * 3600)
 - States are cumulative: a signer who fell behind signs only the newest.
 - Never sign a digest you received (G-08). Never sign two states at one index over one outpoint (G-37).
 - Refuse to sign unless the channel output's value and script equal what you computed (G-37).
-- Pick a sighash that binds the channel's value (G-37): `0xc1` for a value split with no covenant; `0xc2` or `0xc3` only when a covenant pins the outputs, the committed output covers every satoshi of the input, or the input carries no value.
+- Pick a sighash that binds the channel's value (G-37): `0xc1` for a value split with no covenant; `0xc2` or `0xc3` only when a covenant pins outputs that carry the input's whole value (a Rúnar stateful transition leaves its change output unpinned), the committed output covers every satoshi of the input, or the input carries no value.
 
 Construction B (1-sat record channel), state `n`. For a Rúnar stateful contract, `subscript` is the script after its `OP_CODESEPARATOR`, not the full locking script.
 
@@ -164,7 +164,7 @@ Only for construction C and the close methods of A and B.
 - Stale state: is the newest state the first to mature, and does the watcher post it then? (G-35)
 - Rewritten history: does each signer refuse a second state at an index it already signed over that outpoint? (G-37)
 - Signature bound to a foreign output: does the signer check the channel output's value and script before signing? (G-37)
-- Unbound value: is every `0xc2` or `0xc3` state over an input that carries no value, whose committed output covers every satoshi, or whose outputs a covenant pins? A value split with no covenant is `0xc1`. (G-37)
+- Unbound value: is every `0xc2` or `0xc3` state over an input that carries no value, whose committed output covers every satoshi, or whose covenant pins outputs that carry the input's whole value? A value split with no covenant is `0xc1`. (G-37)
 - Digest from the wire: is every `hashToDirectlySign` digest rebuilt locally? (G-08)
 - Milliseconds lock time: is every `nLockTime` Unix seconds or a height, validated in range? (G-36)
 - Missing watcher: who posts the newest state at maturity if the counterparty vanishes? (G-38)
