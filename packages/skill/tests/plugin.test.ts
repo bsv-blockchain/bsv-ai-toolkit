@@ -71,6 +71,6 @@ describe('slash commands', () => {
     expect(frontmatter(md)).toMatch(
       /^description: Interview, then write a BSV app design \(custody shape, protocols, manifest, tx shapes, trust model\)$/m,
     )
-    for (const s of ['custody-shapes.md', 'manifest.template.json', 'threat-model.md', 'docs/superpowers/specs/']) expect(md).toContain(s)
+    for (const s of ['custody-shapes.md', 'manifest.template.json', 'threat-model.md', 'docs/design/']) expect(md).toContain(s)
   })
 })

@@ -20,7 +20,7 @@ Never ask for a private key, WIF, seed or recovery phrase; the design names envi
 
 ## 2. Design doc
 
-Write it to `docs/superpowers/specs/<YYYY-MM-DD>-<name>-design.md` in the user's project (today's date; `<name>` is the app name in kebab-case), creating the directory if needed. Show the user the draft before writing it. Sections:
+Write it to `docs/design/<YYYY-MM-DD>-<name>-design.md` in the user's project (today's date; `<name>` is the app name in kebab-case), creating the directory if needed. Show the user the draft before writing it. Sections:
 
 1. **Summary.** What the app does, in one paragraph, and the one-line classification: custody shape per money path; payments only, contract, or token; browser, server, or both.
 2. **Custody shape.** Shape A or B for each money path, with the reasons from `${CLAUDE_PLUGIN_ROOT}/skills/bsv-dev/references/custody-shapes.md` and the trade-offs the user accepts (A: users install a BRC-100 wallet, served-code trust; B: operator custody, key and storage operations, fee budgets, write-ahead records). Prefer A when both work. For shape B, state the budgets (per action, per identity, per day) and the "fund the server" path.
