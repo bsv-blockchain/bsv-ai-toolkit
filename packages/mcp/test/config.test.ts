@@ -12,6 +12,12 @@ describe('loadConfig', () => {
   it('treats an empty ARCADE_URL as unset', () => {
     expect(loadConfig({ ARCADE_URL: '' }).arcadeUrl).toBe('https://arcade-testnet-us-1.bsvblockchain.tech')
   })
+  it('treats an unresolved plugin placeholder ARCADE_URL as unset', () => {
+    expect(loadConfig({ ARCADE_URL: '${user_config.arcade_url}' }).arcadeUrl).toBe('https://arcade-testnet-us-1.bsvblockchain.tech')
+  })
+  it('treats an unresolved plugin placeholder BSV_NETWORK as unset', () => {
+    expect(loadConfig({ BSV_NETWORK: '${user_config.bsv_network}' }).network).toBe('testnet')
+  })
   it('enables mainnet broadcast only for the exact string 1', () => {
     expect(loadConfig({ BSV_MCP_ALLOW_MAINNET_BROADCAST: '1' }).allowMainnetBroadcast).toBe(true)
     expect(loadConfig({ BSV_MCP_ALLOW_MAINNET_BROADCAST: 'true' }).allowMainnetBroadcast).toBe(false)

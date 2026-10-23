@@ -37,8 +37,11 @@ export function readPackageVersion(): string {
   return JSON.parse(readFileSync(pkgPath, 'utf8')).version
 }
 
+// Claude Code can pass an unset optional userConfig value through as the literal '${user_config.<key>}'.
+const UNRESOLVED_PLACEHOLDER = /^\$\{[^}]*\}$/
+
 function nonEmpty(value: string | undefined): string | undefined {
-  return value === undefined || value === '' ? undefined : value
+  return value === undefined || value === '' || UNRESOLVED_PLACEHOLDER.test(value) ? undefined : value
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {

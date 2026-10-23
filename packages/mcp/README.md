@@ -81,6 +81,8 @@ Each Markdown resource starts with `verified: YYYY-MM-DD` and `source: @bsv/mcp 
 | `WOC_API_KEY` | unset | Optional WhatsOnChain key, reserved for `versions_check`; no tool sends it today. |
 | `BSV_MCP_NETWORK_TESTS` | unset | Test suite only: `1` enables the tests that call live services. |
 
+An empty value, or an unresolved plugin placeholder such as `${user_config.arcade_url}`, counts as unset.
+
 ## Safety
 
 - **Testnet by default.** Mainnet is real money and is used only when you configure it.
