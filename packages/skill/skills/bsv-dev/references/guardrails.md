@@ -343,8 +343,8 @@ Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 
 ### G-38 Every channel has a watcher, a timeout exit and backups
 
-- **Rule:** Each party persists, write-ahead, the opening transaction (AtomicBEEF), the channel outpoint, every signature it received and the newest state signed by both, plus any pre-signed refund; a watcher (a client tab, a bot or a server) posts the newest state at its maturity; the channel has a lifetime after which funds return without the counterparty (a pre-signed `nLockTime` refund or a covenant timeout); the payee of a one-way channel closes before that expiry with a margin for median-time-past lag.
-- **Why:** A state nobody can produce is worthless, a state nobody posts loses to an older one, and a channel with no expiry strands funds when the counterparty disappears.
+- **Rule:** Each party persists, write-ahead, the opening transaction (AtomicBEEF), the channel outpoint, every signature it received and the newest state signed by both, plus any pre-signed refund; a watcher (a client tab, a bot or a server) posts the newest state at its maturity; the channel has a lifetime after which funds return without the counterparty (a pre-signed `nLockTime` refund or a covenant timeout), and a refund that needs the counterparty's signature is signed over the opening's txid before the opening is submitted; the payee of a one-way channel closes before that expiry, with a margin.
+- **Why:** A state nobody can produce is worthless, a state nobody posts loses to an older one, a channel with no expiry strands funds when the counterparty disappears, an opening submitted before its refund is signed leaves the funder's exit to the counterparty, and a one-way payee that closes late races the payer's refund, which becomes valid at the expiry.
 - **Shape:** both
 - **Detect:** manual
 - **Severity:** warn

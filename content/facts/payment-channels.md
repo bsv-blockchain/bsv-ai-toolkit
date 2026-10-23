@@ -26,7 +26,7 @@ Only the two private options work for an app built with this kit; the reason is 
 - Otherwise it is final only when `nLockTime` is strictly less than the comparison value of the block that would mine it: the block height when `nLockTime < 500000000`, the median-time-past (MTP) otherwise. A transaction with `nLockTime = H` can be mined from block `H + 1`.
 - MTP lags the wall clock by up to about an hour, so a lock time in seconds matures up to an hour late.
 - There are no relative lock times: BIP68 and `OP_CHECKSEQUENCEVERIFY` are NOPs.
-- Consensus has no replacement rule. A higher `nSequence` does not replace an earlier version; once the lock time has passed, every signed version that spends the outpoint is equally valid and the first one the network sees wins.
+- Consensus has no replacement rule. A higher `nSequence` does not replace an earlier version; once the lock time has passed, every signed version that spends the outpoint is equally valid. Nodes keep the first version they see and refuse later conflicting ones (first-seen is node policy); consensus accepts whichever version is mined.
 
 Sources: the `consensus` facts; `util/lock_time.go` in `bsv-blockchain/teranode` (`https://github.com/bsv-blockchain/teranode/blob/main/util/lock_time.go`, read 2026-10-23), whose comment says the strict inequality matches SV Node's `IsFinalTx`.
 
@@ -34,7 +34,7 @@ Sources: the `consensus` facts; `util/lock_time.go` in `bsv-blockchain/teranode`
 
 | Service | What it does with a non-final transaction | Source |
 | --- | --- | --- |
-| Arcade | Answers `POST /tx` with 400 and ARC code 476, and persists no verdict. `GET /tx/{txid}` keeps answering 404 after a submission that only ever got 476. Resubmit the identical transaction once it is final. Arcade never holds, orders or replaces channel states. | `openapi/arcade.openapi.yaml` in `bsv-blockchain/arcade` (`https://github.com/bsv-blockchain/arcade/blob/main/openapi/arcade.openapi.yaml`, read 2026-10-23); the `arcade` facts; testnet, Oct 2026 (a server that retried every 5 minutes on 476 until the state was accepted). |
+| Arcade | Answers `POST /tx` with 400 and ARC code 476, and persists no verdict. `GET /tx/{txid}` keeps answering 404 after a submission that only ever got 476. Resubmit the identical transaction once it is final. Arcade never holds, orders or replaces channel states. | `openapi/arcade.openapi.yaml` in `bsv-blockchain/arcade` (`https://github.com/bsv-blockchain/arcade/blob/main/openapi/arcade.openapi.yaml`, read 2026-10-23); the `arcade` facts; an earlier BSVA design that resubmits every 5 minutes on 476 until the state is accepted (a design constant, not a testnet measurement). |
 | Teranode | Rejects it as invalid under the consensus rule its source labels TNJ-13. The same comment says payment channels are for the user to set up and run, and that the node "shouldn't be aware or care about them". | `util/lock_time.go` in `bsv-blockchain/teranode`, read 2026-10-23. Read from source, not probed live. |
 | SV Node | Keeps a separate non-final (time-locked) transaction pool. This is node policy, not consensus. Default size 50 MiB; an entry not updated for 4 weeks is dropped; a non-final transaction that spends the output of another non-final one is refused; to change a submitted transaction the participants negotiate a new version. | The BSV hub page `https://hub.bsvblockchain.org/wiki/transactions-and-utxos/bitcoin-transactions/transaction-pools`, read 2026-10-23. **Not verified:** whether nodes relay these transactions to each other; that the replacing version must carry a higher `nSequence` (stated on other hub pages, not re-read); the defaults in current SV Node releases. |
 
@@ -82,7 +82,7 @@ Testnet, Oct 2026:
 
 - A 1-sat channel output and a 0-sat `OP_FALSE OP_RETURN` record output were accepted.
 - Chains of unconfirmed covenant spends were accepted and mined together, nine of them in one block.
-- A height-locked state posted once the tip had reached its lock time (the client read the height from an indexer first) was never answered 476 in 19 broadcasts.
+- Every time-locked covenant transaction (posts, pins, judged closes, claims, the abandon and the refund) was posted once the tip had reached its lock time, read from an indexer first, and none was answered 476.
 - `GET /tx/{txid}` answered 0.5–2 s after the POST.
 - The opening reached `SEEN_ON_NETWORK` within seconds, and updates started at 0-conf.
 
@@ -90,21 +90,21 @@ Sources: testnet, Oct 2026; the `arcade` facts carry the same timings.
 
 ## Sizes and fees
 
-At 100 sat/kB, testnet, Oct 2026. Sizes are serialized transaction bytes.
+At 100 sat/kB. Sizes are serialized transaction bytes. The covenant and wallet-payment rows were measured on testnet, Oct 2026; the referee rows are design estimates, not measurements.
 
 | Transaction | Size | Fee |
 | --- | --- | --- |
-| Referee channel: opening with a 1-sat channel output | about 350 B | about 35 sats |
-| Referee channel: close carrying a data record of 80 updates | about 1.8 KB, about 13.5 B per update | about 180 sats |
+| Referee channel: opening with a 1-sat channel output (design estimate) | about 350 B | about 35 sats |
+| Referee channel: close carrying a data record (design estimate) | about 400 B fixed + 13.5 B per update, so about 1.5 KB for 80 updates | about 150 sats for 80 updates |
 | Covenant channel (9.6 KB script): opening | 10042–10340 B | 1005–1034 sats |
 | Covenant channel: a state posted on chain | about 29.4 KB | 2945 sats |
 | Covenant channel: close | 19.5–19.6 KB | about 1970 sats |
 | Covenant channel: pre-signed refund | 191 B | 20 sats |
 | Per-payment alternative: a wallet-built P2PKH payment | 225–965 B | 23–97 sats, one wallet spend each |
 
-In the referee channel the operator paid the opening and the close; the two parties paid nothing. Anchoring the same 80 updates as separate transactions was computed at about 4,300 sats and observed at about 8,000 sats with wallet rounding and change, and cost each party a wallet prompt per update (40 each).
+In the referee channel the operator pays the opening and the close; the two parties pay nothing. Anchoring the same 80 updates as separate transactions was computed at about 4,300 sats and observed at about 8,000 sats with wallet rounding and change, and cost each party a wallet prompt per update (40 each).
 
-Sources: the `fees` facts (same measurements); testnet, Oct 2026.
+Sources: the `fees` facts carry the same covenant and wallet-payment measurements; the referee estimates and the anchoring figures are from BSVA's earlier apps, Oct 2026 (the anchoring cost observed on testnet).
 
 ## What cannot be done on chain
 
@@ -117,6 +117,6 @@ Sources: the `consensus` facts; testnet, Oct 2026.
 ## Wallet facts for channels
 
 - `createSignature({ hashToDirectlySign })` signs exactly the 32 bytes given (the double SHA-256). Under a level-1 protocol covered by a BRC-73 grouped grant it signs without a prompt, one call per state (see the `wallet-limits` facts).
-- `@bsv/wallet-toolbox` keeps provided inputs first and, with `randomizeOutputs: false`, keeps outputs in the given order. A state signed by both parties can therefore be published through such a wallet with `createAction`, the signed channel input at index 0. **Not verified:** whether BSV Desktop keeps that order. The fallback is to hand the user the signed state as a file.
+- `@bsv/wallet-toolbox` keeps provided inputs first and, with `randomizeOutputs: false`, keeps outputs in the given order. A state signed by both parties can therefore be published through such a wallet with `createAction`, the signed channel input at index 0; then submit its EF to your own Arcade (see the `arcade` facts). **Not verified:** whether BSV Desktop keeps that order. The fallback is to hand the user the signed state as a file.
 
 Sources: the `wallet-limits` facts; testnet, Oct 2026 (verified with `wallet-toolbox`; publishing through BSV Desktop was not run).

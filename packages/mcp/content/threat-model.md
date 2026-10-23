@@ -37,9 +37,10 @@ These happen and need code:
 
 A payment channel keeps its states off-chain, so it carries risks a single payment does not:
 
-- **Stale-state race.** Any matured state is valid, and the first one the network sees wins. The newest state must mature first, and its holder must post it at maturity; an older state posted later is then a double spend.
+- **Stale-state race.** Any matured state is valid. Nodes keep the first one they see (policy) and consensus accepts whichever is mined. The newest state must mature first, and its holder must post it at maturity; an older state posted later is then a double spend.
 - **Median-time-past lag.** A lock time in seconds matures up to about an hour after its nominal time, and neighbouring states mature in the same block. Prefer height schedules where each party must defend itself.
 - **Liveness bound.** There are no relative lock times, so a party must act within the window after a maturity point; one that is offline longer can lose to an older state or a timeout exit.
+- **Served-code trust in one-way channels.** Under a grouped grant, `hashToDirectlySign` signs an opaque hash without a prompt (see Served-code trust). A payee that serves the payer's client code can have it sign an update that pays the payee the whole deposit. Cap the deposit like a spending allowance, and keep larger stakes behind an explicit prompt.
 - **Twin openings.** The last signer of a co-signed opening can broadcast a twin with another txid. Follow the confirmed spender of the funding coin; signatures over the other twin are void.
 
 Details and the constructions: the `payment-channels` facts and the skill's `payment-channels.md`.
