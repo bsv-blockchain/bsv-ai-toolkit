@@ -112,8 +112,8 @@ describe('assets', () => {
   it('install-commands.md has the four install strings', () => {
     const t = read('install-commands.md')
     for (const s of [
-      'npx skills add bsv-blockchain/bsv-mcp',
-      'claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv',
+      'npx skills add bsv-blockchain/bsv-ai-toolkit',
+      'claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv',
       'claude mcp add --transport http bsv-docs https://bsv.writedocs.io/mcp',
       'claude mcp add bsv-mcp -e BSV_NETWORK=testnet -- npx -y @bsv/mcp',
     ]) expect(t).toContain(s)

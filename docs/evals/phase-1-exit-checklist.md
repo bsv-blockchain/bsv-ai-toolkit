@@ -16,6 +16,7 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
 | 9 | `@bsv/simple-mcp` 0.0.3 published and deprecated | HUMAN: simple-mcp owner | |
 | 10 | Briefing delivered to WriteChoice | HUMAN: Connor | |
 | 11 | Authored `why` text in `content/guardrails.yaml` read | HUMAN: Connor, before the `v2.0.0` tag (item 3) | |
+| 12 | Repository renamed to `bsv-blockchain/bsv-ai-toolkit` | HUMAN: Connor, with Deggen, before the PR merges | |
 
 ## Items
 
@@ -24,12 +25,12 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   The PR that adds `ci.yml`, `nightly.yml`, `release.yml` and `sample-ghcr.yml` deletes `.github/workflows/push.yaml` and `.github/workflows/npm-publish.yml`, so a merge to `main` never triggers a publish. Check that neither file is on the branch, then confirm with Deggen, who ran the go-broadcast sync that brought `push.yaml` in, that the sync is no longer active and nothing else depends on either workflow.
   Evidence: the branch's `.github/workflows/` listing, and the date and channel of Deggen's confirmation.
 
-- [ ] **1. `npx skills add bsv-blockchain/bsv-mcp` works on a clean machine.**
+- [ ] **1. `npx skills add bsv-blockchain/bsv-ai-toolkit` works on a clean machine.**
   Owner: HUMAN: Connor. After item 3: the skill installs from this repository once v2.0.0 is released.
-  On a machine (or user account) with no earlier install of the skill, run `npx skills add bsv-blockchain/bsv-mcp` and check that the agent lists the `bsv-dev` skill.
+  On a machine (or user account) with no earlier install of the skill, run `npx skills add bsv-blockchain/bsv-ai-toolkit` and check that the agent lists the `bsv-dev` skill.
   Evidence: date, OS, Node version, the command's output.
 
-- [ ] **2. `claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv` works.**
+- [ ] **2. `claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv` works.**
   Owner: HUMAN: Connor. After item 3: the plugin pins `@bsv/mcp@2.0.0`, so it installs only once v2.0.0 is released.
   Run it in Claude Code, then check that the skill, the commands `/bsv-review` and `/bsv-design`, and both MCP servers (`bsv-mcp`, `bsv-docs`) are present.
   Evidence: date, `claude --version`, `claude mcp list` output.
@@ -87,3 +88,8 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   Owner: HUMAN: Connor, before the `v2.0.0` tag (item 3).
   Each guardrail's `why` is authored prose that ships in `@bsv/mcp` and the skill. Read every `why` in `content/guardrails.yaml` for accuracy and tone; fix any in `content/`, then run `pnpm sync`.
   Evidence: the date read and the commit of any fix (or "no changes").
+
+- [ ] **12. The repository is renamed from `bsv-blockchain/bsv-mcp` to `bsv-blockchain/bsv-ai-toolkit`.**
+  Owner: HUMAN: Connor, after Deggen agrees, before the PR merges and before item 3.
+  Every install command, link and manifest on this branch already names `bsv-blockchain/bsv-ai-toolkit`, so they resolve only after the rename. Check with Deggen first that the org workflow sync (item 0) and any other automation keyed to the old name are handled, and set up the npm trusted publisher (item 3) under the new name. Rename in Settings → General (or `gh repo rename bsv-ai-toolkit -R bsv-blockchain/bsv-mcp`); GitHub redirects the old URLs. Then update local clones with `git remote set-url origin git@github.com:bsv-blockchain/bsv-ai-toolkit.git`.
+  Evidence: the date of the rename and of Deggen's confirmation.

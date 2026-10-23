@@ -1,7 +1,7 @@
 > [!WARNING]
 > **`@bsv/simple-mcp` is deprecated and no longer maintained.** Its `@bsv/simple` reference and
 > prompts now ship in [`@bsv/mcp`](https://www.npmjs.com/package/@bsv/mcp) 2.x
-> ([source](https://github.com/bsv-blockchain/bsv-mcp)). Install it, testnet first:
+> ([source](https://github.com/bsv-blockchain/bsv-ai-toolkit)). Install it, testnet first:
 >
 > ```bash
 > claude mcp remove simple-mcp

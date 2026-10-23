@@ -9,13 +9,13 @@ The skill never asks for, stores or generates production private keys, and it ne
 Any agent that reads Agent Skills:
 
 ```bash
-npx skills add bsv-blockchain/bsv-mcp
+npx skills add bsv-blockchain/bsv-ai-toolkit
 ```
 
 Claude Code plugin (the skill plus both MCP servers):
 
 ```bash
-claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
+claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
 ```
 
 The plugin needs Claude Code v2.1.271 or later (its network setting is a fixed `testnet`/`mainnet` choice). It adds `/bsv-review [path]` and `/bsv-design [app name]`, and asks for two settings: the network (default `testnet`) and an optional Arcade URL. Mainnet broadcasts by the agent also need `BSV_MCP_ALLOW_MAINNET_BROADCAST=1` in your shell; the plugin never sets it.

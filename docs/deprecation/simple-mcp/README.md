@@ -24,7 +24,7 @@ start.
 2. Fork the repository (or clone it, with write access) and create a branch, e.g. `deprecate-0.0.3`.
 3. Copy the files in:
    ```bash
-   KIT=/path/to/bsv-mcp/docs/deprecation/simple-mcp
+   KIT=/path/to/bsv-ai-toolkit/docs/deprecation/simple-mcp
    cp "$KIT/files/src/index.ts" src/index.ts
    cp "$KIT/files/package.json" package.json
    git rm -r src/resources src/tools src/prompts

@@ -2,7 +2,7 @@
 
 An MCP server for building BSV applications with AI coding agents, testnet first: Arcade broadcast and status tools, a static guardrail checker, BRC and docs lookup, and dated facts served as `bsv://` resources.
 
-Source, changelog and the companion `bsv-dev` skill: [github.com/bsv-blockchain/bsv-mcp](https://github.com/bsv-blockchain/bsv-mcp).
+Source, changelog and the companion `bsv-dev` skill: [github.com/bsv-blockchain/bsv-ai-toolkit](https://github.com/bsv-blockchain/bsv-ai-toolkit).
 
 ## Install
 
@@ -28,7 +28,7 @@ Other MCP clients:
 
 Requires Node 22 or later. Testnet coins: [bsvfaucet.com](https://bsvfaucet.com) (sign in with a BSV wallet; up to 10M satoshis per request, one request per 24 hours).
 
-**Local code search (optional).** `code_search` and `find_function_definition` search local clones, and `brc_lookup` reads the BRCs clone first. Run [`setup.sh`](https://github.com/bsv-blockchain/bsv-mcp/blob/main/setup.sh) `<dir>` from the repository to shallow-clone ts-stack, BRCs, arcade, bsv-desktop, go-wallet-toolbox and runar, then set `BSV_REPOS_DIR=<dir>`. The server starts without it; the search tools then answer with a setup hint. [ripgrep](https://github.com/BurntSushi/ripgrep) is used when installed, `grep` otherwise.
+**Local code search (optional).** `code_search` and `find_function_definition` search local clones, and `brc_lookup` reads the BRCs clone first. Run [`setup.sh`](https://github.com/bsv-blockchain/bsv-ai-toolkit/blob/main/setup.sh) `<dir>` from the repository to shallow-clone ts-stack, BRCs, arcade, bsv-desktop, go-wallet-toolbox and runar, then set `BSV_REPOS_DIR=<dir>`. The server starts without it; the search tools then answer with a setup hint. [ripgrep](https://github.com/BurntSushi/ripgrep) is used when installed, `grep` otherwise.
 
 ## Tools
 

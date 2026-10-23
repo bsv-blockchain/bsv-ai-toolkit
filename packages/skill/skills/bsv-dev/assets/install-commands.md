@@ -5,13 +5,13 @@ The bsv-dev skill and its two MCP servers: `bsv-docs` (the BSV documentation) an
 ## Any agent that reads Agent Skills
 
 ```bash
-npx skills add bsv-blockchain/bsv-mcp
+npx skills add bsv-blockchain/bsv-ai-toolkit
 ```
 
 ## Claude Code: plugin (skill plus both MCP servers)
 
 ```bash
-claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
+claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
 ```
 
 ## Claude Code: MCP servers only

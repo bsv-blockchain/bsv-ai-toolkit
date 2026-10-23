@@ -8,10 +8,10 @@ cat <<'TEXT'
 # bsv-dev skill: install commands (printed only; nothing was changed)
 
 ## Any agent that reads Agent Skills
-npx skills add bsv-blockchain/bsv-mcp
+npx skills add bsv-blockchain/bsv-ai-toolkit
 
 ## Claude Code: plugin (skill plus both MCP servers)
-claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
+claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
 
 ## Claude Code: MCP servers only
 claude mcp add --transport http bsv-docs https://bsv.writedocs.io/mcp

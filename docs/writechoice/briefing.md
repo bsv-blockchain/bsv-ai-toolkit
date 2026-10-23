@@ -1,6 +1,6 @@
 # Briefing for WriteChoice: the BSV AI DevKit
 
-From the BSV Association, for the WriteChoice docs team. This is the repository's copy of the briefing sent on 2026-10-22, brought up to date with what the `bsv-blockchain/bsv-mcp` repository now contains. Where the two differ, this copy is current; [Since the first briefing](#since-the-first-briefing) lists the differences.
+From the BSV Association, for the WriteChoice docs team. This is the repository's copy of the briefing sent on 2026-10-22, brought up to date with what the `bsv-blockchain/bsv-ai-toolkit` repository now contains. Where the two differ, this copy is current; [Since the first briefing](#since-the-first-briefing) lists the differences.
 
 Nothing in this kit is released yet. Every install command below works once `@bsv/mcp` 2.0.0 and the `bsv-dev` skill 0.1.0 are released; until then `npx @bsv/mcp` resolves the older 1.x package. Host facts were checked on 2026-10-22.
 
@@ -15,7 +15,7 @@ Six pieces, one job each:
 | Docs site, including the new Coding with agents page at `/docs/build-with-ai` | WriteChoice | Canonical prose; an agent set up in three commands or fewer | Judgment; live chain data |
 | Docs MCP (`https://bsv.writedocs.io/mcp`, later the final host) | WriteChoice | `list_docs`, `search_docs`, `get_doc` | Running code or touching the chain |
 | `llms.txt`, `llms-full.txt` and the `.md` page variants | WriteChoice | Agent-readable docs | |
-| `@bsv/mcp` 2.0.0 on npm, absorbing `@bsv/simple-mcp` | BSVA, `bsv-blockchain/bsv-mcp` | Actions and live data | Teaching; long prose |
+| `@bsv/mcp` 2.0.0 on npm, absorbing `@bsv/simple-mcp` | BSVA, `bsv-blockchain/bsv-ai-toolkit` | Actions and live data | Teaching; long prose |
 | `bsv-dev` skill 0.1.0 (package `bsv-dev-skill`), also a Claude Code plugin | BSVA, same repository | Judgment and workflow | Facts that change weekly |
 | Sample apps | BSVA, same repository | Runnable reference apps mapped to the guardrails | Tutorials |
 
@@ -33,7 +33,7 @@ WriteChoice owns the site, `llms.txt` and the docs MCP. This kit owns the facts,
 ### Decisions already made
 
 - One BSV MCP for builders: `@bsv/simple-mcp` folds into `@bsv/mcp` and is deprecated. The docs MCP stays separate.
-- BSVA hosts the skill in `bsv-blockchain/bsv-mcp` (the answer to docs question Q28).
+- BSVA hosts the skill in `bsv-blockchain/bsv-ai-toolkit` (the answer to docs question Q28).
 - Names: the skill is `bsv-dev`; the Claude Code plugin is `bsv-dev` from the marketplace `bsv`. The two MCP servers install as `bsv-docs` and `bsv-mcp`.
 - Where the wallet lives is the app's choice: a user-side BRC-100 wallet (shape A) or an app-side BRC-100 server wallet with `wallet-toolbox` or `go-wallet-toolbox` (shape B). Pages present both, with their trade-offs.
 - Testnet first; mainnet is one switch away (`BSV_NETWORK`). Testnet coins come from `https://bsvfaucet.com`.
@@ -47,13 +47,13 @@ Available once `@bsv/mcp` 2.0.0 and `bsv-dev` 0.1.0 are released. Please use the
 1. The skill, for any agent that reads Agent Skills:
 
    ```bash
-   npx skills add bsv-blockchain/bsv-mcp
+   npx skills add bsv-blockchain/bsv-ai-toolkit
    ```
 
 2. The Claude Code plugin (the skill plus both MCP servers):
 
    ```bash
-   claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
+   claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
    ```
 
 3. The two MCP servers on their own, in Claude Code:
@@ -89,7 +89,7 @@ What we ask:
 | | |
 | --- | --- |
 | Live demo | `https://tipping.bsvb.tech` `TODO(hosting)`: placeholder; the hosting team has not deployed it yet, and we will send the real origin |
-| Source | `https://github.com/bsv-blockchain/bsv-mcp/tree/main/samples/tipping-shape-a` (resolves once this work merges to `main`) |
+| Source | `https://github.com/bsv-blockchain/bsv-ai-toolkit/tree/main/samples/tipping-shape-a` (resolves once this work merges to `main`) |
 | Image | `ghcr.io/bsv-blockchain/bsv-tipping-demo` (published from `main` once this work merges) |
 | Network | testnet |
 | Checks | `check_guardrails` reports zero errors in CI; a testnet gate runs a real tip end to end; `GUARDRAILS.md` maps each guardrail to the file that meets it; `TRUST.md` states the trust model |

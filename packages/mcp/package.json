@@ -15,7 +15,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bsv-blockchain/bsv-mcp.git",
+    "url": "git+https://github.com/bsv-blockchain/bsv-ai-toolkit.git",
     "directory": "packages/mcp"
   },
   "publishConfig": {

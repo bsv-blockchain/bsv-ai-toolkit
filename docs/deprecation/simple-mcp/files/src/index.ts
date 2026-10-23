@@ -8,7 +8,7 @@ const URI = 'simple://deprecated'
 const NOTICE = `# @bsv/simple-mcp is deprecated
 
 This server no longer serves the \`@bsv/simple\` reference or code generators. Its content now lives in
-[\`@bsv/mcp\`](https://www.npmjs.com/package/@bsv/mcp) 2.x ([source](https://github.com/bsv-blockchain/bsv-mcp)).
+[\`@bsv/mcp\`](https://www.npmjs.com/package/@bsv/mcp) 2.x ([source](https://github.com/bsv-blockchain/bsv-ai-toolkit)).
 
 Install it, testnet first:
 

@@ -1,7 +1,7 @@
 ## Deprecate `@bsv/simple-mcp` in favour of `@bsv/mcp` 2.x
 
 The `@bsv/simple` reference and prompts this server carried now ship in [`@bsv/mcp`](https://www.npmjs.com/package/@bsv/mcp) 2.x
-([source](https://github.com/bsv-blockchain/bsv-mcp)), alongside the rest of the BSV dev kit. This PR turns `@bsv/simple-mcp` into a
+([source](https://github.com/bsv-blockchain/bsv-ai-toolkit)), alongside the rest of the BSV dev kit. This PR turns `@bsv/simple-mcp` into a
 stub that points users there, as version 0.0.3.
 
 ### What changes

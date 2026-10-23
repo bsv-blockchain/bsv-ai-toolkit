@@ -21,13 +21,13 @@ Tools and dated knowledge for building BSV applications with AI coding agents, t
 Skill (any agent that reads Agent Skills), available once v2.0.0 is released:
 
 ```bash
-npx skills add bsv-blockchain/bsv-mcp
+npx skills add bsv-blockchain/bsv-ai-toolkit
 ```
 
 Claude Code plugin (skill plus MCP), available once v2.0.0 is released:
 
 ```bash
-claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
+claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
 ```
 
 MCP server only, in Claude Code:

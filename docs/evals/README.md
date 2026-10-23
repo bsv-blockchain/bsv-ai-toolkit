@@ -12,7 +12,7 @@ One run is one fresh Claude Code session building tipping into a plain React app
 2. In the starter directory, install the skill and the docs MCP, and nothing else:
 
    ```bash
-   npx skills add bsv-blockchain/bsv-mcp
+   npx skills add bsv-blockchain/bsv-ai-toolkit
    claude mcp add --transport http bsv-docs https://bsv.writedocs.io/mcp
    ```
 

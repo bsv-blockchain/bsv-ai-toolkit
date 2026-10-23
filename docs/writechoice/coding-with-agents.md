@@ -92,13 +92,13 @@ The `bsv-dev` skill is a playbook the agent loads when it works on BSV: choosing
 Any agent that reads Agent Skills:
 
 ```bash
-npx skills add bsv-blockchain/bsv-mcp
+npx skills add bsv-blockchain/bsv-ai-toolkit
 ```
 
 Claude Code, as a plugin:
 
 ```bash
-claude plugin marketplace add bsv-blockchain/bsv-mcp && claude plugin install bsv-dev@bsv
+claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
 ```
 
 The plugin bundles both MCP servers, `bsv-docs` and `bsv-mcp`, so in Claude Code it replaces steps 1 and 3. It asks for two settings, the network (default `testnet`) and an optional Arcade URL, and adds the commands `/bsv-review [path]` and `/bsv-design [app name]`. It needs Claude Code v2.1.271 or later.
@@ -134,7 +134,7 @@ What the tools do:
 | `brc_lookup` | Returns a BRC standard as Markdown |
 | `versions_check` | Compares the recommended library versions with the latest releases |
 | `docs_url` | Finds the live page for a docs id |
-| `code_search`, `find_function_definition` | Search local copies of the BSV repositories, after you run `setup.sh` from the [repository](https://github.com/bsv-blockchain/bsv-mcp) and set `BSV_REPOS_DIR` |
+| `code_search`, `find_function_definition` | Search local copies of the BSV repositories, after you run `setup.sh` from the [repository](https://github.com/bsv-blockchain/bsv-ai-toolkit) and set `BSV_REPOS_DIR` |
 
 It also serves dated facts (networks, Arcade, fees, wallet limits), the guardrails and the `@bsv/simple` reference as resources, so the agent reads current values instead of guessing.
 
@@ -164,8 +164,8 @@ Try these once the pieces are installed. [Send a payment with an AI agent](/docs
 
 ## Skills library
 
-**Official.** `bsv-dev`, maintained by the BSV Association in [bsv-blockchain/bsv-mcp](https://github.com/bsv-blockchain/bsv-mcp).
+**Official.** `bsv-dev`, maintained by the BSV Association in [bsv-blockchain/bsv-ai-toolkit](https://github.com/bsv-blockchain/bsv-ai-toolkit).
 
-**Community.** Skills from other authors are listed in [`community-skills.yaml`](https://github.com/bsv-blockchain/bsv-mcp/blob/main/community-skills.yaml) (the link resolves once this work merges to `main`). The list is empty for now.
+**Community.** Skills from other authors are listed in [`community-skills.yaml`](https://github.com/bsv-blockchain/bsv-ai-toolkit/blob/main/community-skills.yaml) (the link resolves once this work merges to `main`). The list is empty for now.
 
-To submit a skill, open a pull request on `bsv-blockchain/bsv-mcp` that adds one entry to `community-skills.yaml`, with `name`, `repo`, `commit`, `description` and `maintainer`. `commit` is the full commit SHA that was reviewed, and every link in the entry points at that commit, so readers install what was reviewed. A new version is a new pull request with a new commit.
+To submit a skill, open a pull request on `bsv-blockchain/bsv-ai-toolkit` that adds one entry to `community-skills.yaml`, with `name`, `repo`, `commit`, `description` and `maintainer`. `commit` is the full commit SHA that was reviewed, and every link in the entry points at that commit, so readers install what was reviewed. A new version is a new pull request with a new commit.
