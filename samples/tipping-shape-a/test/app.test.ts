@@ -6,7 +6,7 @@ import request from 'supertest'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createApp } from '../server/app.js'
 import { Arcade } from '../server/arcade.js'
-import { loadServerConfig } from '../server/config.js'
+import { bootLine, loadServerConfig } from '../server/config.js'
 import { openDb } from '../server/db.js'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
@@ -39,6 +39,13 @@ describe('relay app', () => {
     const res = await request(app()).get('/health')
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ ok: true, network: 'testnet', arcadeOrigin: TESTNET_ARCADE, version: '0.1.0' })
+  })
+
+  it('the boot log line names the Arcade origin only, never its userinfo, path or query', () => {
+    const cfg = loadServerConfig({ ARCADE_URL: 'https://user:s3cret@arcade.example.com:8443/private/v1?token=abc', PORT: '9090' }, quiet)
+    const line = bootLine(cfg)
+    expect(line).toBe('bsv-tipping-demo relay on :9090 network=testnet arcade=https://arcade.example.com:8443 origin=http://localhost:5173')
+    for (const leak of ['user', 's3cret', 'private', 'token', 'abc']) expect(line).not.toContain(leak)
   })
 
   it('GET /health names the Arcade origin only, never its userinfo, path or query', async () => {

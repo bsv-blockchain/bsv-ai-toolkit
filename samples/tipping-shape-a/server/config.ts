@@ -100,6 +100,14 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
   return cfg
 }
 
+/**
+ * The line the relay logs once it listens. It names the Arcade origin only: an ARCADE_URL may carry credentials or a
+ * private path, and logs travel further than the environment.
+ */
+export function bootLine(cfg: ServerConfig): string {
+  return `bsv-tipping-demo relay on :${cfg.port} network=${cfg.network} arcade=${new URL(cfg.arcadeUrl).origin} origin=${cfg.publicOrigin}`
+}
+
 // Throws on an unparseable URL or a host known to belong to the other network; returns a warning for a ttn host.
 function checkArcadeHost(network: Network, arcadeUrl: string): string | undefined {
   let host: string

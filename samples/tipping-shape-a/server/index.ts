@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createApp } from './app.js'
 import { Arcade } from './arcade.js'
-import { loadServerConfig, type ServerConfig } from './config.js'
+import { bootLine, loadServerConfig, type ServerConfig } from './config.js'
 import { openDb, type Db } from './db.js'
 
 // Refuses to start on a bad BSV_NETWORK, a mismatched ARCADE_URL, or in production a missing, http: or loopback
@@ -25,7 +25,7 @@ try {
   process.exit(1)
 }
 const server = createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl) }).listen(cfg.port, () => {
-  console.log(`bsv-tipping-demo relay on :${cfg.port} network=${cfg.network} arcade=${cfg.arcadeUrl} origin=${cfg.publicOrigin}`)
+  console.log(bootLine(cfg))
 })
 
 // Open SSE streams never end on their own, so close every connection, then the database.
