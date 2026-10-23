@@ -4,7 +4,8 @@ import { bracketText, closeOf, enclosingOpens, findingList, isSource, lineAt, sc
 // `lockTime`, `nLockTime`, `lockTimeBase`, `locktime` (any case), as a whole identifier.
 const LOCK_NAME = /(?<![\w$])n?locktime(?:base)?(?![\w$])/gi
 const MS_CLOCK = /\bDate\.now\s*\(\s*\)|\.getTime\s*\(\s*\)|\bperformance\.now\s*\(\s*\)/g
-const DIVIDED = /^\s*\/\s*(?:1_?000|1e3)(?![\w.])/
+// `/ 1000`, `/1_000`, `/ 1e3`, or BigInt `/ 1000n`.
+const DIVIDED = /^\s*\/\s*(?:1_?000n?|1e3)(?![\w.])/
 const INTEGER = /\bMath\.(?:floor|trunc|round|ceil)\s*\(|\|\s*0(?![\w.])|>>>\s*0(?![\w.])|~~/
 const TIMES_1000 = /^\s*\*\s*(?:1_?000|1e3)(?![\w.])/
 const COMPARISON = /[<>]=?|[!=]==?/
@@ -35,19 +36,34 @@ function branches(expr: string): string[] {
   return ternary ? parts.slice(1) : parts
 }
 
+/**
+ * How the clock at `at` in `part` is converted to seconds: `'integer'` (a `…sec…` helper wraps it, or a
+ * BigInt division by `1000n`), `'divided'` (a plain `/ 1000` on the clock or on a bare group around it), or
+ * undefined when it stays in milliseconds.
+ */
+function conversion(part: string, at: number, clockEnd: number): 'integer' | 'divided' | undefined {
+  if (DIVIDED.test(part.slice(clockEnd))) return 'divided'
+  for (const open of enclosingOpens(part, at, false).filter(o => part[o] === '(')) {
+    const callee = /([A-Za-z_$][\w$]*)\s*$/.exec(part.slice(0, open))?.[1]
+    if (callee && /sec/i.test(callee)) return 'integer'
+    if (callee && callee !== 'BigInt') continue
+    const close = closeOf(part, open)
+    const divided = close < 0 ? null : DIVIDED.exec(part.slice(close + 1))
+    if (divided) return divided[0].trimEnd().endsWith('n') ? 'integer' : 'divided'
+  }
+  return undefined
+}
+
 /** True when a value assigned as a lock time reads a millisecond clock unconverted, or yields float seconds. */
 function badLockTime(expr: string): boolean {
   for (const part of branches(expr)) {
-    let converted = false
+    let needsInteger = false
     for (const m of part.matchAll(MS_CLOCK)) {
-      const after = part.slice(m.index + m[0].length)
-      const open = enclosingOpens(part, m.index, false).find(o => part[o] === '(')
-      const groupClose = open === undefined ? -1 : closeOf(part, open)
-      const groupDivided = groupClose >= 0 && DIVIDED.test(part.slice(groupClose + 1)) && !/\b(?:Math\.\w+|\w+)\s*$/.test(part.slice(0, open))
-      if (!DIVIDED.test(after) && !groupDivided) return true
-      converted = true
+      const how = conversion(part, m.index, m.index + m[0].length)
+      if (!how) return true
+      needsInteger ||= how === 'divided'
     }
-    if (converted && !INTEGER.test(part)) return true
+    if (needsInteger && !INTEGER.test(part)) return true
   }
   return false
 }
@@ -126,8 +142,9 @@ function args(s: Scan, open: number): string[] {
 /**
  * G-36: lock times in seconds or heights. A value assigned to a lock-time name (declaration, assignment,
  * property, or the fourth argument of `new Transaction(…)`) is flagged when it reads a millisecond clock
- * (`Date.now()`, `.getTime()`, `performance.now()`) that is not itself divided by 1000, or when it is
- * seconds without an integer conversion. A lock time compared with a millisecond clock is flagged unless
+ * (`Date.now()`, `.getTime()`, `performance.now()`) that is not itself divided by 1000 (or by `1000n` as a
+ * BigInt, or wrapped in a helper whose name contains "sec"), or when it is seconds without an integer
+ * conversion. A clock stored in a local first (`const now = Date.now()`) is not followed. A lock time compared with a millisecond clock is flagged unless
  * one side is scaled by 1000. Not applicable when no source file names a lock time.
  */
 export const g36: Rule = {

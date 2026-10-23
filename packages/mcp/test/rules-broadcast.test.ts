@@ -547,6 +547,12 @@ describe('G-36 lock time units', () => {
     'const waitMs = lockTime * 1000 - Date.now()',
     'const lockTime = useHeight\n  ? tipHeight + 6\n  : Math.floor(Date.now() / 1000) + 3600',
     'const lockTime = Math.floor((Date.now() + delayMs) / 1000)',
+    'lockTime = toSeconds(Date.now())',
+    'const lockTime = secondsFrom(Date.now()) + 3600',
+    'const state = { lockTime: Math.floor(toSec(Date.now() + delayMs)) }',
+    'const lockTime = unixSeconds(new Date(at).getTime())',
+    'const lockTime = BigInt(Date.now()) / 1000n',
+    'const lockTime = (BigInt(Date.now()) + delay) / 1_000n + 3600n',
   ])('accepts watcher and converted code: %s', text => {
     expect(runOn(g36, { [CHANNEL]: text })).toEqual([])
   })
@@ -557,6 +563,8 @@ describe('G-36 lock time units', () => {
     'const state = { lockTime: Date.now() / 1000 + 3600 }',
     'const lockTime = useHeight\n  ? tipHeight + 6\n  : Date.now() + 3600',
     'if (lockTime < Date.now()) post(state)',
+    'const lockTime = toMillis(Date.now())',
+    'const lockTime = BigInt(Date.now())',
   ])('flags %s', text => {
     expect(runOn(g36, { [CHANNEL]: text })).toHaveLength(1)
   })
