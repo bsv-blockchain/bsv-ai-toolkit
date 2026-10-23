@@ -10,7 +10,7 @@ import { createServer } from '../src/server.js'
 import { lookupBrc, normalizeBrcId } from '../src/tools/brc.js'
 import { loadDocsIndex, resolveDocsUrl } from '../src/tools/docs.js'
 import { codeSearch, findFunctionDefinition } from '../src/tools/search.js'
-import { versionsCheck, type VersionsFile } from '../src/tools/versions.js'
+import { formatVersionsTable, versionsCheck, type VersionsFile } from '../src/tools/versions.js'
 import { mockFetch } from './helpers/mockFetch.js'
 
 const CONTENT = join(dirname(fileURLToPath(import.meta.url)), '..', 'content')
@@ -114,6 +114,15 @@ describe('docs_url', () => {
 })
 
 describe('versions_check', () => {
+  it('escapes backslashes and pipes in table cells', () => {
+    const table = formatVersionsTable({
+      rows: [{ name: 'a|b', pinned: '1.0', latest: 'x\\|y', verifiedOn: '2026-10-22', ageDays: 0, drift: false, note: 'c:\\d' }],
+    })
+    expect(table).toContain('| a\\|b |')
+    expect(table).toContain('| x\\\\\\|y |')
+    expect(table).toContain('| c:\\\\d |')
+  })
+
   const base = (): VersionsFile => JSON.parse(readFileSync(join(CONTENT, 'versions.json'), 'utf8'))
 
   // npm answers each package's pinned version unless overridden; GitHub and Arcade answer the pinned values;

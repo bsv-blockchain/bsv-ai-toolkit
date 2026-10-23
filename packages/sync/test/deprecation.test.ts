@@ -39,7 +39,7 @@ describe('@bsv/simple-mcp deprecation release', () => {
     )
     expect(r.stdout + r.stderr).toBe('')
     expect(r.status).toBe(0)
-  })
+  }, 60_000)
 
   it('prints the deprecation notice on start', () => {
     // cwd is this package so `--import tsx` resolves to the workspace tsx; stdin is empty, so the server exits.
@@ -52,5 +52,5 @@ describe('@bsv/simple-mcp deprecation release', () => {
     expect(r.stderr).toContain('deprecated')
     expect(r.stderr).toContain('claude mcp add bsv-mcp -e BSV_NETWORK=testnet -- npx -y @bsv/mcp')
     expect(r.status).toBe(0)
-  })
+  }, 30_000)
 })

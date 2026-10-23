@@ -10,7 +10,8 @@ const BRANCH_BEFORE = /\b(?:if|while)\s*$/
 const JOINED_AFTER = /(?:\|\||&&|\?\?)\s*$/
 const JOINED_BEFORE = /^\s*(?:\|\||&&|\?\?)/
 const CASE_MINED = /\bcase\s+['"`]MINED['"`]\s*:/
-const CASE_ONLY = /^\s*(?:case\s+[^:]+:\s*)+$/
+// One whitespace char after `case`, so a label splits only one way (no backtracking blow-up).
+const CASE_ONLY = /^\s*(?:case\s[^:]*:\s*)+$/
 // POST /tx (or /txs): the path ends the string. `/tx/…` is a status read.
 const TX_POST_PATH = /\/txs?['"`]/
 const POST = /method\s*:\s*['"`]POST['"`]/i
@@ -63,7 +64,7 @@ function harmlessCase(s: Scan, i: number): boolean {
     for (; k < s.codeLines.length && (CASE_ONLY.test(s.codeLines[k]) || !s.codeLines[k].trim()); k++) labels.push(s.codeLines[k])
   }
   if (labels.some(l => SEEN.test(l))) return true
-  const body = rest.trim() && !CASE_ONLY.test(rest) ? rest.replace(/^(?:\s*case\s+[^:]+:)+/, '') : s.codeLines[k] ?? ''
+  const body = rest.trim() && !CASE_ONLY.test(rest) ? rest.replace(/^(?:\s*case\s[^:]*:)+/, '') : s.codeLines[k] ?? ''
   return isLiteralBody(body)
 }
 

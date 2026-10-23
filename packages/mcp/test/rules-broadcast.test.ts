@@ -236,6 +236,12 @@ describe('G-10 SEEN_ON_NETWORK, never MINED', () => {
     expect(runOn(g10, { 'test/x.test.ts': "if (s.txStatus === 'MINED') credit()" })).toEqual([])
   })
 
+  it('reads a long run of case labels in linear time', () => {
+    const start = Date.now()
+    expect(runOn(g10, 'case' + '  9:case'.repeat(40) + ' x')).toEqual([])
+    expect(Date.now() - start).toBeLessThan(2000)
+  })
+
   it('reads a condition split over lines as one: SEEN beside MINED passes, MINED alone is flagged', () => {
     const gate = (statuses: string[]) => [
       'if (',

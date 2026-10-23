@@ -152,7 +152,7 @@ export function compareVersions(a: string, b: string): number {
 }
 
 export function formatVersionsTable(report: VersionsReport): string {
-  const cell = (s: string) => s.replace(/\|/g, '\\|')
+  const cell = (s: string) => s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
   const lines = [
     '| name | pinned | latest | verified | age (days) | drift | note |',
     '| --- | --- | --- | --- | --- | --- | --- |',

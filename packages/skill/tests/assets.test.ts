@@ -24,7 +24,7 @@ function rules(text: string): string[] {
     .replace(/^---\n[\s\S]*?\n---\n/, '')
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l && !/^<!--.*-->$/.test(l))
+    .filter((l) => l && !(l.startsWith('<!--') && l.endsWith('-->')))
     .map((l) => l.replace(/^(?:- |\d+\. )/, ''))
 }
 
