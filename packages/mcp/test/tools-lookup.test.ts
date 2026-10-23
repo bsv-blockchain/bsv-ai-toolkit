@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, afterAll, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -186,6 +186,35 @@ describe('versions_check', () => {
     const { rows } = await versionsCheck(v, registryFetch(v))
     expect(rows.find((r) => r.name === '@bsv/simple')).toMatchObject({ latest: '0.7.0', drift: true, note: expect.stringMatching(/verified date unreadable/) })
     expect(Number.isFinite(rows.find((r) => r.name === '@bsv/simple')!.ageDays)).toBe(false)
+  })
+
+  it('sends GITHUB_TOKEN to api.github.com only, and only when it is set', async () => {
+    const v = base()
+    const seen: { host: string; auth: string | undefined }[] = []
+    const inner = registryFetch(v)
+    const f = (async (input: string | URL | Request, init: RequestInit = {}) => {
+      const auth = new Headers(init.headers).get('authorization') ?? undefined
+      seen.push({ host: new URL(input instanceof Request ? input.url : input.toString()).hostname, auth })
+      return inner(input, init)
+    }) as typeof fetch
+    const token = 'test-token-not-a-secret'
+
+    try {
+      vi.stubEnv('GITHUB_TOKEN', token)
+      const { rows } = await versionsCheck(v, f, { probe: false })
+      expect(seen.filter((s) => s.host === 'api.github.com').map((s) => s.auth)).toEqual([`Bearer ${token}`])
+      expect(seen.filter((s) => s.host !== 'api.github.com').every((s) => s.auth === undefined)).toBe(true)
+      expect(JSON.stringify(rows)).not.toContain(token)
+
+      for (const unset of ['', undefined]) {
+        seen.length = 0
+        vi.stubEnv('GITHUB_TOKEN', unset)
+        await versionsCheck(v, f, { probe: false })
+        expect(seen.find((s) => s.host === 'api.github.com'), String(unset)).toMatchObject({ auth: undefined })
+      }
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('versionsCheck skips the probe when probeTxid is empty', async () => {

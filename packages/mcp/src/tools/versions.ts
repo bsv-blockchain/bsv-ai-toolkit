@@ -98,11 +98,16 @@ export async function versionsCheck(
     )
   }
 
+  // GITHUB_TOKEN (set in CI) lifts GitHub's unauthenticated rate limit. It goes to api.github.com only and is never
+  // part of a row, a note or a log line.
+  const githubToken = process.env.GITHUB_TOKEN
+  const githubHeaders: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': '@bsv/mcp versions_check',
+    ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
+  }
   for (const [key, g] of Object.entries(versions.git)) {
-    const head = getJson(`https://api.github.com/repos/${g.repo}/commits/${g.branch}`, {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': '@bsv/mcp versions_check',
-    }).then((j) => String(j.sha).slice(0, 7))
+    const head = getJson(`https://api.github.com/repos/${g.repo}/commits/${g.branch}`, githubHeaders).then((j) => String(j.sha).slice(0, 7))
     rows.push(row(`git:${key} (${g.repo}@${g.branch})`, g.commit, g.verified, head))
   }
 
