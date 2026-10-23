@@ -140,7 +140,7 @@ describe('rule registry', () => {
     const staticIds = loadGuardrailMeta(CONTENT).filter(m => m.detect === 'static').map(m => m.id)
     expect(rules.map(r => r.id).sort()).toEqual([...staticIds].sort())
     for (const id of staticIds) expect(rules.filter(r => r.id === id), id).toHaveLength(1)
-    expect(rules).toHaveLength(16)
+    expect(rules).toHaveLength(17)
   })
 })
 

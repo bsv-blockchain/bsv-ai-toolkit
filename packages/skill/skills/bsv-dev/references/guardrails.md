@@ -76,7 +76,7 @@ Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 - **Rule:** `createSignature({hashToDirectlySign})` gets the double-SHA256 digest; clients sign only digests they rebuilt themselves, never one received over the wire.
 - **Why:** `hashToDirectlySign` signs whatever digest it is given, so signing a digest received over the wire lets the sender obtain a signature over data of their choosing.
 - **Shape:** both
-- **Detect:** manual
+- **Detect:** static
 - **Severity:** warn
 - **Refs:** none
 

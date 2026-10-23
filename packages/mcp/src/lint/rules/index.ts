@@ -6,6 +6,7 @@ import { g02 } from './g02.js'
 import { g03 } from './g03.js'
 import { g04 } from './g04.js'
 import { g06 } from './g06.js'
+import { g08 } from './g08.js'
 import { g09 } from './g09.js'
 import { g10 } from './g10.js'
 import { g12 } from './g12.js'
@@ -25,4 +26,4 @@ export interface RuleResult { findings: Omit<Finding, 'ref' | 'fix'>[]; applicab
 export interface Rule { id: string; run(ctx: RuleContext): RuleResult }
 
 /** Static guardrail rules, one per `detect: static` guardrail. */
-export const rules: Rule[] = [g01, g02, g03, g04, g06, g09, g10, g12, g14, g15, g16, g21, g25, g31, g34, g36]
+export const rules: Rule[] = [g01, g02, g03, g04, g06, g08, g09, g10, g12, g14, g15, g16, g21, g25, g31, g34, g36]

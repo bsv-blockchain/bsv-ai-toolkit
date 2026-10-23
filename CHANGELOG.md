@@ -11,7 +11,7 @@ The repository becomes a pnpm monorepo and `@bsv/mcp` is rewritten around testne
 - Monorepo layout: `content/` (single source of dated facts and guardrails), `packages/mcp`, `packages/skill`, `packages/sync`, `samples/`. Node 22 or later, pnpm workspaces.
 - Arcade tools: `arcade_submit`, `arcade_status`, `arcade_policy`, `arcade_health`. `arcade_submit` refuses BEEF, treats a 2xx as provisional and re-reads `GET /tx/{txid}`; `arcade_status` reports `isFinalForApp` at `SEEN_ON_NETWORK` or later with no `competingTxs`.
 - `check_guardrails`: a read-only static check of a project (absolute path) against the guardrails `G-01`..`G-38`, with fixes, refs and a manual checklist.
-- content: payment-channels facts (`bsv://facts/payment-channels`) and guardrails G-35..G-38.
+- content: payment-channels facts (`bsv://facts/payment-channels`) and guardrails G-35..G-38. `check_guardrails` checks G-36 (lock times in milliseconds) and G-08 (a `hashToDirectlySign` digest read from the wire) statically.
 - `versions_check` and the maintainers' `node packages/mcp/build/cli/versions-check.js` script: pinned versions against npm, the Rúnar git head and every known Arcade host.
 - `docs_url`: resolves stable docs ids to a live page across docs hosts.
 - Resources: `bsv://facts/*`, `bsv://guardrails`, `bsv://guardrails{#id}`, `bsv://custody-shapes`, `bsv://threat-model`, `bsv://docs/index`, `bsv://simple/api`, `bsv://simple/gotchas`, `bsv://brc/{id}`. Every content resource carries its `verified:` date (`bsv://brc/{id}` serves the upstream BRC text as-is).

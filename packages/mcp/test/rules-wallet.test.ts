@@ -5,6 +5,7 @@ import { loadGuardrailMeta, runGuardrails } from '../src/lint/engine.js'
 import type { Rule } from '../src/lint/rules/index.js'
 import { g02 } from '../src/lint/rules/g02.js'
 import { g06 } from '../src/lint/rules/g06.js'
+import { g08 } from '../src/lint/rules/g08.js'
 import type { ProjectFile } from '../src/lint/walk.js'
 import type { Finding, GuardrailReport, ShapeDetected } from '../src/types.js'
 
@@ -151,5 +152,55 @@ describe('G-06 .env detection', () => {
     const line = 'const key = PrivateKey.fromHex(process.env.SERVER_PRIVATE_KEY)'
     expect(runOn(g06, 'src/index.ts', line, 'B')).toEqual([])
     expect(runOn(g06, 'src/index.ts', line, 'A+B')).toHaveLength(1)
+  })
+})
+
+describe('G-08 digests signed from the wire', () => {
+  const run = (text: string) => runOn(g08, 'src/channel.ts', text)
+  const applicable = (text: string) => {
+    const file: ProjectFile = { rel: 'src/channel.ts', abs: '/x/src/channel.ts', text, isClient: true, isTest: false }
+    const meta = loadGuardrailMeta(CONTENT).find(m => m.id === 'G-08')!
+    return g08.run({ files: [file], shape: 'A', root: '/x', meta, contentDir: CONTENT }).applicable
+  }
+
+  it('flags hashToDirectlySign from a message', () => {
+    const findings = run('await wallet.createSignature({ hashToDirectlySign: msg.digest, protocolID })\n')
+    expect(findings).toMatchObject([{ id: 'G-08', file: 'src/channel.ts', line: 1, severity: 'warn' }])
+  })
+
+  it.each([
+    'createSignature({ hashToDirectlySign: req.body.hash, protocolID, keyID })',
+    'createSignature({ hashToDirectlySign: JSON.parse(text).digest })',
+    'createSignature({ hashToDirectlySign: (await res.json()).digest })',
+    'createSignature({ hashToDirectlySign: Utils.toArray(url.searchParams.get("d"), "hex") })',
+    'createSignature({ hashToDirectlySign: event.data.digest })',
+    'createSignature({ hashToDirectlySign: payload.hash })',
+    'createSignature({\n  protocolID,\n  hashToDirectlySign:\n    message.digest,\n})',
+  ])('flags %s', text => {
+    expect(run(text)).toHaveLength(1)
+  })
+
+  it('flags the digest property of a message parameter', () => {
+    const text = 'socket.on("state", async ({ digest }) => {})\nasync function onState(msg) {\n  const { digest } = msg\n  await wallet.createSignature({ hashToDirectlySign: digest })\n}\n'
+    expect(run(text).map(f => f.line)).toEqual([4])
+  })
+
+  it('accepts a rebuilt digest', () => {
+    expect(run('const digest = channelDigest(tx)\nawait wallet.createSignature({ hashToDirectlySign: digest })\n')).toEqual([])
+    expect(run('await wallet.createSignature({ hashToDirectlySign: Hash.hash256(TransactionSignature.format(params)) })\n')).toEqual([])
+    expect(run('await wallet.createSignature({ data: msg.bytes, protocolID })\n')).toEqual([])
+  })
+
+  it('ignores comments', () => {
+    expect(run('// never createSignature({ hashToDirectlySign: msg.digest })\nexport const x = 1\n')).toEqual([])
+  })
+
+  it('not applicable without createSignature', () => {
+    expect(applicable('export const digest = msg.digest\n')).toBe(false)
+    expect(applicable('await wallet.createSignature({ data })\n')).toBe(true)
+  })
+
+  it('clean-a keeps zero findings', async () => {
+    expect((await lint('clean-a')).findings).toEqual([])
   })
 })
