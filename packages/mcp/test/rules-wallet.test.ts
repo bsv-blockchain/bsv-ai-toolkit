@@ -200,6 +200,9 @@ describe('G-08 digests signed from the wire', () => {
     'await wallet.createSignature({ hashToDirectlySign: Hash.hash256(buildPreimage(ch, msg.n)) })\n',
     'const preimage = TS.format({ sourceTXID: params.txid, sourceOutputIndex: 0 })\nawait wallet.createSignature({ hashToDirectlySign: Hash.hash256(preimage) })\n',
     'const body = buildState(ch, n)\nawait wallet.createSignature({ hashToDirectlySign: body.preimage })\n',
+    'await wallet.createSignature({ hashToDirectlySign: Hash.hash256(TS.format({ sourceTXID: msg.txid })) })\n',
+    'await wallet.createSignature({ hashToDirectlySign: fast ? cached : rebuild(msg.n) })\n',
+    'async function sign(body) {\n  const preimage = build(body)\n  {\n    const body = buildState()\n    await wallet.createSignature({ hashToDirectlySign: body.digest })\n  }\n}\n',
   ])('accepts a digest rebuilt from wire data: %s', text => {
     expect(run(text)).toEqual([])
   })
@@ -208,6 +211,12 @@ describe('G-08 digests signed from the wire', () => {
     'createSignature({ hashToDirectlySign: Utils.toArray(msg.digest, "hex") })',
     'createSignature({ hashToDirectlySign: Buffer.from(req.body.hash, "hex") })',
     'const d = hexToBytes(payload.digest)\ncreateSignature({ hashToDirectlySign: d })',
+    'createSignature({ hashToDirectlySign: Hash.hash256(msg.preimage) })',
+    'createSignature({ hashToDirectlySign: sha256(body.preimage) })',
+    'createSignature({ hashToDirectlySign: Hash.sha256(Utils.toArray(req.body.preimage, "hex")) })',
+    'createSignature({ hashToDirectlySign: fast ? msg.digest : rebuild() })',
+    'createSignature({ hashToDirectlySign: fast\n  ? rebuild()\n  : payload.digest })',
+    'function build() {\n  const body = buildState()\n  return body\n}\nasync function onRequest(body) {\n  await wallet.createSignature({ hashToDirectlySign: body.digest })\n}',
   ])('flags a wire digest behind a decoder: %s', text => {
     expect(run(text)).toHaveLength(1)
   })

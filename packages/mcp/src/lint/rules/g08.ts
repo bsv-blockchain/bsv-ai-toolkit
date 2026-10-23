@@ -1,5 +1,5 @@
 import type { Rule } from './index.js'
-import { closeOf, findingList, isSource, lineAt, scan, type Scan } from './util.js'
+import { closeOf, enclosingOpens, findingList, isSource, lineAt, scan, type Scan } from './util.js'
 
 const CREATE_SIGNATURE = /\bcreateSignature\s*\(/
 const HASH_KEY = /(?<![\w$])hashToDirectlySign\s*:/g
@@ -7,8 +7,9 @@ const HASH_KEY = /(?<![\w$])hashToDirectlySign\s*:/g
 const WIRE_ROOTS = new Set(['msg', 'message', 'req', 'request', 'body', 'params', 'payload'])
 // Whole parameter-shaped sources a digest may be destructured from: `const { digest } = msg`.
 const WIRE_SOURCES = new Set(['msg', 'message', 'req', 'request', 'payload', 'event'])
-// Calls that only change a value's encoding; the wire chain inside them is still the value.
-const DECODER = /^(?:Utils\s*\.\s*toArray|Buffer\s*\.\s*from|Uint8Array\s*\.\s*from|hexToBytes|toArray)\s*\(/
+// Calls that only re-encode or hash a value: the wire chain inside them is still what gets signed (a hash
+// of a sender-chosen preimage is blind signing too).
+const DECODER = /^(?:Utils\s*\.\s*toArray|Buffer\s*\.\s*from|Uint8Array\s*\.\s*from|hexToBytes|toArray|(?:Hash\s*\.\s*)?(?:hash256|sha256|doubleSha256))\s*\(/
 const DECL = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=(?!=)\s*([^\n;]*)/g
 const DESTRUCTURE = /\b(?:const|let|var)\s*\{([^}]*)\}\s*=(?!=)\s*([^\n;]*)/g
 const OPEN = new Set(['(', '[', '{'])
@@ -67,43 +68,87 @@ function chainOf(expr: string): string | undefined {
   return /^[A-Za-z_$][\w$]*(?:\s*\??\.\s*[A-Za-z_$][\w$]*|\s*\(\)|\s*\[\])*$/.test(e) ? e.replace(/\s+/g, '') : undefined
 }
 
-/** True when `chain` reads a wire value: a message property, parsed JSON, a response body or URL parameters. */
-function isWireChain(chain: string, wireNames: Set<string>, localNames: Set<string>): boolean {
+/** A local binding: its name, where it is declared, the block it is visible in, and whether it holds a wire value. */
+interface Binding { name: string; at: number; from: number; to: number; expr: string; whole: boolean; wire: boolean }
+
+/** The binding of `name` visible at offset `at`: the innermost enclosing block that declares it. */
+function resolve(bindings: Binding[], name: string, at: number): Binding | undefined {
+  let best: Binding | undefined
+  for (const b of bindings) {
+    if (b.name !== name || at <= b.from || at >= b.to) continue
+    if (!best || b.from > best.from || (b.from === best.from && b.at < at && b.at > best.at)) best = b
+  }
+  return best
+}
+
+/** True when `chain`, read at offset `at`, is a wire value: a message property, parsed JSON, a response body or URL parameters. */
+function isWireChain(chain: string, bindings: Binding[], at: number): boolean {
   const root = /^[\w$]+/.exec(chain)![0]
   const rest = chain.slice(root.length)
-  if (wireNames.has(root)) return true
   if (/^JSON\.parse\(\)/.test(chain) || /\.json\(\)/.test(chain) || /(?:^|\.)searchParams(?:\.|$)/.test(chain)) return true
-  if (localNames.has(root)) return false
+  const local = resolve(bindings, root, at)
+  if (local) return local.wire
   if (WIRE_ROOTS.has(root) && /^\??\./.test(rest)) return true
   return (root === 'event' && /^\??\.data\b/.test(rest)) || (root === 'data' && /^\??\.digest\b/.test(rest))
 }
 
-/** Local names bound to a wire chain (directly, by destructuring, or through other such names), and every other local. */
-function names(masked: string): { wire: Set<string>; local: Set<string> } {
-  const decls: { bound: string[]; expr: string; whole: boolean }[] = [...masked.matchAll(DECL)].map(m => ({ bound: [m[1]], expr: m[2], whole: false }))
-  for (const m of masked.matchAll(DESTRUCTURE)) {
-    const bound = m[1].split(',').map(p => p.split(/[:=]/).at(p.includes(':') ? 1 : 0)!.trim()).filter(n => /^[A-Za-z_$][\w$]*$/.test(n))
-    decls.push({ bound, expr: m[2], whole: true })
-  }
-  const wire = new Set<string>()
-  const local = new Set(decls.flatMap(d => d.bound))
-  for (let grew = true; grew;) {
-    grew = false
-    for (const d of decls) {
-      const chain = chainOf(d.expr)
-      const fromWire = chain !== undefined && (isWireChain(chain, wire, local) || (d.whole && WIRE_SOURCES.has(chain)))
-      if (!fromWire) continue
-      for (const n of d.bound) if (!wire.has(n)) { wire.add(n); grew = true }
+/** Top-level ternary branches of an expression (the condition dropped), or the expression itself. */
+function branches(expr: string): string[] {
+  const parts: string[] = []
+  let from = 0
+  let ternary = false
+  for (let depth = 0, i = 0; i < expr.length; i++) {
+    const c = expr[i]
+    if (OPEN.has(c)) depth++
+    else if (CLOSE.has(c)) depth--
+    else if (depth === 0 && (c === '?' || c === ':') && expr[i + 1] !== '?' && expr[i + 1] !== '.' && expr[i - 1] !== '?') {
+      ternary ||= c === '?'
+      parts.push(expr.slice(from, i))
+      from = i + 1
     }
   }
-  return { wire, local }
+  parts.push(expr.slice(from))
+  return ternary ? parts.slice(1) : [expr]
+}
+
+/** True when any branch of `expr`, read at offset `at`, is a wire value. */
+function isWireExpr(expr: string, bindings: Binding[], at: number, whole = false): boolean {
+  return branches(expr).some(b => {
+    const chain = chainOf(b)
+    return chain !== undefined && (isWireChain(chain, bindings, at) || (whole && WIRE_SOURCES.has(chain)))
+  })
+}
+
+/** Every `const`/`let`/`var` binding, scoped to its enclosing block, with its wire flag computed to a fixed point. */
+function bindingsOf(masked: string): Binding[] {
+  const scope = (at: number) => {
+    const open = enclosingOpens(masked, at, false).find(o => masked[o] === '{')
+    if (open === undefined) return { from: -1, to: masked.length + 1 }
+    const close = closeOf(masked, open)
+    return { from: open, to: close < 0 ? masked.length + 1 : close }
+  }
+  const out: Binding[] = []
+  for (const m of masked.matchAll(DECL)) out.push({ name: m[1], at: m.index, ...scope(m.index), expr: m[2], whole: false, wire: false })
+  for (const m of masked.matchAll(DESTRUCTURE)) {
+    const bound = m[1].split(',').map(p => p.split(/[:=]/).at(p.includes(':') ? 1 : 0)!.trim()).filter(n => /^[A-Za-z_$][\w$]*$/.test(n))
+    for (const name of bound) out.push({ name, at: m.index, ...scope(m.index), expr: m[2], whole: true, wire: false })
+  }
+  for (let grew = true; grew;) {
+    grew = false
+    for (const b of out) {
+      if (b.wire || !isWireExpr(b.expr, out, b.at, b.whole)) continue
+      b.wire = true
+      grew = true
+    }
+  }
+  return out
 }
 
 /**
- * G-08: sign only digests you rebuilt. Flags `hashToDirectlySign:` whose value *is* a value read from a
- * message, request, body, parsed JSON or URL parameters (optionally only re-encoded by a decoder such as
- * `Utils.toArray`), directly or through a local name bound to one. A wire value passed to a builder or
- * hasher is a rebuilt digest and is not flagged. Not applicable when no source file calls `createSignature(`.
+ * G-08: sign only digests you rebuilt. Flags `hashToDirectlySign:` whose value (or either branch of a ternary)
+ * *is* a value read from a message, request, body, parsed JSON or URL parameters, optionally only re-encoded
+ * (`Utils.toArray`) or hashed on its own (`Hash.hash256(msg.preimage)`), directly or through a local name bound
+ * to one in an enclosing block. A wire value passed to a builder is a rebuilt digest and is not flagged. Not applicable when no source file calls `createSignature(`.
  */
 export const g08: Rule = {
   id: 'G-08',
@@ -114,10 +159,9 @@ export const g08: Rule = {
       const s = scan(f)
       if (!CREATE_SIGNATURE.test(s.masked)) continue
       applicable = true
-      const { wire, local } = names(s.masked)
+      const bindings = bindingsOf(s.masked)
       for (const m of s.masked.matchAll(HASH_KEY)) {
-        const chain = chainOf(valueAt(s, m.index + m[0].length))
-        if (chain === undefined || !isWireChain(chain, wire, local)) continue
+        if (!isWireExpr(valueAt(s, m.index + m[0].length), bindings, m.index)) continue
         const line = lineAt(s.text, m.index)
         out.add(f.rel, line, `${s.lines[line - 1].trim()} (digest read from the wire; rebuild it yourself)`)
       }
