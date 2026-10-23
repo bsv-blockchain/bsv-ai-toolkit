@@ -33,6 +33,9 @@ jobs:
 
       - name: Versions check (npm, runar head, Arcade hosts)
         id: versions
+        env:
+          # Lifts GitHub's unauthenticated API rate limit for the runar head read; never printed.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           code=0
           node packages/mcp/build/cli/versions-check.js --json > "$OUT/drift.json" || code=$?
@@ -73,9 +76,14 @@ jobs:
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
             const text = await res.text()
             const linked = new Set([...text.matchAll(/\/docs\/([^\s()<>"'`]+?)\.md/g)].map((m) => m[1]))
+            // The API reference is served under /reference/ (no /docs/), one page per method: a reference/* id
+            // counts as listed when llms.txt links its page or a page below it there.
+            const reference = [...text.matchAll(/\/reference\/([^\s()<>"'`]+?)\.md/g)].map((m) => `reference/${m[1]}`)
+            const listed = (path) =>
+              linked.has(path) || (path.startsWith('reference/') && reference.some((p) => p === path || p.startsWith(`${path}/`)))
             const indexed = new Set(Object.values(ids).map((e) => e.path))
             const unindexed = [...linked].filter((p) => !indexed.has(p)).sort()
-            const unlisted = Object.entries(ids).filter(([, e]) => !linked.has(e.path)).map(([id, e]) => `${id} (${e.path})`).sort()
+            const unlisted = Object.entries(ids).filter(([, e]) => !listed(e.path)).map(([id, e]) => `${id} (${e.path})`).sort()
             if (unlisted.length) lines.push('docs-index.yaml ids whose path is absent from llms.txt:', '', ...unlisted.map((s) => `- \`${s}\``), '')
             if (unindexed.length) info.push(`<details><summary>${unindexed.length} llms.txt pages not in docs-index.yaml (informational)</summary>`, '', ...unindexed.map((p) => `- \`/docs/${p}.md\``), '', '</details>', '')
           } catch (e) {
@@ -237,9 +245,10 @@ jobs:
 
       # The steps below test the gate step's own outcome (not failure(), which also sees the freshness job): it is
       # not 'success' when the gate failed, timed out, or never ran because a setup step failed.
-      # A kept run dir holds the wallets whose storage alone can spend the coins still in them: kept as an artifact
-      # for `pnpm gate recover --dir <dir>`, also when the run is cancelled. It holds no key (the key comes from the
-      # env, never a file); checked here before anything is uploaded.
+      # A kept run dir holds the gate wallets' storage, which cannot spend the coins still in them without the root
+      # key. It is kept as an artifact for `pnpm gate recover --dir <dir>`, run together with that key, also when the
+      # run is cancelled. It holds no key (the key comes from the env, never a file); checked here before anything
+      # is uploaded.
       - name: Run dirs hold no key
         id: runs
         if: always() && steps.key.outputs.has_key == 'true' && steps.gate.outcome != 'success'

@@ -36,8 +36,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generated content matches content/
         run: pnpm sync:check
-      - name: Every verified date is within 60 days
-        run: pnpm check:facts --max-age-days 60
+      # Presence only: every fact carries a verified date. The 60-day age gate runs nightly (nightly.yml), so a
+      # date going stale opens the freshness issue instead of blocking every pull request.
+      - name: Every fact carries a verified date
+        run: pnpm check:facts
       - name: Anti-goal grep
         run: bash scripts/anti-goals.sh
 
