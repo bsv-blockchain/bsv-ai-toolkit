@@ -15,6 +15,7 @@ import { g21 } from '../src/lint/rules/g21.js'
 import { g25 } from '../src/lint/rules/g25.js'
 import { g31 } from '../src/lint/rules/g31.js'
 import { g34 } from '../src/lint/rules/g34.js'
+import { g36 } from '../src/lint/rules/g36.js'
 import { inLoop, scan, withAliases } from '../src/lint/rules/util.js'
 import type { ProjectFile } from '../src/lint/walk.js'
 import type { Finding, GuardrailReport } from '../src/types.js'
@@ -139,7 +140,7 @@ describe('rule registry', () => {
     const staticIds = loadGuardrailMeta(CONTENT).filter(m => m.detect === 'static').map(m => m.id)
     expect(rules.map(r => r.id).sort()).toEqual([...staticIds].sort())
     for (const id of staticIds) expect(rules.filter(r => r.id === id), id).toHaveLength(1)
-    expect(rules).toHaveLength(15)
+    expect(rules).toHaveLength(16)
   })
 })
 
@@ -510,5 +511,57 @@ describe('G-34 trust model', () => {
     { 'README.md': '# App\n\n### Security and trust model\n' },
   ])('passes %o', files => {
     expect(runOn(g34, files)).toEqual([])
+  })
+})
+
+describe('G-36 lock time units', () => {
+  const CHANNEL = 'src/channel.ts'
+  const meta = () => loadGuardrailMeta(CONTENT).find(m => m.id === 'G-36')!
+
+  it('flags lockTime from Date.now() without /1000', () => {
+    const findings = runOn(g36, { [CHANNEL]: 'const lockTime = Date.now() + 86400\n' })
+    expect(findings).toMatchObject([{ id: 'G-36', file: CHANNEL, line: 1, severity: 'error' }])
+  })
+
+  it('accepts seconds', () => {
+    expect(runOn(g36, { [CHANNEL]: 'const lockTime = Math.floor(Date.now() / 1000) + 86_400\n' })).toEqual([])
+    expect(runOn(g36, { [CHANNEL]: 'const nLockTime = Math.floor(Date.now() / 1_000)\n' })).toEqual([])
+    expect(runOn(g36, { [CHANNEL]: 'tx.lockTime = (new Date(at).getTime() / 1e3) | 0\n' })).toEqual([])
+  })
+
+  it('accepts a height', () => {
+    expect(runOn(g36, { [CHANNEL]: 'const lockTime = tipHeight + 54\n' })).toEqual([])
+  })
+
+  it('flags a lock time built over several lines inside one bracket', () => {
+    const text = 'const state = buildState({\n  lockTime:\n    Date.now() + 3600,\n})\n'
+    expect(runOn(g36, { [CHANNEL]: text }).map(f => f.line)).toEqual([2])
+    const ok = 'const state = buildState({\n  lockTime:\n    Math.floor(Date.now() / 1000) + 3600,\n})\n'
+    expect(runOn(g36, { [CHANNEL]: ok })).toEqual([])
+  })
+
+  it('flags the fourth argument of new Transaction', () => {
+    expect(runOn(g36, { [CHANNEL]: 'const tx = new Transaction(1, [], [], Date.now())\n' })).toHaveLength(1)
+    expect(runOn(g36, { [CHANNEL]: 'const tx = new Transaction(1, [], [], Math.floor(Date.now() / 1000))\n' })).toEqual([])
+  })
+
+  it('ignores test files and comments', () => {
+    expect(runOn(g36, { 'src/channel.test.ts': 'const lockTime = Date.now()\n' })).toEqual([])
+    expect(runOn(g36, { [CHANNEL]: '// never set lockTime = Date.now()\nconst lockTime = 0\n' })).toEqual([])
+  })
+
+  it('not applicable without a lock time', () => {
+    const files = [pf('src/app.ts', 'export const x = Date.now()')]
+    expect(g36.run({ files, shape: 'A', root: '/x', meta: meta(), contentDir: CONTENT }).applicable).toBe(false)
+  })
+
+  it('clean-a lands G-36 in notApplicable', async () => {
+    const report = await lint('clean-a')
+    expect(report.notApplicable).toContain('G-36')
+    expect(report.passed).not.toContain('G-36')
+  })
+
+  it('broken-a has no G-36 finding', async () => {
+    expect((await lint('broken-a')).findings.filter(f => f.id === 'G-36')).toEqual([])
   })
 })

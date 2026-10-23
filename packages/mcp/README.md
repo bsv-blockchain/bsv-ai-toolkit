@@ -55,8 +55,8 @@ For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [-
 
 Each Markdown resource starts with `verified: YYYY-MM-DD` and `source: @bsv/mcp v<version>`; `bsv://docs/index` is JSON carrying the same two fields.
 
-- `bsv://facts/{arcade,networks,whatsonchain,wallet-limits,consensus,fees,runar,tokens-1color,versions}`: dated facts
-- `bsv://guardrails`: every guardrail `G-01`..`G-34`; template `bsv://guardrails{#id}` serves one, e.g. `bsv://guardrails#G-09` (the `ref` on each finding)
+- `bsv://facts/{arcade,networks,whatsonchain,wallet-limits,consensus,fees,runar,tokens-1color,versions,payment-channels}`: dated facts
+- `bsv://guardrails`: every guardrail `G-01`..`G-38`; template `bsv://guardrails{#id}` serves one, e.g. `bsv://guardrails#G-09` (the `ref` on each finding)
 - `bsv://custody-shapes`, `bsv://threat-model`
 - `bsv://docs/index`: docs ids for `docs_url`
 - `bsv://simple/api`, `bsv://simple/gotchas`: `@bsv/simple` 0.7

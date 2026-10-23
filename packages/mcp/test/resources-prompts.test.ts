@@ -17,6 +17,7 @@ const STATIC_URIS = [
   'bsv://facts/runar',
   'bsv://facts/tokens-1color',
   'bsv://facts/versions',
+  'bsv://facts/payment-channels',
   'bsv://guardrails',
   'bsv://custody-shapes',
   'bsv://threat-model',
@@ -51,7 +52,7 @@ async function promptText(name: string, args: Record<string, string>): Promise<s
 }
 
 describe('resources', () => {
-  it('lists all 15 static resources and the brc template', async () => {
+  it('lists all 16 static resources and the brc template', async () => {
     const { resources } = await client.listResources()
     const uris = resources.map((r) => r.uri)
     for (const uri of STATIC_URIS) expect(uris).toContain(uri)
@@ -84,12 +85,12 @@ describe('resources', () => {
     expect(Object.keys(body.index.ids).length).toBeGreaterThan(0)
   })
 
-  it('guardrails resource has 34 headings', async () => {
+  it('guardrails resource has 38 headings', async () => {
     const { text } = await readText('bsv://guardrails')
     const headings = text.match(/^## G-\d{2} .+$/gm) ?? []
-    expect(headings.length).toBe(34)
+    expect(headings.length).toBe(38)
     expect(headings[0]).toMatch(/^## G-01 /)
-    expect(headings[33]).toMatch(/^## G-34 /)
+    expect(headings[37]).toMatch(/^## G-38 /)
   })
 })
 
@@ -107,7 +108,7 @@ describe('guardrail refs', () => {
   })
 
   it('every guardrail id has a fragment resource; unknown ids are rejected', async () => {
-    for (let n = 1; n <= 34; n++) {
+    for (let n = 1; n <= 38; n++) {
       const id = `G-${String(n).padStart(2, '0')}`
       expect((await readText(`bsv://guardrails#${id}`)).text).toMatch(new RegExp(`^## ${id} `, 'm'))
     }

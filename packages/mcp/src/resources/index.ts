@@ -20,7 +20,7 @@ interface Guardrail {
   refs: string[]
 }
 
-const FACTS = ['arcade', 'networks', 'whatsonchain', 'wallet-limits', 'consensus', 'fees', 'runar', 'tokens-1color', 'versions']
+const FACTS = ['arcade', 'networks', 'whatsonchain', 'wallet-limits', 'consensus', 'fees', 'runar', 'tokens-1color', 'versions', 'payment-channels']
 
 // Markdown resources backed by one content file each; the file's frontmatter supplies `title` and `verified`.
 const MARKDOWN: { name: string; uri: string; file: string; description: string }[] = [
@@ -99,7 +99,7 @@ export function renderDocsIndex(version: string, contentDir = CONTENT_DIR): stri
   return JSON.stringify({ verified, source: `@bsv/mcp v${version}`, index: loadDocsIndex(contentDir) }, null, 2) + '\n'
 }
 
-/** Registers the 15 static `bsv://` resources and the `bsv://guardrails{#id}` and `bsv://brc/{id}` templates. Content is read once, here. */
+/** Registers the 16 static `bsv://` resources and the `bsv://guardrails{#id}` and `bsv://brc/{id}` templates. Content is read once, here. */
 export function registerResources(server: McpServer, cfg: Config, fetchImpl: typeof fetch): void {
   for (const r of MARKDOWN) {
     const { title, text } = loadMarkdownResource(r.file, cfg.version)
@@ -112,7 +112,7 @@ export function registerResources(server: McpServer, cfg: Config, fetchImpl: typ
   server.registerResource(
     'guardrails',
     'bsv://guardrails',
-    { title: 'Guardrails G-01..G-34', description: 'Every guardrail with its rule, reason, shape, detection and refs', mimeType: 'text/markdown' },
+    { title: 'Guardrails G-01..G-38', description: 'Every guardrail with its rule, reason, shape, detection and refs', mimeType: 'text/markdown' },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: guardrails.full }] }),
   )
   // Findings from check_guardrails carry `ref: bsv://guardrails#G-xx`; the SDK matches the whole URI, fragment included.
@@ -123,7 +123,7 @@ export function registerResources(server: McpServer, cfg: Config, fetchImpl: typ
     async (uri, { id }) => {
       const key = String(id).replace(/^#/, '') // the SDK's {#id} match keeps the leading '#' (1.32.1)
       const text = guardrails.sections.get(key)
-      if (text === undefined) throw new Error(`unknown guardrail: ${key} (ids are G-01..G-34)`)
+      if (text === undefined) throw new Error(`unknown guardrail: ${key} (ids are G-01..G-38)`)
       return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text }] }
     },
   )

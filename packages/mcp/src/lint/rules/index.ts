@@ -16,6 +16,7 @@ import { g21 } from './g21.js'
 import { g25 } from './g25.js'
 import { g31 } from './g31.js'
 import { g34 } from './g34.js'
+import { g36 } from './g36.js'
 
 /** `contentDir` is the content folder the engine was given (`guardrails.json`, `versions.json`). */
 export interface RuleContext { files: ProjectFile[]; shape: ShapeDetected; root: string; meta: GuardrailMeta; contentDir: string }
@@ -23,5 +24,5 @@ export interface RuleContext { files: ProjectFile[]; shape: ShapeDetected; root:
 export interface RuleResult { findings: Omit<Finding, 'ref' | 'fix'>[]; applicable: boolean }
 export interface Rule { id: string; run(ctx: RuleContext): RuleResult }
 
-/** Static guardrail rules, one per `detect: static` guardrail (Tasks 9–10). */
-export const rules: Rule[] = [g01, g02, g03, g04, g06, g09, g10, g12, g14, g15, g16, g21, g25, g31, g34]
+/** Static guardrail rules, one per `detect: static` guardrail. */
+export const rules: Rule[] = [g01, g02, g03, g04, g06, g09, g10, g12, g14, g15, g16, g21, g25, g31, g34, g36]
