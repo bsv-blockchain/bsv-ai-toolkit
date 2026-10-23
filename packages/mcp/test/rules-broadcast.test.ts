@@ -540,6 +540,27 @@ describe('G-36 lock time units', () => {
     expect(runOn(g36, { [CHANNEL]: ok })).toEqual([])
   })
 
+  it.each([
+    'if (state.lockTime <= mtp && Date.now() - lastTry > RETRY_MS) post(state)',
+    'const due = tx.lockTime > 0 && Date.now() > nextAttemptAt',
+    'if (lockTime * 1000 < Date.now()) post(state)',
+    'const waitMs = lockTime * 1000 - Date.now()',
+    'const lockTime = useHeight\n  ? tipHeight + 6\n  : Math.floor(Date.now() / 1000) + 3600',
+    'const lockTime = Math.floor((Date.now() + delayMs) / 1000)',
+  ])('accepts watcher and converted code: %s', text => {
+    expect(runOn(g36, { [CHANNEL]: text })).toEqual([])
+  })
+
+  it.each([
+    'const state = { lockTime: Date.now() * 1000 }',
+    'lockTime = Date.now() + timeoutMs / 1000',
+    'const state = { lockTime: Date.now() / 1000 + 3600 }',
+    'const lockTime = useHeight\n  ? tipHeight + 6\n  : Date.now() + 3600',
+    'if (lockTime < Date.now()) post(state)',
+  ])('flags %s', text => {
+    expect(runOn(g36, { [CHANNEL]: text })).toHaveLength(1)
+  })
+
   it('flags the fourth argument of new Transaction', () => {
     expect(runOn(g36, { [CHANNEL]: 'const tx = new Transaction(1, [], [], Date.now())\n' })).toHaveLength(1)
     expect(runOn(g36, { [CHANNEL]: 'const tx = new Transaction(1, [], [], Math.floor(Date.now() / 1000))\n' })).toEqual([])
