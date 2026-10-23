@@ -1,6 +1,6 @@
 ---
 name: bsv-dev
-description: 'Use when the user asks to "build a BSV app", "connect a BRC-100 wallet", "BSV Desktop", "send/receive a BSV payment", "BRC-29", "internalizeAction", "broadcast with Arcade", "0-conf", "write a Rúnar contract", "covenant", "escrow on BSV", "1Color token", "BSV-21", "go to mainnet", "testnet faucet", "AtomicBEEF", "@bsv/simple", "wallet-toolbox", or hits BSV errors (WERR_INVALID_PARAMETER, FEE_TOO_HIGH, 476, 429, isAuthenticated). End-to-end playbook: custody shape choice, wallet login and manifest, BRC-29 payments, Arcade-first transaction state, Rúnar contracts with Spend tests and adversarial review, 1Color tokens, testnet-to-mainnet. Prefers @bsv/sdk 3.x WalletClient, Arcade for every broadcast and status read, Rúnar from upstream main, testnet by default.'
+description: 'Use when the user asks to "build a BSV app", "connect a BRC-100 wallet", "BSV Desktop", "send/receive a BSV payment", "BRC-29", "internalizeAction", "broadcast with Arcade", "0-conf", "write a Rúnar contract", "covenant", "escrow on BSV", "payment channel", "1Color token", "BSV-21", "go to mainnet", "testnet faucet", "AtomicBEEF", "@bsv/simple", "wallet-toolbox", or hits BSV errors (WERR_INVALID_PARAMETER, FEE_TOO_HIGH, 476, 429, isAuthenticated). End-to-end playbook: custody shape choice, wallet login and manifest, BRC-29 payments, Arcade-first transaction state, Rúnar contracts with Spend tests and adversarial review, 1Color tokens, testnet-to-mainnet. Prefers @bsv/sdk 3.x WalletClient, Arcade for every broadcast and status read, Rúnar from upstream main, testnet by default.'
 license: MIT
 compatibility: Node.js 22+; optional @bsv/mcp (stdio) and the BSV docs MCP (http); pnpm for Rúnar projects
 metadata:
@@ -22,6 +22,7 @@ Use it when the user wants to:
 - send or receive a BSV payment, including BRC-29 payments collected with `internalizeAction` and AtomicBEEF;
 - broadcast with Arcade, read a transaction's status, or decide when a payment counts (0-conf);
 - write a Rúnar contract: a covenant, an escrow on BSV, a multi-party settlement;
+- open a payment channel between two wallets, or decide against one (per-payment BRC-29 or HTTP 402 instead);
 - issue or move a token (1Color, the binary encoding of the BSV-21 token model);
 - use `@bsv/simple` or `@bsv/wallet-toolbox` on a server;
 - get testnet coins from the faucet, or take a testnet app to mainnet;
@@ -43,6 +44,7 @@ Apply these unless the user explicitly decides otherwise; say so when they do.
 8. **`@bsv/simple` only where it fits:** payments, data, messaging or certificates in Next or Express, where shape B is acceptable with its current limits. Read `references/simple-routing.md`.
 9. **Testnet by default.** Mainnet only by an explicit `BSV_NETWORK=mainnet`; that one variable switches the app's network, Arcade and wallet check. Read `references/testnet-to-mainnet.md`.
 10. **Fees sized from the serialized draft** at the network's rate (read `GET /policy` on your Arcade), never from a guessed size. Read `references/facts.md` (section "Fee rates and measured costs").
+11. **Per-payment transactions by default; a channel only for many updates between two parties.** A payment channel is one outpoint between two parties whose states stay off-chain and newest-first; Arcade and Teranode do not hold non-final transactions. Read `references/payment-channels.md` before proposing one.
 
 ## Agent safety
 
@@ -63,7 +65,7 @@ Check which of these are available before you start.
 | `arcade_status` | read `GET /tx/{txid}` with a verdict and `isFinalForApp`; a 404 means that Arcade never saw the txid (no verdict, not a rejection) |
 | `arcade_submit` | broadcast during development: raw or EF hex only (it refuses BEEF), re-reads the status after a 2xx; on mainnet it needs `BSV_MCP_ALLOW_MAINNET_BROADCAST=1` |
 | `arcade_policy`, `arcade_health` | read the fee rate (`satPerKb`) and the instance's version and height |
-| `check_guardrails` | check a project against guardrails `G-01`..`G-34`; pass an ABSOLUTE project path (a relative one is rejected) and optionally `shape` |
+| `check_guardrails` | check a project against guardrails `G-01`..`G-38`; pass an ABSOLUTE project path (a relative one is rejected) and optionally `shape` |
 | `brc_lookup` | read a BRC as Markdown (`29`, `BRC-29`) |
 | `docs_url` | resolve a docs id from `bsv://docs/index` to a live page |
 | `versions_check` | compare the pinned stack with npm, the Rúnar head and live Arcade versions |
@@ -107,13 +109,14 @@ Assets: start `public/manifest.json` from `assets/manifest.template.json` and th
 | Choose who holds the keys; shape B operating rules | `references/custody-shapes.md` |
 | Connect a BRC-100 wallet, login, permission manifest, `getNetwork()` | `references/wallet-brc100.md` |
 | Send or receive a payment; BRC-29, `internalizeAction`, AtomicBEEF | `references/payments-brc29.md` |
+| Many small payments or a jointly signed state between two parties: when a channel pays off, open, update, close, timeouts, backups | `references/payment-channels.md` |
 | Broadcast, read status, decide finality, classify Arcade errors | `references/arcade-0conf.md` |
 | Decide whether `@bsv/simple` fits, and how to use it | `references/simple-routing.md` |
 | Testnet setup, faucet, switching to mainnet | `references/testnet-to-mainnet.md` |
 | What the app defends against and what it must tell users | `references/threat-model.md` |
 | An error message or symptom | `references/common-errors.md` |
-| Dated facts: Arcade, networks, WhatsOnChain, fees, wallet limits, Rúnar, 1Color | `references/facts.md` (generated) |
-| Every guardrail `G-01`..`G-34`, for review | `references/guardrails.md` (generated) |
+| Dated facts: Arcade, networks, WhatsOnChain, fees, wallet limits, Rúnar, 1Color, payment channels | `references/facts.md` (generated) |
+| Every guardrail `G-01`..`G-38`, for review | `references/guardrails.md` (generated) |
 | Pinned package versions, Rúnar commit, Arcade hosts | `references/stack.md` (generated) |
 
-Contracts, multi-party funding, adversarial review and 1Color references arrive in phase 2. Until then, answer token questions from `references/facts.md` (section "1Color tokens") and contract questions from its "Rúnar contracts" section plus guardrails G-25 to G-30.
+Contracts, multi-party funding, adversarial review and 1Color references arrive in phase 2; the covenant form of a payment channel (construction C in `references/payment-channels.md`) and any two-wallet opening need them. Until then, answer token questions from `references/facts.md` (section "1Color tokens") and contract questions from its "Rúnar contracts" section plus guardrails G-25 to G-30.

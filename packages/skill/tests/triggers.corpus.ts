@@ -41,6 +41,10 @@ export const corpus: Array<{ prompt: string; expect: 'activate' | 'ignore' }> = 
   { prompt: 'the BSV Desktop approval prompt never shows up', expect: 'activate' },
   { prompt: 'switch the escrow on BSV to mainnet', expect: 'activate' },
   { prompt: 'port my Solana escrow to an escrow on BSV', expect: 'activate' },
+  { prompt: 'open a payment channel between two BSV wallets', expect: 'activate' },
+  { prompt: 'stream micropayments over a BSV payment channel', expect: 'activate' },
+  { prompt: 'should I use a payment channel or BRC-29 payments for my BSV game', expect: 'activate' },
+  { prompt: 'design a payment channel with nLockTime and nSequence states', expect: 'activate' },
 
   // ignore: other chains, including BSV noise
   { prompt: 'build a Solana dapp', expect: 'ignore' },
@@ -52,6 +56,8 @@ export const corpus: Array<{ prompt: string; expect: 'activate' | 'ignore' }> = 
   { prompt: 'set up a testnet with a faucet for my Ethereum app', expect: 'ignore' },
   { prompt: 'connect MetaMask to my React app', expect: 'ignore' },
   { prompt: 'write an escrow smart contract on Cardano', expect: 'ignore' },
+  { prompt: 'set up a Lightning payment channel', expect: 'ignore' },
+  { prompt: 'open a Raiden state channel on Ethereum', expect: 'ignore' },
 
   // ignore: generic web and tooling work
   { prompt: 'write a Python script to resize images', expect: 'ignore' },

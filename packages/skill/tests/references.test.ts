@@ -13,6 +13,7 @@ const must: Record<string, string[]> = {
   'simple-routing.md': ['0.7', 'network', 'arcadeUrl', 'integrate_simple'],
   'testnet-to-mainnet.md': ['BSV_NETWORK', 'bsvfaucet.com', '24 h', 'network-guard.sh', '476'],
   'common-errors.md': ['Atomic BEEF', 'isAuthenticated', 'FEE_TOO_HIGH', '429', 'fileURLToPath', 'require review'],
+  'payment-channels.md': ['0xc3', '0xc2', '476', 'SEEN_ON_NETWORK', 'competingTxs', 'hashToDirectlySign', 'nLockTime', 'BRC-121', 'G-35', 'G-38', 'newest'],
 }
 
 describe('authored references', () => {
@@ -73,6 +74,7 @@ describe('routing and operations references', () => {
   const sections: Record<string, string[]> = {
     'simple-routing.md': ['What @bsv/simple 0.7 covers', 'What it does not', 'Traps', 'When to drop to @bsv/sdk', 'Shape B recommendation', 'Prompts in @bsv/mcp'],
     'testnet-to-mainnet.md': ['One variable', 'Faucet', 'Fee reality', 'Mainnet checklist', 'On 429 / 476 / FEE_TOO_HIGH'],
+    'payment-channels.md': ['When a channel is worth it', 'What works today', 'Three constructions', 'Open', 'Update', 'Close, cooperative', 'Close without the counterparty', 'Stale states and disputes', 'Backups', 'Rúnar for the covenant', 'Arcade for the open and the close', 'Review checklist'],
   }
   for (const [file, heads] of Object.entries(sections)) {
     it(`${file} has its sections`, () => {
@@ -80,6 +82,11 @@ describe('routing and operations references', () => {
       for (const h of heads) expect(t, h).toContain(`\n## ${h}\n`)
     })
   }
+
+  it('payment-channels.md never relies on replacement', () => {
+    const lines = read('payment-channels.md').split('\n').filter((l) => /replace/i.test(l))
+    for (const l of lines) expect(l).toMatch(/no |never|not |cannot|without/i)
+  })
 
   it('simple-routing.md states the wallet-toolbox Arcade caveat and the network spellings', () => {
     const t = read('simple-routing.md')
