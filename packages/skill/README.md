@@ -1,6 +1,6 @@
 # bsv-dev skill
 
-`bsv-dev` is an Agent Skills skill for building BSV applications with an AI coding agent, testnet first. It gives the agent an end-to-end playbook: choosing who holds the keys (custody shape A or B), connecting a BRC-100 wallet, BRC-29 payments, reading transaction state from BSV Broadcaster (formerly Arcade), final at `SEEN_ON_NETWORK` with no competing transaction,, and taking an app from testnet to mainnet. It works on its own and works better with the `@bsv/mcp` server and the BSV docs MCP installed.
+`bsv-dev` is an Agent Skills skill for building BSV applications with an AI coding agent, testnet first. It gives the agent an end-to-end playbook: choosing who holds the keys (custody shape A or B), connecting a BRC-100 wallet, BRC-29 payments, reading transaction state from BSV Broadcaster (formerly Arcade), final at `SEEN_ON_NETWORK` with no competing transaction, and taking an app from testnet to mainnet. It works on its own and works better with the `@bsv/mcp` server and the BSV docs MCP installed.
 
 The skill never asks for, stores or generates production private keys, and it never edits your agent configuration: when an MCP server is missing it prints the install command for you to run.
 

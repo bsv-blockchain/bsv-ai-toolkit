@@ -29,6 +29,8 @@ const lockingScript = new P2PKH().lock(PublicKey.fromString(publicKey).toAddress
 
 ## Pay
 
+The wallet signs and broadcasts; the app then submits the transaction to its own BSV Broadcaster (formerly Arcade) so it can track it.
+
 ```ts
 const { txid, tx } = await wallet.createAction({
   description: 'Payment for order 42',
@@ -41,7 +43,7 @@ await broadcaster.submit(Transaction.fromAtomicBEEF(tx!).toHexEF()) // track it 
 - `randomizeOutputs: false` keeps your output at the index you planned, so the remittance's `outputIndex` stays right.
 - `acceptDelayedBroadcast: false` makes the wallet broadcast now and return errors in the result instead of retrying later in the background.
 - The result's `tx` is AtomicBEEF (BRC-95): the transaction plus its whole ancestry. Hand it to the recipient as is, with `{ senderIdentityKey, derivationPrefix, derivationSuffix, outputIndex }`.
-- The wallet broadcast through its own services, so your BSV Broadcaster (formerly Arcade) has never seen the transaction. Submit it as EF (`broadcaster-0conf.md`, "Submit") and gate on your own `GET /tx/{txid}`.
+- The wallet broadcast through its own services, so your BSV Broadcaster has never seen the transaction. Submit it as EF (`broadcaster-0conf.md`, "Submit") and gate on your own `GET /tx/{txid}`.
 - Payout outputs carry at least 546 sats, the dust threshold for outputs a wallet will track.
 
 ## Collect

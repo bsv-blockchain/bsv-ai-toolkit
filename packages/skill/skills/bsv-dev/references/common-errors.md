@@ -3,7 +3,7 @@
 Applies to: both
 Guardrails: G-01, G-09, G-11, G-12, G-13, G-18, G-21, G-29, G-32
 
-Find the message or symptom, read the cause, apply the fix. For a known txid, read its status first (`broadcaster_status`, or `scripts/broadcaster-check.sh <txid>`): BSV Broadcaster (formerly Arcade)'s answer is the truth for that transaction. BSV Broadcaster 400 answers carry a numeric `status` code that keeps the legacy ARC numbering; BSV Broadcaster does not serve the ARC API itself (`broadcaster-0conf.md`, "Classify 400s").
+Find the message or symptom, read the cause, apply the fix. For a known txid, read its status first (`broadcaster_status`, or `scripts/broadcaster-check.sh <txid>`): the answer from BSV Broadcaster (formerly Arcade) is the truth for that transaction. BSV Broadcaster 400 answers carry a numeric `status` code that keeps the legacy ARC numbering; BSV Broadcaster does not serve the ARC API itself (`broadcaster-0conf.md`, "Classify 400s").
 
 | symptom | cause | fix |
 | --- | --- | --- |

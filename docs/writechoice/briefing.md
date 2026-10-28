@@ -125,7 +125,7 @@ Each of these teaches a pattern the guardrails forbid, so an agent that learns f
 
 | Page | Problem | Guardrail | Ask |
 | --- | --- | --- | --- |
-| Custom transaction broadcaster example, `https://docs.bsvblockchain.org/guides/sdks/ts/examples/example_building_custom_tx_broadcaster` | Posts raw hex to WhatsOnChain `/tx/raw` and swallows errors in an empty `catch` | G-09 (broadcast only through BSV Broadcaster), G-12 (WhatsOnChain is never the truth for a known txid) | Rewrite as a BSV Broadcaster: `POST /tx`, then read `GET /tx/{txid}` |
+| Custom transaction broadcaster example, `https://docs.bsvblockchain.org/guides/sdks/ts/examples/example_building_custom_tx_broadcaster` | Posts raw hex to WhatsOnChain `/tx/raw` and swallows errors in an empty `catch` | G-09 (broadcast only through BSV Broadcaster), G-12 (WhatsOnChain is never the truth for a known txid) | Rewrite as a BSV Broadcaster client: `POST /tx`, then read `GET /tx/{txid}` |
 | Event tickets use case, `https://docs.bsvblockchain.org/guides/business-use-cases/event_tickets` | Makes keys with `PrivateKey.fromRandom` in app code; the "tickets" are unfunded, unsigned P2PKH outputs | G-06 (no private keys in client code) | Retire it, or rewrite it on 1Color tokens with the user's wallet holding the keys |
 | The `/reference/arc/*` block (linked from `llms.txt`) | Presents the legacy ARC API and its `/v1/tx` routes as current; apps must not use it | G-09 (broadcast only through BSV Broadcaster) | Mark it legacy, never for new apps, and link the BSV Broadcaster pages |
 | Go and Python broadcasting examples | Not checked; likely the legacy ARC API, which G-09 says never to use | G-09 | Check them against G-09 |

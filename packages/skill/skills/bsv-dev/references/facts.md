@@ -19,8 +19,8 @@ Verified 2026-10-28.
 - **Docs.** `https://docs.bsvblockchain.org/broadcasting/bsv-broadcaster` and `https://docs.bsvblockchain.org/broadcasting/broadcasting`. The repository's `docs/migration-arcade-to-bsv-broadcaster.md` lists every renamed setting, path and image.
 - **Names that did not change.** The public hostnames (`arcade-us-1`, `arcade-eu-1`, `arcade-ap-1`, `arcade.gorillapool.io`, and the testnet and ttn hosts in `versions.json`); the ARC error codes; the Python SDK classes `Arcade` and `ArcadeConfig`.
 - **Webhook User-Agent.** Servers from v0.19.0 send `bsv-broadcaster-webhook/<version>`; older ones send `arcade-webhook/<version>`. A receiver that allowlists callbacks by User-Agent must allow both prefixes while public instances still run older releases.
-- **Self-hosting, from v0.19.0.** Binary `bsv-broadcaster`; image `ghcr.io/bsv-blockchain/broadcaster`; config directory `/etc/bsv-broadcaster`; environment prefix `BSV_BROADCASTER_*`. The old `ARCADE_*` variables are still honored but deprecated, and an explicitly set new name wins. Prometheus metrics are now `bsv_broadcaster_*`, with no compatibility shim: update dashboards and alerts in the same change.
-- **Public instances.** On 2026-10-28 every public instance reported `v0.16.0` in `GET /health`, a pre-rename release, and `arcade-ap-1` did not resolve. The docs list only the mainnet public endpoints (us-1, eu-1, ap-1 and GorillaPool); the testnet hosts are live but not in the official docs.
+- **Self-hosting, from v0.19.0.** Binary `bsv-broadcaster`; image `ghcr.io/bsv-blockchain/broadcaster`; config directory `/etc/bsv-broadcaster`, with `/etc/arcade` still searched (deprecated); environment prefix `BSV_BROADCASTER_*`. The old `ARCADE_*` variables are still honored but deprecated, and an explicitly set new name wins. Prometheus metrics are now `bsv_broadcaster_*`, with no compatibility shim: update dashboards and alerts in the same change. On upgrade, every default you never set takes its new name silently: the Kafka topic prefix and consumer group, the storage paths and the database names (Postgres, MongoDB, Aerospike). Pin them to their old `arcade` values before rolling out the new image, as the repository's migration guide lists.
+- **Public instances.** On 2026-10-28 `GET /health` reported `v0.16.0`, a pre-rename release, on every BSVA host that answered (`arcade-us-1`, `arcade-eu-1`, `arcade-v2-us-1`, `arcade-testnet-us-1`, `arcade-v2-testnet-us-1`, `arcade-v2-ttn-us-1`) and `v0.17.1` on `arcade.gorillapool.io`, also pre-rename; `arcade-ap-1` did not resolve. The docs list only the mainnet public endpoints (us-1, eu-1, ap-1 and GorillaPool); the testnet hosts are live but not in the official docs.
 - **`@bsv/sdk`.** In 3.2.1 the `Teranode` broadcaster posts EF bytes (`application/octet-stream`) to the URL you give it, which `POST /tx` accepts. It reports only the POST answer, which is provisional, so still read `GET /tx/{txid}` before any money decision.
 
 ### Endpoints
@@ -123,7 +123,7 @@ Measured on testnet, Oct 2026:
 
 ### Version
 
-Every public instance reported `v0.16.0` in `GET /health` on 2026-10-22, and again on 2026-10-28; the latest release is v0.19.0 (see Name and versions). The API is described by `openapi/bsv-broadcaster.openapi.yaml` in `bsv-blockchain/broadcaster`, called `openapi/arcade.openapi.yaml` before the rename (OpenAPI `info.version` 1.0.0). `@bsv/sdk` 3.2.1 has no BSV Broadcaster client that reads status: its `Teranode` broadcaster only posts, so write a small client around `POST /tx` and `GET /tx/{txid}`. The SDK's `ARC` class posts to the legacy ARC path, which BSV Broadcaster does not serve, so never use it with BSV Broadcaster.
+On 2026-10-28 `GET /health` reported `v0.16.0` on every BSVA host that answered and `v0.17.1` on `arcade.gorillapool.io`, and `arcade-ap-1` did not resolve; the latest release is v0.19.0 (see Name and versions). The BSVA hosts also reported `v0.16.0` on 2026-10-22. The API is described by `openapi/bsv-broadcaster.openapi.yaml` in `bsv-blockchain/broadcaster`, called `openapi/arcade.openapi.yaml` before the rename (OpenAPI `info.version` 1.0.0). `@bsv/sdk` 3.2.1 has no BSV Broadcaster client that reads status: its `Teranode` broadcaster only posts, so write a small client around `POST /tx` and `GET /tx/{txid}`. The SDK's `ARC` class posts to the legacy ARC path, which BSV Broadcaster does not serve, so never use it with BSV Broadcaster.
 
 ## Consensus and policy facts
 
@@ -488,7 +488,7 @@ The same values as `content/versions.json`, which tools read. Check drift with t
 
 | Service | Version | Verified | Hosts |
 | --- | --- | --- | --- |
-| BSV Broadcaster (formerly Arcade), `bsv-blockchain/broadcaster` | v0.16.0 on every host (latest release v0.19.0) | 2026-10-28 | testnet: `arcade-testnet-us-1`, `arcade-v2-testnet-us-1`; mainnet: `arcade-us-1`, `arcade-eu-1`, `arcade-ap-1`, `arcade-v2-us-1`; ttn: `arcade-v2-ttn-us-1` (all `.bsvblockchain.tech`) |
+| BSV Broadcaster (formerly Arcade), `bsv-blockchain/broadcaster` | v0.16.0 on every host that answered; `arcade-ap-1` did not resolve (latest release v0.19.0) | 2026-10-28 | testnet: `arcade-testnet-us-1`, `arcade-v2-testnet-us-1`; mainnet: `arcade-us-1`, `arcade-eu-1`, `arcade-ap-1`, `arcade-v2-us-1`; ttn: `arcade-v2-ttn-us-1` (all `.bsvblockchain.tech`) |
 
 ### Runtime floors
 
