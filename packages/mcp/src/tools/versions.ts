@@ -14,11 +14,12 @@ export interface VersionsFile {
   services: {
     /**
      * BSV Broadcaster (formerly Arcade). `version` is what the public hosts report in `/health` (the probe and the
-     * host rows check it); `release` is the latest release of `repo`, which the hosts may not run yet.
+     * host rows check it); `release` is the latest release of `repo`, which the hosts may not run yet. Both are
+     * optional, as in the sync schema; without both there is no release row.
      */
     broadcaster: {
-      repo: string
-      release: string
+      repo?: string
+      release?: string
       version: string
       verified: string
       hosts: { testnet: string[]; mainnet: string[]; ttn?: string[] }
@@ -123,12 +124,15 @@ export async function versionsCheck(
   }
 
   const broadcaster = versions.services.broadcaster
-  const release = getJson(`https://api.github.com/repos/${broadcaster.repo}/releases/latest`, githubHeaders).then((j) => {
-    const tag = String(j?.tag_name)
-    if (!VERSION.test(tag)) throw new Error(`GitHub answered a malformed release tag: ${tag}`)
-    return tag
-  })
-  rows.push(row(`broadcaster release (${broadcaster.repo})`, broadcaster.release, broadcaster.verified, release))
+  const { repo, release: pinnedRelease } = broadcaster
+  if (repo !== undefined && repo !== '' && pinnedRelease !== undefined && pinnedRelease !== '') {
+    const release = getJson(`https://api.github.com/repos/${repo}/releases/latest`, githubHeaders).then((j) => {
+      const tag = String(j?.tag_name)
+      if (!VERSION.test(tag)) throw new Error(`GitHub answered a malformed release tag: ${tag}`)
+      return tag
+    })
+    rows.push(row(`broadcaster release (${repo})`, pinnedRelease, broadcaster.verified, release))
+  }
   for (const host of [...broadcaster.hosts.testnet, ...broadcaster.hosts.mainnet]) {
     const version = new BroadcasterClient({ baseUrl: host, timeoutMs: TIMEOUT_MS, fetchImpl }).health().then((h) => String(h.version))
     rows.push(row(`broadcaster:${new URL(host).hostname}`, broadcaster.version, broadcaster.verified, version))

@@ -281,6 +281,8 @@ describe('G-10 SEEN_ON_NETWORK, never MINED', () => {
     "const r = await fetch(`${process.env.BSV_BROADCASTER_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
     "const base = 'https://broadcaster.example.com'\nconst r = await fetch(`${base}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
     "import { url as broadcasterBase } from './broadcaster.js'\nconst r = await fetch(broadcasterBase + '/tx', {\n  method: 'POST',\n  body: hex,\n})",
+    "const BASE = 'https://arcade-us-1.bsvblockchain.tech'\nconst r = await fetch(`${BASE}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
+    "import { url as base } from './arcade.js'\nconst r = await fetch(base + '/tx', {\n  method: 'POST',\n  body: hex,\n})",
   ])('recognises a BSV Broadcaster POST /tx with no status read: %s', post => {
     expect(runOn(g10, post)).toHaveLength(1)
     expect(runOn(g10, `${post}\nconst s = await fetch(\`\${BSV_BROADCASTER_URL}/tx/\${txid}\`)`)).toEqual([])
@@ -392,6 +394,8 @@ describe('G-15 timeouts on BSV Broadcaster and WhatsOnChain calls', () => {
     "await fetch(`${process.env.BSV_BROADCASTER_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
     "const base = 'https://broadcaster.example.com'\nawait fetch(base + '/policy')",
     "await fetch(broadcaster.baseUrl + '/health')",
+    "const BASE = 'https://arcade-us-1.bsvblockchain.tech'\nawait fetch(BASE + '/policy')",
+    "import { url as base } from './arcade.js'\nawait fetch(base + '/tx/' + txid)",
   ])('flags %s', text => {
     expect(runOn(g15, text)).toHaveLength(1)
   })

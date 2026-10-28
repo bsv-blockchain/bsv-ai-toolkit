@@ -246,6 +246,18 @@ describe('versions_check', () => {
     expect(rows.filter((r) => r.name.startsWith('broadcaster:')).every((r) => !r.drift)).toBe(true)
   })
 
+  it('skips the release row, and never asks GitHub for repos/undefined, when repo or release is missing', async () => {
+    for (const missing of ['repo', 'release'] as const) {
+      const v = base()
+      delete (v.services.broadcaster as Partial<typeof v.services.broadcaster>)[missing]
+      const f = registryFetch(v)
+      const { rows } = await versionsCheck(v, f, { probe: false })
+      expect(rows.some((r) => r.name.startsWith('broadcaster release')), missing).toBe(false)
+      expect(f.calls.some((u) => /releases|undefined/.test(u)), missing).toBe(false)
+      expect(rows.filter((r) => r.name.startsWith('broadcaster:')).length, missing).toBe(v.services.broadcaster.hosts.testnet.length + v.services.broadcaster.hosts.mainnet.length)
+    }
+  })
+
   it('versionsCheck skips the probe when probeTxid is empty', async () => {
     const v = base()
     v.services.broadcaster.probeTxid = ''

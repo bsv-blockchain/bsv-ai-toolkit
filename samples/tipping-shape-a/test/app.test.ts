@@ -125,6 +125,16 @@ describe('loadServerConfig', () => {
     expect(() => loadServerConfig({ ARCADE_URL: MAINNET_BROADCASTER }, quiet)).toThrow(/network\/host mismatch/)
   })
 
+  it('names the variable a bad URL came from, after the ARCADE_URL deprecation warning', () => {
+    const lines: string[] = []
+    expect(() => loadServerConfig({ ARCADE_URL: 'not a url' }, l => lines.push(l))).toThrow(/invalid ARCADE_URL: not a url/)
+    expect(lines).toEqual(['warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL'])
+    const mismatch: string[] = []
+    expect(() => loadServerConfig({ ARCADE_URL: MAINNET_BROADCASTER }, l => mismatch.push(l))).toThrow(/network\/host mismatch/)
+    expect(mismatch).toEqual(['warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL'])
+    expect(() => loadServerConfig({ BSV_BROADCASTER_URL: 'not a url' }, quiet)).toThrow(/invalid BSV_BROADCASTER_URL: not a url/)
+  })
+
   it('rejects a known BSV Broadcaster host of the other network', () => {
     expect(() => loadServerConfig({ BSV_BROADCASTER_URL: MAINNET_BROADCASTER }, quiet)).toThrow(/network\/host mismatch/)
     expect(() => loadServerConfig({ BSV_NETWORK: 'mainnet', BSV_BROADCASTER_URL: `${TESTNET_BROADCASTER}./` }, quiet)).toThrow(/network\/host mismatch/)

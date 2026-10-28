@@ -59,10 +59,13 @@ function testnetOnly(env: Env): 'testnet' {
   return raw
 }
 
-/** BSV_BROADCASTER_URL or the public testnet BSV Broadcaster; a known mainnet BSV Broadcaster host is refused (the relay's own check). */
-function broadcasterUrlOf(env: Env): string {
+/**
+ * BSV_BROADCASTER_URL, else the deprecated ARCADE_URL (its warning goes to `warn`), else the public testnet BSV
+ * Broadcaster; a known mainnet BSV Broadcaster host is refused. The relay's own reading and check.
+ */
+export function broadcasterUrlOf(env: Env, warn: (line: string) => void): string {
   try {
-    return loadServerConfig({ BSV_NETWORK: 'testnet', BSV_BROADCASTER_URL: env.BSV_BROADCASTER_URL }, () => {}).broadcasterUrl
+    return loadServerConfig({ BSV_NETWORK: 'testnet', BSV_BROADCASTER_URL: env.BSV_BROADCASTER_URL, ARCADE_URL: env.ARCADE_URL }, warn).broadcasterUrl
   } catch (e) {
     throw new GateUsageError(message(e))
   }
@@ -113,7 +116,7 @@ async function sweep(argv: string[], env: Env, io: Io): Promise<number> {
   const txid = flag(argv, '--txid')?.toLowerCase()
   if (txid === undefined || !/^[0-9a-f]{64}$/.test(txid)) throw new GateUsageError('sweep needs --txid <the faucet txid, 64 hex characters>')
   const vout = wholeNumber(flag(argv, '--vout'), '--vout', 0)
-  const broadcasterUrl = broadcasterUrlOf(env)
+  const broadcasterUrl = broadcasterUrlOf(env, line => io.err(line))
   const broadcasterClient = new BroadcasterClient(broadcasterUrl)
   const woc = new WhatsOnChain()
   const { fundingAddress } = derive(rootKeyHex)
@@ -170,7 +173,7 @@ async function recover(argv: string[], env: Env, io: Io): Promise<number> {
   } catch (e) {
     throw new GateUsageError(message(e))
   }
-  const broadcasterUrl = broadcasterUrlOf(env)
+  const broadcasterUrl = broadcasterUrlOf(env, line => io.err(line))
   const broadcasterClient = new BroadcasterClient(broadcasterUrl)
   const rows: Row[] = []
   let failure: string | undefined
@@ -254,7 +257,7 @@ async function run(argv: string[], env: Env, io: Io): Promise<number> {
   const sats = wholeNumber(flag(argv, '--sats'), '--sats', MIN_TIP_SATS) ?? DEFAULT_SATS
   const relayUrl = flag(argv, '--relay')
   if (relayUrl !== undefined && !/^https?:\/\/[^/]+\/?$/.test(relayUrl)) throw new GateUsageError('--relay must be an origin such as http://127.0.0.1:8080')
-  const broadcasterUrl = broadcasterUrlOf(env)
+  const broadcasterUrl = broadcasterUrlOf(env, line => io.err(line))
   const broadcasterClient = new BroadcasterClient(broadcasterUrl)
   const woc = new WhatsOnChain()
   const { fundingAddress } = derive(rootKeyHex)

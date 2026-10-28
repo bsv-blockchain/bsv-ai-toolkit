@@ -74,7 +74,9 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
   // BSV_BROADCASTER_URL, else the deprecated ARCADE_URL (BSV Broadcaster's former name); an explicit new name wins.
   const legacyUrl = nonEmpty(env.BSV_BROADCASTER_URL) === undefined ? nonEmpty(env.ARCADE_URL) : undefined
   const broadcasterUrl = nonEmpty(env.BSV_BROADCASTER_URL) ?? legacyUrl ?? DEFAULT_BROADCASTER[network]
-  const warning = checkBroadcasterHost(network, broadcasterUrl)
+  // The deprecation warning comes first, so it is printed even when the old value then fails the host check.
+  if (legacyUrl !== undefined) log('warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL')
+  const warning = checkBroadcasterHost(network, broadcasterUrl, legacyUrl !== undefined ? 'ARCADE_URL' : 'BSV_BROADCASTER_URL')
 
   const cfg: ServerConfig = {
     network,
@@ -96,7 +98,6 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
   }
 
   if (network === 'mainnet') MAINNET_BANNER.forEach(line => log(line))
-  if (legacyUrl !== undefined) log('warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL')
   if (warning !== undefined) log(`warning: ${warning}`)
   if (creator === undefined && env.NODE_ENV === 'production') {
     log('warning: CREATOR_IDENTITY_KEY is unset: the first wallet to claim /creator becomes the creator')
@@ -113,13 +114,13 @@ export function bootLine(cfg: ServerConfig): string {
 }
 
 // Throws on an unparseable URL or a host known to belong to the other network; returns a warning for a ttn host.
-function checkBroadcasterHost(network: Network, broadcasterUrl: string): string | undefined {
+function checkBroadcasterHost(network: Network, broadcasterUrl: string, source: string): string | undefined {
   let host: string
   try {
     // Lowercase and drop trailing dots so a fully-qualified 'host.' cannot dodge the lists.
     host = new URL(broadcasterUrl).hostname.toLowerCase().replace(/\.+$/, '')
   } catch {
-    throw new Error(`invalid BSV_BROADCASTER_URL: ${broadcasterUrl}`)
+    throw new Error(`invalid ${source}: ${broadcasterUrl}`)
   }
   const other: Network = network === 'mainnet' ? 'testnet' : 'mainnet'
   if (KNOWN_HOSTS[other].includes(host)) {

@@ -30,7 +30,7 @@ export const g15: Rule = {
     const out = findingList(meta)
     for (const f of files.filter(isSource)) {
       const s = scan(f)
-      const service = withAliases(s.code, SERVICE)
+      const service = withAliases(s.code, SERVICE, { imports: true })
       for (const m of s.masked.matchAll(FETCH)) {
         // The whole call, to its closing bracket: Prettier can put `signal` many lines down.
         const args = bracketText(s, m.index + m[0].length - 1, MAX_CALL_LINES)

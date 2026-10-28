@@ -29,7 +29,7 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ BSV_NETWORK: 'mainnet', BSV_BROADCASTER_URL: 'https://arcade-testnet-us-1.bsvblockchain.tech./' })).toThrow(/mismatch/)
   })
   it('fails fast on an invalid BSV_BROADCASTER_URL', () => {
-    expect(() => loadConfig({ BSV_BROADCASTER_URL: 'not a url' })).toThrow(/invalid broadcasterUrl/)
+    expect(() => loadConfig({ BSV_BROADCASTER_URL: 'not a url' })).toThrow(/invalid BSV_BROADCASTER_URL: not a url/)
   })
 })
 describe('BSV_BROADCASTER_URL and the deprecated ARCADE_URL', () => {
@@ -65,6 +65,15 @@ describe('BSV_BROADCASTER_URL and the deprecated ARCADE_URL', () => {
   })
   it('applies the network/host cross-check to ARCADE_URL too', () => {
     expect(() => loadConfig({ ARCADE_URL: 'https://arcade-us-1.bsvblockchain.tech' }, () => {})).toThrow(/mismatch/)
+  })
+  it('names the variable an invalid URL came from, after the deprecation warning', () => {
+    const lines: string[] = []
+    expect(() => loadConfig({ ARCADE_URL: 'not a url' }, (l) => lines.push(l))).toThrow(/invalid ARCADE_URL: not a url/)
+    expect(lines).toEqual([DEPRECATED])
+    expect(() => loadConfig({ BSV_BROADCASTER_URL: 'not a url', ARCADE_URL: 'http://localhost:9090' }, () => {})).toThrow(/invalid BSV_BROADCASTER_URL/)
+  })
+  it('keeps naming broadcasterUrl for a bad tool input', () => {
+    expect(() => resolveNetwork({ broadcasterUrl: 'not a url' }, loadConfig({}))).toThrow(/invalid broadcasterUrl/)
   })
 })
 describe('resolveNetwork', () => {

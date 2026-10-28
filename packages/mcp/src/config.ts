@@ -66,8 +66,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, warn: (line: st
     throw new Error(`BSV_NETWORK must be "testnet" or "mainnet", got "${raw}"`)
   }
   const network: Network = raw
-  const broadcasterUrl = configuredBroadcasterUrl(env, warn) ?? DEFAULT_BROADCASTER[network]
-  checkHost(network, broadcasterUrl) // fail fast at startup; a ttn warning is surfaced per call by resolveNetwork
+  const configured = configuredBroadcasterUrl(env, warn)
+  const broadcasterUrl = configured ?? DEFAULT_BROADCASTER[network]
+  // Errors name the variable the value came from. Fail fast at startup; a ttn warning is surfaced per call by resolveNetwork.
+  const source = configured === undefined ? 'default URL' : nonEmpty(env.BSV_BROADCASTER_URL) !== undefined ? 'BSV_BROADCASTER_URL' : 'ARCADE_URL'
+  checkHost(network, broadcasterUrl, source)
   return {
     network,
     broadcasterUrl,
@@ -91,13 +94,13 @@ export function resolveNetwork(
 }
 
 // Throws on an unparseable URL or a host known to belong to the other network; returns a warning for a ttn host.
-function checkHost(network: Network, broadcasterUrl: string): string | undefined {
+function checkHost(network: Network, broadcasterUrl: string, source = 'broadcasterUrl'): string | undefined {
   let host: string
   try {
     // Lowercase and drop trailing dots so a fully-qualified 'host.' (or 'host%2E') cannot dodge the lists.
     host = new URL(broadcasterUrl).hostname.toLowerCase().replace(/\.+$/, '')
   } catch {
-    throw new Error(`invalid broadcasterUrl: ${broadcasterUrl}`)
+    throw new Error(`invalid ${source}: ${broadcasterUrl}`)
   }
 
   const other: Network = network === 'mainnet' ? 'testnet' : 'mainnet'

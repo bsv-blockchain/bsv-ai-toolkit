@@ -106,7 +106,7 @@ export const g10: Rule = {
       const reads = s.codeLines.some(t => TX_READ.test(t) && !WOC.test(t))
       if (reads) continue
       // Only a POST to BSV Broadcaster: a POST to the app's own relay (`/api/tx`) is not a broadcast.
-      const service = withAliases(s.code, BROADCASTER)
+      const service = withAliases(s.code, BROADCASTER, { imports: true })
       s.codeLines.forEach((t, i) => {
         if (!TX_POST_PATH.test(t) || !service.test(t)) return
         const window = s.codeLines.slice(Math.max(0, i - 3), i + 6).join('\n')

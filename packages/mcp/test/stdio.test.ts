@@ -95,6 +95,7 @@ describe('stdio bootstrap', () => {
 
     const failed = await runEntry({ PATH: process.env.PATH ?? '', ARCADE_URL: 'https://user:s3cret@[bad/p' })
     expect(failed.code).toBe(1)
+    expect(failed.stderr).toContain('invalid ARCADE_URL')
     expect(failed.stderr).not.toContain('s3cret')
   })
 
@@ -118,7 +119,7 @@ describe('stdio bootstrap', () => {
 
     const failed = await runEntry({ PATH: process.env.PATH ?? '', BSV_BROADCASTER_URL: 'https://user:s3cret@[bad/p' })
     expect(failed.code).toBe(1)
-    expect(failed.stderr).toContain('invalid broadcasterUrl')
+    expect(failed.stderr).toContain('invalid BSV_BROADCASTER_URL')
     expect(failed.stderr).not.toContain('s3cret')
   })
 })

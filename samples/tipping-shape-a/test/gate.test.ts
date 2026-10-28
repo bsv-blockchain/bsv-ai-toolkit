@@ -21,6 +21,7 @@ import {
 } from '../scripts/gate-coins'
 import { addProvenTx, tscToMerklePath, WhatsOnChain } from '../scripts/gate-woc'
 import { derive, keyFilePath, loadOrCreateRootKey, openGateWallet } from '../scripts/gate-wallet'
+import { broadcasterUrlOf } from '../scripts/gate'
 
 // No test here touches ~/.bsv-gate, the network or a wallet with funds. CLI runs get only PATH, a temp HOME and the
 // variables a test passes (always a temp BSV_GATE_KEY_FILE); in-process calls pass a temp BSV_GATE_KEY_FILE, and a
@@ -650,4 +651,16 @@ describe('gate run on testnet', () => {
     },
     1_600_000, // listing, imports, the tip, collection and two sweep-backs, each with up to two 20 s BSV Broadcaster waits
   )
+})
+
+describe('the gate\'s BSV Broadcaster URL', () => {
+  it('reads BSV_BROADCASTER_URL, then the deprecated ARCADE_URL with a warning, and refuses a mainnet host', () => {
+    const warnings: string[] = []
+    expect(broadcasterUrlOf({}, l => warnings.push(l))).toBe('https://arcade-testnet-us-1.bsvblockchain.tech')
+    expect(broadcasterUrlOf({ BSV_BROADCASTER_URL: 'http://localhost:8080', ARCADE_URL: 'http://localhost:9090' }, l => warnings.push(l))).toBe('http://localhost:8080')
+    expect(warnings).toEqual([])
+    expect(broadcasterUrlOf({ ARCADE_URL: 'http://localhost:9090' }, l => warnings.push(l))).toBe('http://localhost:9090')
+    expect(warnings).toEqual(['warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL'])
+    expect(() => broadcasterUrlOf({ ARCADE_URL: 'https://arcade-us-1.bsvblockchain.tech' }, () => {})).toThrow(/network\/host mismatch/)
+  })
 })
