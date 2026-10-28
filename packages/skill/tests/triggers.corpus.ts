@@ -16,6 +16,8 @@ export const corpus: Array<{ prompt: string; expect: 'activate' | 'ignore' }> = 
   { prompt: 'help me build a bsv app with Next.js', expect: 'activate' },
   { prompt: 'connect a BRC-100 wallet to my Vite frontend', expect: 'activate' },
   { prompt: 'log users in with their BRC-100 wallet instead of passwords', expect: 'activate' },
+  { prompt: 'add Wallet Relay so users can log in with their phone', expect: 'activate' },
+  { prompt: 'let users pair BSV Browser with my web app', expect: 'activate' },
   { prompt: 'send a BSV payment from the server to a user', expect: 'activate' },
   { prompt: 'receive a BSV payment and unlock the download', expect: 'activate' },
   { prompt: 'let customers pay with BSV payments at checkout', expect: 'activate' },

@@ -1,6 +1,6 @@
 ---
 name: bsv-dev
-description: 'Use when the user asks to "build a BSV app", "connect a BRC-100 wallet", "BSV Desktop", "send/receive a BSV payment", "BRC-29", "internalizeAction", "broadcast with Arcade", "0-conf", "write a Rúnar contract", "covenant", "escrow on BSV", "payment channel", "1Color token", "BSV-21", "go to mainnet", "testnet faucet", "AtomicBEEF", "@bsv/simple", "wallet-toolbox", or hits BSV errors (WERR_INVALID_PARAMETER, FEE_TOO_HIGH, 476, 429, isAuthenticated). End-to-end playbook: custody shape choice, wallet login and manifest, BRC-29 payments, Arcade-first transaction state, Rúnar contracts with Spend tests and adversarial review, 1Color tokens, testnet-to-mainnet. Prefers @bsv/sdk 3.x WalletClient, Arcade for every broadcast and status read, Rúnar from upstream main, testnet by default.'
+description: 'Use when the user asks to "build a BSV app", "connect a BRC-100 wallet", "BSV Desktop", "BSV Browser", "Wallet Relay", "send/receive a BSV payment", "BRC-29", "internalizeAction", "broadcast with Arcade", "0-conf", "write a Rúnar contract", "covenant", "escrow on BSV", "payment channel", "1Color token", "BSV-21", "go to mainnet", "testnet faucet", "AtomicBEEF", "@bsv/simple", "wallet-toolbox", or hits BSV errors (WERR_INVALID_PARAMETER, FEE_TOO_HIGH, 476, 429, isAuthenticated). End-to-end playbook: custody shape choice, wallet login (BSV Desktop or a phone wallet over Wallet Relay) and manifest, BRC-29 payments, Arcade-first transaction state, Rúnar contracts with Spend tests and adversarial review, 1Color tokens, testnet-to-mainnet. Prefers @bsv/sdk 3.x WalletClient, Arcade for every broadcast and status read, Rúnar from upstream main, testnet by default.'
 license: MIT
 compatibility: Node.js 22+; optional @bsv/mcp (stdio) and the BSV docs MCP (http); pnpm for Rúnar projects
 metadata:
@@ -18,7 +18,7 @@ A playbook for building BSV applications end to end: who holds the keys, how the
 Use it when the user wants to:
 
 - build a BSV app, or add BSV payments to an existing app;
-- connect a BRC-100 wallet (BSV Desktop or any other) and log the user in with it;
+- connect a BRC-100 wallet (BSV Desktop or any other) and log the user in with it, including a phone wallet such as BSV Browser paired by QR code over Wallet Relay;
 - send or receive a BSV payment, including BRC-29 payments collected with `internalizeAction` and AtomicBEEF;
 - broadcast with Arcade, read a transaction's status, or decide when a payment counts (0-conf);
 - write a Rúnar contract: a covenant, an escrow on BSV, a multi-party settlement;
@@ -34,7 +34,7 @@ It is not a general BSV encyclopedia. For history, protocol background or "what 
 
 Apply these unless the user explicitly decides otherwise; say so when they do.
 
-1. **BRC-100 wallet always.** Users connect a BRC-100 wallet; the wallet's identity key is the user's id, with no passwords or accounts. Read `references/wallet-brc100.md`.
+1. **BRC-100 wallet always, desktop or phone.** Users connect a BRC-100 wallet; the wallet's identity key is the user's id, with no passwords or accounts. Every new app's login offers both paths: a wallet on the same computer (BSV Desktop) through `WalletClient`, and a phone wallet (BSV Browser) paired by QR code through Wallet Relay (`@bsv/wallet-relay`). Read `references/wallet-brc100.md`.
 2. **Custody shape chosen explicitly.** Per money path, shape A (the user's wallet holds the keys) or shape B (a server wallet does); prefer A when both work. Read `references/custody-shapes.md`.
 3. **Arcade for every broadcast and every txid read.** WhatsOnChain only for address listings, spent-by and tip height; never the legacy ARC API (`/v1/tx`, the SDK `ARC` class). The app submits to its own Arcade client and gates on its own `GET /tx/{txid}`. Read `references/arcade-0conf.md`.
 4. **Final at `SEEN_ON_NETWORK` or later with no `competingTxs`.** A 2xx from `POST /tx` is provisional; `ACCEPTED_BY_NETWORK` is not enough; never gate on `MINED` and never add a block wait. Read `references/arcade-0conf.md` (and `references/threat-model.md` for why).
@@ -107,7 +107,7 @@ Assets: start `public/manifest.json` from `assets/manifest.template.json` and th
 | task | file |
 | --- | --- |
 | Choose who holds the keys; shape B operating rules | `references/custody-shapes.md` |
-| Connect a BRC-100 wallet, login, permission manifest, `getNetwork()` | `references/wallet-brc100.md` |
+| Connect a BRC-100 wallet, login (desktop and Wallet Relay), permission manifest, `getNetwork()` | `references/wallet-brc100.md` |
 | Send or receive a payment; BRC-29, `internalizeAction`, AtomicBEEF | `references/payments-brc29.md` |
 | Many small payments or a jointly signed state between two parties: when a channel pays off, open, update, close, timeouts, backups | `references/payment-channels.md` |
 | Broadcast, read status, decide finality, classify Arcade errors | `references/arcade-0conf.md` |

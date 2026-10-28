@@ -25,6 +25,16 @@ if (network !== BSV_NETWORK) throw new Error(`Wallet is on ${network}; switch it
 - **Refuse on a network mismatch.** A local BSV Desktop is often on mainnet while the app runs on testnet. `BSV_NETWORK` is one setting read by both server and client (when the bundler needs a public prefix, derive the prefixed copy from `BSV_NETWORK` at build time, never set it separately; `testnet-to-mainnet.md`). Show the wallet's network in the UI, and read `getNetwork()` again before every money path: the user can switch networks without logging out.
 - **No wallet found:** `connectToSubstrate()` rejects with `No wallet available over any communication substrate`. Tell the user to install and open a BRC-100 wallet; BSV Desktop serves on local ports 3321 (HTTP) and 2121 (HTTPS) (verified 2026-10-22).
 
+## Phone wallets: Wallet Relay
+
+Every new app's login offers a phone wallet as well as a desktop one. Wallet Relay (`@bsv/wallet-relay` 0.7.0, verified 2026-10-28) pairs the page with a phone wallet such as BSV Browser by QR code; the phone keeps the keys and the relay passes only encrypted messages.
+
+- **Backend:** one `WalletRelayService({ app, server, wallet })` on the app's Express server adds `/api/session`, `/api/session/:id`, `/api/request/:id` and the `/ws` relay. `wallet` is a `ProtoWallet` from a fixed key in `.env` (`WALLET_PRIVATE_KEY`, never committed): the QR carries its identity key, so it must survive restarts. It holds no funds.
+- **Frontend:** `WalletConnectionModal` from `@bsv/wallet-relay/react` checks for a local wallet first and calls `onLocalWallet` with a `WalletClient`; otherwise it offers the phone. `useWalletRelayClient({ autoCreate: false })` creates the session only when the user picks the phone, and `QRDisplay` shows the code. Once `session.status === 'connected'`, its `wallet` proxy has the same methods as `WalletClient`: keep one wallet reference and do not branch call sites.
+- **Phone path needs HTTPS.** Set `ORIGIN=https://…` and `RELAY_URL=wss://…`; the phone adds `/ws` to `RELAY_URL`. Production wallets reject plain HTTP; `allowLocalNetworkHttp` is development only, on all three sides.
+- **The relay carries 16 methods, and `getNetwork` and `waitForAuthentication` are not among them.** Run the login sequence above on the desktop path only. On the relay path, read the identity key with `getPublicKey({ identityKey: true })`, and check the network from the app's own server state (for example, a testnet-only deployment), not from the wallet.
+- `desktopToken` is a wallet-equivalent bearer secret: never log it or put it in a URL. The QR is a short-lived invitation that the first scanner pairs with; keep it out of screen shares and logs.
+
 ## Manifest (BRC-73)
 
 The wallet reads `https://{originator}/manifest.json` to show one grouped permission prompt. Ship `public/manifest.json`, starting from `assets/manifest.template.json`:
@@ -105,3 +115,4 @@ Resolve these ids with the `docs_url` tool (or `facts.md`, section "Docs links")
 - `reference.wallet-api`: every BRC-100 method and its arguments.
 - `get-started.quick-start-browser`: a first payment from a web app.
 - `guides.identity-auth`: authenticating users with their wallet.
+- The `@bsv/wallet-relay` README (https://github.com/bsv-blockchain/ts-stack/tree/main/packages/wallet/ts-wallet-relay): Wallet Relay setup, Next.js routes and the full API.
