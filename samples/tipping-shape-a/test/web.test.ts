@@ -984,7 +984,7 @@ describe('web app and the real relay', () => {
   async function startRelay(ancestors: Record<string, object> = {}) {
     const broadcasterFetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
       const url = String(input)
-      if (!url.startsWith(BROADCASTER)) throw new Error(`unexpected fetch ${url}`)
+      if (new URL(url).origin !== new URL(BROADCASTER).origin) throw new Error(`unexpected fetch ${url}`)
       const txid = init.method === 'POST' ? Transaction.fromHexEF(String(init.body)).id('hex') : url.split('/').pop()!
       if (init.method !== 'POST' && ancestors[txid]) return new Response(JSON.stringify(ancestors[txid]), { status: 200 })
       const body = init.method === 'POST' ? { txid, status: 202, txStatus: 'RECEIVED' } : { txid, txStatus: 'SEEN_ON_NETWORK' }

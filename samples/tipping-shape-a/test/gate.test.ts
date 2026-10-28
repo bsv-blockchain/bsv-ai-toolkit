@@ -336,7 +336,7 @@ describe('funding coins (offline: BSV Broadcaster and WhatsOnChain answer from f
     expect(beef.isValid(false)).toBe(true)
     // P came from BSV Broadcaster: WhatsOnChain was asked only for its proof, never its hex.
     expect(f.urls.some(u => u.endsWith(`/tx/${p.id('hex')}/hex`))).toBe(false)
-    expect(f.urls.filter(u => u.startsWith(BROADCASTER))).toEqual([`${BROADCASTER}/tx/${p.id('hex')}`, `${BROADCASTER}/tx/${g.id('hex')}`])
+    expect(f.urls.filter(u => new URL(u).origin === new URL(BROADCASTER).origin)).toEqual([`${BROADCASTER}/tx/${p.id('hex')}`, `${BROADCASTER}/tx/${g.id('hex')}`])
   }, 20_000)
 
   it('refuses an unmined tx BSV Broadcaster never saw, and hex that does not hash to the txid', async () => {
