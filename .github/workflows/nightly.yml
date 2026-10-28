@@ -1,0 +1,346 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+# The one freshness issue, found by this exact title; the gate job adds its section to the same issue.
+env:
+  ISSUE_TITLE: 'Freshness: content drift'
+
+jobs:
+  freshness:
+    name: Content freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Output directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/freshness"
+          echo "OUT=$RUNNER_TEMP/freshness" >> "$GITHUB_ENV"
+
+      - name: Versions check (npm, runar head, Arcade hosts)
+        id: versions
+        env:
+          # Lifts GitHub's unauthenticated API rate limit for the runar head read; never printed.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          code=0
+          node packages/mcp/build/cli/versions-check.js --json > "$OUT/drift.json" || code=$?
+          cat "$OUT/drift.json"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Verified dates within 60 days
+        id: facts
+        run: |
+          code=0
+          pnpm check:facts --max-age-days 60 > "$OUT/facts.txt" 2>&1 || code=$?
+          cat "$OUT/facts.txt"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Links
+        id: links
+        run: |
+          code=0
+          pnpm check:links > "$OUT/links.txt" 2>&1 || code=$?
+          cat "$OUT/links.txt"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      # llms.txt links pages on either docs host; pages are compared by their /docs/<path>, ignoring the host.
+      - name: llms.txt against docs-index
+        id: llms
+        run: |
+          node --input-type=module - <<'JS'
+          import { readFileSync, writeFileSync, appendFileSync } from 'node:fs'
+          const out = process.env.OUT
+          const source = 'https://bsv.writedocs.io/llms.txt'
+          // drift: docs-index ids missing from llms.txt (likely broken links). info: llms.txt pages the curated
+          // index does not list; report-only, never drift on its own.
+          const lines = []
+          const info = []
+          try {
+            const { ids } = JSON.parse(readFileSync('packages/mcp/content/docs-index.json', 'utf8'))
+            const res = await fetch(source, { signal: AbortSignal.timeout(20_000) })
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            const text = await res.text()
+            const linked = new Set([...text.matchAll(/\/docs\/([^\s()<>"'`]+?)\.md/g)].map((m) => m[1]))
+            // The API reference is served under /reference/ (no /docs/), one page per method: a reference/* id
+            // counts as listed when llms.txt links its page or a page below it there.
+            const reference = [...text.matchAll(/\/reference\/([^\s()<>"'`]+?)\.md/g)].map((m) => `reference/${m[1]}`)
+            const listed = (path) =>
+              linked.has(path) || (path.startsWith('reference/') && reference.some((p) => p === path || p.startsWith(`${path}/`)))
+            const indexed = new Set(Object.values(ids).map((e) => e.path))
+            const unindexed = [...linked].filter((p) => !indexed.has(p)).sort()
+            const unlisted = Object.entries(ids).filter(([, e]) => !listed(e.path)).map(([id, e]) => `${id} (${e.path})`).sort()
+            if (unlisted.length) lines.push('docs-index.yaml ids whose path is absent from llms.txt:', '', ...unlisted.map((s) => `- \`${s}\``), '')
+            if (unindexed.length) info.push(`<details><summary>${unindexed.length} llms.txt pages not in docs-index.yaml (informational)</summary>`, '', ...unindexed.map((p) => `- \`/docs/${p}.md\``), '', '</details>', '')
+          } catch (e) {
+            lines.push(`Could not compare ${source} with docs-index: ${e.message}`, '')
+          }
+          writeFileSync(`${out}/llms.md`, lines.join('\n'))
+          writeFileSync(`${out}/llms-info.md`, info.join('\n'))
+          console.log(lines.length ? lines.join('\n') : 'every docs-index id is in llms.txt')
+          if (info.length) console.log(info.join('\n'))
+          appendFileSync(process.env.GITHUB_OUTPUT, `drift=${lines.length ? 'true' : 'false'}\n`)
+          JS
+
+      - name: Create or update the freshness issue
+        if: steps.versions.outputs.code != '0' || steps.facts.outputs.code != '0' || steps.links.outputs.code != '0' || steps.llms.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERSIONS_CODE: ${{ steps.versions.outputs.code }}
+          FACTS_CODE: ${{ steps.facts.outputs.code }}
+          LINKS_CODE: ${{ steps.links.outputs.code }}
+        run: |
+          node --input-type=module - <<'JS'
+          import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+          const out = process.env.OUT
+          const read = (f) => (existsSync(`${out}/${f}`) ? readFileSync(`${out}/${f}`, 'utf8').trim() : '')
+          const cell = (v) => String(v ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ')
+          const body = [`Nightly freshness run: ${process.env.RUN_URL}`, '']
+          if (process.env.VERSIONS_CODE !== '0') {
+            body.push('## Versions', '')
+            try {
+              const rows = JSON.parse(read('drift.json')).rows.filter((r) => r.drift || !(r.ageDays <= 60))
+              body.push('| name | pinned | latest | verified | age (days) | note |', '| --- | --- | --- | --- | --- | --- |')
+              for (const r of rows) body.push(`| ${[r.name, r.pinned, r.latest, r.verifiedOn, r.ageDays, r.note].map(cell).join(' | ')} |`)
+            } catch {
+              body.push('versions-check produced no report; see the run log.')
+            }
+            body.push('')
+          }
+          if (process.env.FACTS_CODE !== '0') body.push('## Verified dates', '', '```', read('facts.txt'), '```', '')
+          if (process.env.LINKS_CODE !== '0') body.push('## Links', '', '```', read('links.txt'), '```', '')
+          const llms = read('llms.md')
+          const llmsInfo = read('llms-info.md')
+          if (llms || llmsInfo) body.push('## llms.txt', '', ...(llms ? [llms, ''] : []), ...(llmsInfo ? [llmsInfo, ''] : []))
+          writeFileSync(`${out}/issue.md`, body.join('\n'))
+          JS
+          # Exact-title match over the open issues (search syntax would read `Freshness:` as a qualifier).
+          number="$(gh issue list --state open --limit 200 --json number,title \
+            | jq -r --arg t "$ISSUE_TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$OUT/issue.md"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$OUT/issue.md"
+          fi
+
+      - name: Fail on drift, stale dates or broken links
+        if: steps.versions.outputs.code != '0' || steps.facts.outputs.code != '0' || steps.links.outputs.code != '0'
+        run: |
+          echo "::error::versions-check=${{ steps.versions.outputs.code }} check:facts=${{ steps.facts.outputs.code }} check:links=${{ steps.links.outputs.code }}"
+          exit 1
+
+  # The testnet gate (samples/tipping-shape-a/scripts/gate.ts): one real tip end to end through Arcade, at 0-conf.
+  # Runs only when the gate key secret exists. The key reaches the gate through the env mapping of the
+  # steps that need it, never a file or the log; the gate prints only addresses and identity keys.
+  gate:
+    name: Testnet gate (bsv-tipping-demo)
+    # After freshness, whatever its result, so the two jobs never write the freshness issue at the same time.
+    needs: freshness
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    # The gate spends the coins at one funding address: two runs at once would spend the same coins.
+    concurrency:
+      group: bsv-gate
+      cancel-in-progress: false
+    steps:
+      # `if:` cannot read secrets, so this step turns the secret's presence into an output the others test.
+      - name: Gate key present
+        id: key
+        env:
+          HAS_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY != '' }}
+        run: |
+          echo "has_key=$HAS_KEY" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_KEY" != 'true' ]; then echo "::notice::the testnet gate key secret is not set; skipping the gate"; fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.has_key == 'true'
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        if: steps.key.outputs.has_key == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.has_key == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: steps.key.outputs.has_key == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # Writes docs/evals/gate-<time>.md (pass or fail); the run dir under ~/.bsv-gate/runs/ is deleted unless
+      # something is left to recover. The step timeout leaves time for the failure steps below.
+      - name: Gate run
+        id: gate
+        if: steps.key.outputs.has_key == 'true'
+        timeout-minutes: 30
+        shell: bash
+        env:
+          BSV_MCP_NETWORK_TESTS: '1'
+          BSV_NETWORK: testnet
+          BSV_TESTNET_GATE_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY }}
+        run: pnpm -F bsv-tipping-demo gate run 2>&1 | tee "$RUNNER_TEMP/gate.log"
+
+      # The gate's log and record are scanned for the key before either is uploaded or quoted in the issue (an
+      # issue's edit history cannot be scrubbed). The record path comes from the gate's own `wrote <file>` line, so
+      # an older run's record is never used. The key goes to grep as a pattern file, never in argv; grep exits
+      # 0 found, 1 not found, 2 could not read, and anything but 1 withholds the file.
+      - name: Scan the gate output for the key
+        id: scan
+        if: always() && steps.key.outputs.has_key == 'true'
+        env:
+          GATE_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY }}
+        run: |
+          state() {
+            [ -f "$1" ] || { echo none; return; }
+            local found=0
+            grep -qiF -f <(printf '%s' "$GATE_KEY" | tr -d '[:space:]') -- "$1" || found=$?
+            if [ "$found" -eq 1 ]; then echo clean; else echo withheld; fi
+          }
+          log="$RUNNER_TEMP/gate.log"
+          record=""
+          if [ -f "$log" ]; then
+            record="$(sed -n 's/^.*wrote \(.*\/docs\/evals\/gate-[^/]*\.md\)$/\1/p' "$log" | tail -n 1)"
+          fi
+          log_state="$(state "$log")"
+          record_state=none
+          if [ -n "$record" ]; then record_state="$(state "$record")"; fi
+          {
+            echo "record=$record"
+            echo "record_state=$record_state"
+            echo "log_state=$log_state"
+          } >> "$GITHUB_OUTPUT"
+          echo "gate log: $log_state; gate record: $record_state"
+          if [ "$log_state" = withheld ] || [ "$record_state" = withheld ]; then
+            echo "leak=true" >> "$GITHUB_OUTPUT"
+            echo "::error::the gate output contains key material (or could not be read); it is withheld"
+            exit 1
+          fi
+          echo "leak=false" >> "$GITHUB_OUTPUT"
+
+      # The gate's record; CI does not commit it.
+      - name: Upload the gate record
+        if: always() && steps.scan.outputs.record_state == 'clean'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-record
+          path: ${{ steps.scan.outputs.record }}
+          if-no-files-found: error
+
+      # The steps below test the gate step's own outcome (not failure(), which also sees the freshness job): it is
+      # not 'success' when the gate failed, timed out, or never ran because a setup step failed.
+      # A kept run dir holds the gate wallets' storage, which cannot spend the coins still in them without the root
+      # key. It is kept as an artifact for `pnpm gate recover --dir <dir>`, run together with that key, also when the
+      # run is cancelled. It holds no key (the key comes from the env, never a file); checked here before anything
+      # is uploaded.
+      - name: Run dirs hold no key
+        id: runs
+        if: always() && steps.key.outputs.has_key == 'true' && steps.gate.outcome != 'success'
+        env:
+          GATE_KEY: ${{ secrets.BSV_TESTNET_GATE_KEY }}
+        run: |
+          runs="$HOME/.bsv-gate/runs"
+          if [ ! -d "$runs" ] || [ -z "$(ls -A "$runs")" ]; then
+            echo "no run dir was kept"
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # As above: the key as a pattern file; 0 found, 1 not found, 2 could not read.
+          found=0
+          grep -rqiF -f <(printf '%s' "$GATE_KEY" | tr -d '[:space:]') -- "$runs" || found=$?
+          refused=""
+          if [ -n "$(find "$runs" -name '*.key')" ]; then refused="it holds a .key file"
+          elif [ "$found" -eq 0 ]; then refused="a file in it contains the gate key"
+          elif [ "$found" -ne 1 ]; then refused="part of it could not be read, so it could not be checked for the key"
+          fi
+          if [ -n "$refused" ]; then
+            echo "::error::a run dir was kept but is not uploaded: $refused"
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "refused=$refused" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+      - name: Upload the kept run dirs
+        if: always() && steps.runs.outputs.upload == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-run-dirs
+          path: ~/.bsv-gate/runs/
+          if-no-files-found: error
+
+      # The same exact-title lookup as the freshness job: adds (or replaces) the `## Gate` section of the open
+      # freshness issue, or opens that issue when none is open. It quotes the log and the record only when the scan
+      # found them clean.
+      - name: Add the gate failure to the freshness issue
+        if: ${{ !cancelled() && steps.key.outputs.has_key == 'true' && (steps.gate.outcome != 'success' || steps.scan.outputs.leak == 'true') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          RECORD: ${{ steps.scan.outputs.record }}
+          RECORD_STATE: ${{ steps.scan.outputs.record_state }}
+          LOG_STATE: ${{ steps.scan.outputs.log_state }}
+          UPLOADED: ${{ steps.runs.outputs.upload }}
+          REFUSED: ${{ steps.runs.outputs.refused }}
+        run: |
+          out="$RUNNER_TEMP/gate-issue"
+          mkdir -p "$out"
+          number="$(gh issue list --state open --limit 200 --json number,title \
+            | jq -r --arg t "$ISSUE_TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh issue view "$number" --json body --jq .body > "$out/current.md"
+          else
+            printf 'Nightly freshness run: %s\n' "$RUN_URL" > "$out/current.md"
+          fi
+          OUT="$out" node --input-type=module - <<'JS'
+          import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+          const { OUT: out, RUN_URL, GATE_OUTCOME, RECORD, RECORD_STATE, LOG_STATE, UPLOADED, REFUSED } = process.env
+          const read = (f) => (f && existsSync(f) ? readFileSync(f, 'utf8').trim() : '')
+          const withheld = (what) => `The ${what} was withheld: it contained key material, or could not be read to check.`
+          const section = ['## Gate', '']
+          section.push(GATE_OUTCOME === 'success' ? `The testnet gate passed, but its output was withheld: ${RUN_URL}` : `The testnet gate failed: ${RUN_URL}`, '')
+          if (UPLOADED === 'true') {
+            section.push('Its run dir was kept: download the `gate-run-dirs` artifact and run `pnpm gate recover --dir <run dir>` with the gate key.', '')
+          }
+          if (REFUSED) {
+            section.push(`A run dir, which may hold coins still to recover, existed on the runner and was NOT uploaded: ${REFUSED}. It is lost with the runner, and with it the wallet storage that spends any coins left in it.`, '')
+          }
+          if (RECORD_STATE === 'clean') {
+            const record = read(RECORD)
+            if (record) section.push('<details><summary>gate record</summary>', '', record.replace(/^#{1,2} /gm, '### '), '', '</details>', '')
+          } else if (RECORD_STATE === 'withheld') {
+            section.push(withheld('gate record'), '')
+          }
+          if (LOG_STATE === 'clean') {
+            const log = read(`${process.env.RUNNER_TEMP}/gate.log`).split('\n').slice(-40).join('\n')
+            if (log) section.push('```', log.replaceAll('```', "'''"), '```', '')
+          } else if (LOG_STATE === 'withheld') {
+            section.push(withheld('gate log'), '')
+          }
+          // Replace an earlier Gate section (up to the next level-2 heading), else append one.
+          const current = read(`${out}/current.md`)
+          const kept = current.replace(/^## Gate\r?\n[\s\S]*?(?=^## |(?![\s\S]))/m, '').trimEnd()
+          writeFileSync(`${out}/issue.md`, `${kept}\n\n${section.join('\n')}`)
+          JS
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$out/issue.md"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$out/issue.md"
+          fi

@@ -1,262 +1,164 @@
-# @bsv/mcp - MCP Server for Bitcoin SV Development
+# BSV AI DevKit
 
-[![NPM Version](https://img.shields.io/npm/v/@bsv/mcp)](https://www.npmjs.com/package/@bsv/mcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 
-This package provides a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server designed to assist developers working with key Bitcoin SV (BSV) repositories. It offers specialized tools and prompts accessible through MCP-compatible clients (like Windsurf, Claude Desktop, Continue, etc.), enabling Large Language Models (LLMs) to understand and interact with the BSV codebase more effectively.
+Tools and dated knowledge for building BSV applications with AI coding agents, testnet first. This repository holds the `@bsv/mcp` server, the `bsv-dev` agent skill, the content both of them serve, and sample apps.
 
-**Note:** This server provides the *actions* (tools) and *workflows* (prompts). It relies on a separate MCP server, specifically `@modelcontextprotocol/server-filesystem`, to provide the *file content* context from locally cloned repositories. **Both servers must be configured in your MCP client.**
+## What is here
 
-## Features / Capabilities
+| Path | What it is |
+| --- | --- |
+| `content/` | The single source of facts and rules: dated facts (`facts/*.md`), the guardrails `G-01`..`G-38` (`guardrails.yaml`), pinned versions (`versions.json`), the docs index, custody shapes and the threat model. Facts are edited here and nowhere else. |
+| `packages/mcp/` | `@bsv/mcp` 2.0.0, the MCP server. `packages/mcp/content/` is a generated snapshot of `content/` that ships in the npm package. |
+| `packages/skill/` | The `bsv-dev` skill 0.1.0 and Claude Code plugin: `skills/bsv-dev/` (`SKILL.md`, the generated `references/`, assets and scripts), the commands `/bsv-review` and `/bsv-design`, and the plugin manifest, which bundles `bsv-mcp` and `bsv-docs`. Unreleased until v2.0.0 is tagged. |
+| `packages/sync/` | Private build step: renders `content/` into `packages/mcp/content/` and the skill's references, and lints facts and links. |
+| `samples/` | Sample apps; see [`samples/README.md`](samples/README.md). |
+| `docs/` | The design spec and implementation plans (`docs/superpowers/`), the [phase-1 exit checklist](docs/evals/phase-1-exit-checklist.md) and agent evals (`docs/evals/`), the WriteChoice briefing (`docs/writechoice/`) and the `@bsv/simple-mcp` deprecation kit (`docs/deprecation/`). |
+| `setup.sh` | Clones the BSV repositories that `code_search`, `find_function_definition` and `brc_lookup` read locally. |
 
-This server exposes the following capabilities to your MCP client and LLM:
+## Install
 
-### Tools
-
-Tools allow the LLM (with your approval) to perform actions:
-
-* **`brc_lookup`**: Retrieves the content of a specific BRC (Bitcoin Request for Comment) Markdown file directly from the `bitcoin-sv/BRCs` GitHub repository (master branch).
-* Input: `brc_identifier` (e.g., "0001", "token")
-* **`code_search`**: Searches for code snippets or patterns within the locally cloned BSV repositories using `ripgrep` (rg) if available (recommended), falling back to `grep`.
-* Input: `query`, optional `repository_name`, optional `file_extension` (e.g., `*.ts`, requires `rg`)
-* **`find_function_definition`**: Attempts to locate potential definitions of functions or methods within the cloned repositories using basic search patterns.
-* Input: `function_name`, optional `repository_name`
-
-### Prompts
-
-Prompts provide templates or starting points for common developer tasks:
-
-* **`/summarize_brc`**: Instructs the LLM to summarize a specific BRC, suggesting the relevant resource URI for the client to attach.
-* Input: `brc_identifier`
-* **`/explain_code`**: Instructs the LLM to explain a piece of code identified by a file URI (typically provided by the `server-filesystem`).
-* Input: `code_reference` (file URI, e.g., `file:///path/to/repo/file.ts#L10-L20`)
-* **`/generate_usage_example`**: Asks the LLM to generate a code example for a specific BSV feature or function, optionally specifying a preferred SDK.
-* Input: `feature_description`, optional `sdk_preference`
-* **`/find_related_code`**: Instructs the LLM to use the `code_search` tool to find code snippets related to a given concept.
-* Input: `concept`
-
-## Prerequisites
-
-Before configuring this server, ensure you have:
-
-1. **Node.js and npm:** Required to run `npx`. Download from [nodejs.org](https://nodejs.org/).
-2. **Git:** Required to clone the BSV repositories.
-3. **Locally Cloned BSV Repositories:** You need local copies of the BSV repositories. Use the setup script provided below.
-4. **An MCP Client:** An application that supports MCP, such as [Windsurf Editor](https://codeium.com/windsurf), [Claude Desktop](https://claude.ai/download), [Continue](https://github.com/continuedev/continue), etc.
-5. **(Optional but Recommended) `ripgrep`:** For significantly better performance and features in the `code_search` tool. Install via your system's package manager (e.g., `brew install ripgrep`, `sudo apt install ripgrep`, `choco install ripgrep`).
-
-## Setup Instructions
-
-Follow these steps carefully:
-
-### Step 1: Install Prerequisites
-
-Ensure Node.js, npm, and Git are installed and accessible in your system's PATH. Install `ripgrep` if desired.
-
-### Step 2: Clone BSV Repositories using the Setup Script
-
-This script clones the necessary BSV repositories into a single directory you specify.
-
-1. Save the following script content as `setup_bsv_repos.sh`:
+Skill (any agent that reads Agent Skills), available once v2.0.0 is released:
 
 ```bash
-#!/usr/bin/env bash
-
-# --- Configuration ---
-REPOS=(
-  "https://github.com/bitcoin-sv/wallet-toolbox.git"
-  "https://github.com/bitcoin-sv/wallet-toolbox-examples.git"
-  "https://github.com/bitcoin-sv/wui.git"
-  "https://github.com/bitcoin-sv/ts-sdk.git"
-  "https://github.com/bitcoin-sv/BRCs.git"
-  "https://github.com/bitcoin-sv/metanet-desktop.git"
-  "https://github.com/bitcoin-sv/arc.git"
-  "https://github.com/bitcoin-sv/bdk.git"
-  "https://github.com/bitcoin-sv/py-sdk.git"
-  "https://github.com/bitcoin-sv/p2p.git"
-  "https://github.com/bitcoin-sv/authsocket.git"
-  "https://github.com/bitcoin-sv/authsocket-client.git"
-)
-
-# --- Argument Handling ---
-if [ -z "$1" ]; then
-  echo "Usage: $0 <target_directory>"
-  echo "Please provide the absolute path where the repositories should be cloned."
-  exit 1
-fi
-TARGET_DIR="$1"
-SCRIPT_START_DIR=$(pwd)
-
-# --- Directory Creation ---
-echo "Target directory: $TARGET_DIR"
-echo "Creating directory (if it doesn't exist)..."
-if ! mkdir -p "$TARGET_DIR"; then
-  echo "ERROR: Failed to create directory '$TARGET_DIR'. Check permissions." >&2
-  exit 1
-fi
-echo "Directory created or already exists."
-
-# --- Change Directory ---
-echo "Changing to target directory..."
-if ! cd "$TARGET_DIR"; then
-  echo "ERROR: Failed to change directory to '$TARGET_DIR'." >&2
-  exit 1
-fi
-
-# --- Cloning Repositories ---
-echo "Starting repository cloning..."
-CLONE_FAILURES=0
-for repo_url in "${REPOS[@]}"; do
-  subdir_name=$(basename "$repo_url" .git)
-  echo "----------------------------------------"
-  echo "Processing: $repo_url"
-  if [ -d "$subdir_name" ]; then
-    echo "Directory '$subdir_name' already exists. Skipping clone. (Run 'git pull' manually inside to update)."
-  else
-    echo "Cloning into '$subdir_name'..."
-    if git clone --depth 1 "$repo_url" "$subdir_name"; then
-      echo "Successfully cloned '$subdir_name'."
-    else
-      echo "ERROR: Failed to clone '$repo_url'." >&2
-      ((CLONE_FAILURES++))
-    fi
-  fi
-done
-
-# --- Return to Original Directory ---
-echo "----------------------------------------"
-echo "Returning to original directory: $SCRIPT_START_DIR"
-if ! cd "$SCRIPT_START_DIR"; then
- echo "Warning: Failed to change back to the starting directory." >&2
-fi
-
-# --- Summary ---
-if [ "$CLONE_FAILURES" -eq 0 ]; then
-  echo "All repositories processed successfully."
-  exit 0
-else
-  echo "WARNING: $CLONE_FAILURES repository clone(s) failed. Please check the output above." >&2
-  exit 1
-fi
+npx skills add bsv-blockchain/bsv-ai-toolkit
 ```
 
-2. Make the script executable:
+Claude Code plugin (skill plus MCP), available once v2.0.0 is released:
 
 ```bash
-chmod +x setup_bsv_repos.sh
+claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
 ```
 
-3. Run the script, providing the **absolute path** where you want the clones stored:
+MCP server only, in Claude Code:
 
 ```bash
-./setup_bsv_repos.sh "/path/to/your/bsv-clones"
+claude mcp add bsv-mcp -e BSV_NETWORK=testnet -- npx -y @bsv/mcp
 ```
 
-**Remember this exact path!**
+`@bsv/mcp` 2.0.0 is not released yet. Until it is, `npx @bsv/mcp` resolves the 1.x release, which this README does not describe; run 2.0.0 from a clone instead (see [Development](#development)).
 
-### Step 3: Configure Your MCP Client
-
-Edit your client's MCP configuration file (e.g., `mcp_config.json` for Windsurf, `claude_desktop_config.json` for Claude Desktop). Add **both** the `server-filesystem` and `@bsv/mcp` servers.
-
-**IMPORTANT:**
-
-* Replace `/path/to/your/bsv-clones` with the **exact, absolute path** you used when running `setup_bsv_repos.sh`.
-* Ensure this path is used correctly for **both** server entries (`args` for filesystem, `env.BSV_REPOS_DIR` for `@bsv/mcp`).
+Other MCP clients take the same command in their JSON configuration:
 
 ```json
 {
   "mcpServers": {
-
-    "bsv-filesystem-context": {
+    "bsv-mcp": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/path/to/your/bsv-clones"
-      ]
-    },
-
-    "@bsv/mcp": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@bsv/mcp"
-      ],
-      "env": {
-        "BSV_REPOS_DIR": "/path/to/your/bsv-clones"
-      }
+      "args": ["-y", "@bsv/mcp"],
+      "env": { "BSV_NETWORK": "testnet" }
     }
   }
 }
 ```
 
-### Step 4: Restart Your MCP Client
+**Local code search (optional).** `code_search` and `find_function_definition` need local clones; `brc_lookup` uses them when present. Clone them and pass the directory to the server:
 
-Close and reopen your MCP client application (Windsurf, Claude, etc.) to apply the configuration changes. It should now launch both servers.
+```bash
+./setup.sh ~/bsv-repos      # ts-stack, BRCs, arcade, bsv-desktop, go-wallet-toolbox, runar (shallow)
+./setup.sh --list           # just print the repository URLs
+claude mcp add bsv-mcp -e BSV_NETWORK=testnet -e BSV_REPOS_DIR="$HOME/bsv-repos" -- npx -y @bsv/mcp
+```
 
-Usage
+The server starts without `BSV_REPOS_DIR`; the two search tools then answer with a hint to run `setup.sh`. Install [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) for faster search; without it they fall back to `grep`.
 
-Once configured, you can interact with the server through your MCP client's LLM interface.
+**Testnet coins.** Get them from the faucet at [bsvfaucet.com](https://bsvfaucet.com): sign in with a BSV wallet, up to 10M satoshis per request, one request per 24 hours. Mainnet has no faucet.
 
-Ask questions: "Find where Transaction.sign is defined in the ts-sdk", "Explain the BRC-62 standard", "Show me examples of using the wallet-toolbox to derive keys".
+## @bsv/mcp tools
 
-Use prompts: Type / in your client (if supported) to see available prompts like /summarize_brc, /explain_code, etc.
+| Tool | Input | What it does |
+| --- | --- | --- |
+| `arcade_submit` | `hex`, `arcadeUrl?`, `network?`, `waitForSeen?` (true), `timeoutMs?` (15000), `callbackUrl?`, `callbackToken?`, `fullStatusUpdates?` | Broadcasts raw or EF hex to Arcade `POST /tx` (refuses BEEF: convert to EF or raw first); a 2xx is provisional, so it re-reads `GET /tx/{txid}` and, with `waitForSeen`, polls until `SEEN_ON_NETWORK` or later with no competing tx, or the timeout. Returns `txid`, `txStatus`, `verdict`, `competingTxs`. |
+| `arcade_status` | `txid`, `arcadeUrl?`, `callbackToken?` | Reads `GET /tx/{txid}` with a `verdict` and `isFinalForApp`; a 404 means this Arcade was never given the txid (no verdict, not a rejection). Says whether `rawTx` is EF or raw. |
+| `arcade_policy` | `arcadeUrl?` | Reads `GET /policy`, with the mining fee as `satPerKb`. |
+| `arcade_health` | `arcadeUrl?` | Reads `GET /health` (version, block height, upstream nodes). |
+| `check_guardrails` | `path` (absolute), `shape?` (`A`, `B`, `auto`), `include?`, `exclude?` | Statically checks a project against the guardrails and returns findings (`id`, `severity`, `file`, `line`, `fix`, `ref: bsv://guardrails#G-xx`) plus the passed, not-applicable and manual-checklist ids. Read-only: never edits files. Rejects a relative path. |
+| `brc_lookup` | `brc` (`29`, `0029`, `BRC-29`) | Returns a BRC as Markdown: local clone first (`$BSV_REPOS_DIR/BRCs`), GitHub fallback (`bsv-blockchain/BRCs`). |
+| `versions_check` | none | Compares the pinned stack in `versions.json` with npm `latest`, the Rúnar git head and the Arcade version on every known testnet and mainnet host; one row per item with drift and age. A check that fails counts as drift. |
+| `docs_url` | `id` (e.g. `guides.payments`) | Resolves a docs id from `bsv://docs/index` to a live page and its Markdown URL, trying each docs host and then the legacy URL; a "Page Not Found" body counts as a miss. |
+| `code_search` | `query`, `repository_name?`, `file_extension?` | Regex search with ripgrep (`grep` fallback) over the clones under `BSV_REPOS_DIR`; first matching line per file. |
+| `find_function_definition` | `function_name`, `repository_name?` | Finds likely definitions of a function, method or constant (TypeScript, JavaScript, Python, Go, Rust, Java) under `BSV_REPOS_DIR`, searching `src/`, `lib/` and `source/` first. |
 
-Tool Invocation: The LLM may suggest using tools like code_search or brc_lookup. Your MCP client will typically ask for your approval before executing them.
+A transaction is final for an app at `SEEN_ON_NETWORK` or later with no `competingTxs`; `arcade_status` reports exactly that as `isFinalForApp`. Nothing in the kit waits for `MINED`.
 
-Context: Remember to attach relevant files/resources from the bsv-filesystem-context server when asking questions about specific code (e.g., attach file:///path/to/your/bsv-clones/ts-sdk/src/transaction.ts when asking about that file).
+Suppress a `check_guardrails` finding with `// bsv-guardrail-ignore G-xx reason` (or the `#`, `<!--`, `/*` comment forms) on the flagged line or the line above.
 
-Troubleshooting
+For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [--max-age-days N]` (after `pnpm build`) prints the `versions_check` table and exits 1 on drift or on a verified date older than N days (default 60). With `GITHUB_TOKEN` set, it sends that token to `api.github.com` (and nowhere else) to lift GitHub's unauthenticated rate limit.
 
-Configuration Error / Request Failed:
+## Resources and prompts
 
-Verify the absolute paths in your mcp_config.json are correct and point to the directory created by setup_bsv_repos.sh.
+**Resources.** Each Markdown resource starts with `verified: YYYY-MM-DD` and `source: @bsv/mcp v<version>`; `bsv://docs/index` is JSON carrying the same two fields.
 
-Ensure the BSV_REPOS_DIR environment variable is set correctly for the `@bsv/mcp` entry.
+| URI | Content |
+| --- | --- |
+| `bsv://facts/{arcade,networks,whatsonchain,wallet-limits,consensus,fees,runar,tokens-1color,versions,payment-channels}` | Dated facts, one resource per file |
+| `bsv://guardrails` | Every guardrail `G-01`..`G-38`: rule, reason, custody shape, how it is checked, refs |
+| `bsv://guardrails{#id}` | One guardrail, e.g. `bsv://guardrails#G-09`; this is the `ref` every finding carries |
+| `bsv://custody-shapes` | Shape A (the user's wallet holds the keys) and shape B (a server wallet does) |
+| `bsv://threat-model` | What a BSV app defends against, what it does not, and what it must tell users |
+| `bsv://docs/index` | Docs ids, paths and titles; resolve an id with `docs_url` |
+| `bsv://simple/api`, `bsv://simple/gotchas` | The `@bsv/simple` 0.7 API surface and its traps |
+| `bsv://brc/{id}` | A BRC as Markdown, e.g. `bsv://brc/0029`, via the same lookup as `brc_lookup` (upstream text, no `verified:` prefix) |
 
-Make sure Node.js/npm are installed and in your PATH.
+**Prompts.**
 
-Try running each server command manually from your terminal (including setting export BSV_REPOS_DIR=... before running npx `@bsv/mcp`) to see detailed error messages.
+| Prompt | Arguments | Purpose |
+| --- | --- | --- |
+| `review_against_guardrails` | `path` | Run `check_guardrails`, fix the errors, then walk the manual checklist |
+| `tokenize_with_1color` | `mode` (`deploy`, `transfer`, `mint`), `assetId?` | Build BRC-162 1Color token outputs (encoding guidance only) |
+| `integrate_simple` | `framework` (`next`, `express`, `react`, `node`) | Add `@bsv/simple` to a project, testnet first |
+| `add_simple_feature` | `feature` (`payments`, `tokens`, `inscriptions`, `messagebox`, `certificates`, `did`, `overlay`) | Add one `@bsv/simple` feature |
+| `debug_simple` | `symptom` | Diagnose a `@bsv/simple` problem against the known gotchas |
 
-Check your MCP client's specific logs for more detailed error information about server startup failures.
+## Environment
 
-code_search / find_function_definition Issues:
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `BSV_NETWORK` | `testnet` | `testnet` or `mainnet`. Picks the default Arcade and gates mainnet broadcast. Any other value stops the server at startup. |
+| `ARCADE_URL` | per network | Arcade base URL. Defaults: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
+| `BSV_MCP_ALLOW_MAINNET_BROADCAST` | unset | `1` lets `arcade_submit` broadcast on mainnet. |
+| `BSV_REPOS_DIR` | unset | Directory filled by `setup.sh`. Needed by `code_search` and `find_function_definition`; `brc_lookup` reads the `BRCs` clone there first. |
+| `WOC_API_KEY` | unset | Optional WhatsOnChain key, reserved for `versions_check`; no tool sends it today. |
+| `BSV_MCP_NETWORK_TESTS` | unset | Test suite only: `1` enables the tests that call live services. |
 
-These tools require the BSV_REPOS_DIR environment variable to be set correctly when the server launches.
+## Safety
 
-code_search works best with ripgrep (rg) installed. If rg is not found, it falls back to grep, which might be slower or less accurate for some patterns/file types.
+- **Testnet by default.** With no configuration the server uses testnet and the testnet Arcade. Mainnet is real money and is used only when you configure it.
+- **Set `BSV_NETWORK=mainnet` for any mainnet Arcade**, including custom and self-hosted hosts. The MCP gates mainnet broadcast on the configured network, not on the URL: it refuses known mainnet hosts while on testnet, but it cannot classify a host it does not know, so an unknown mainnet Arcade under `BSV_NETWORK=testnet` would be treated as testnet.
+- **Mainnet broadcast needs a second switch.** On mainnet, `arcade_submit` also requires `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`; without it the tool returns an error before contacting Arcade.
+- **Network and host must agree.** An `ARCADE_URL` that is a known host of the other network stops the server at startup, and `arcade_submit` refuses an `arcadeUrl` that is a known host of the other network. The Teranode test network host (`arcade-v2-ttn-us-1.bsvblockchain.tech`) is neither testnet nor mainnet; it is accepted only when you name it, with a warning. Read-only tools (`arcade_status`, `arcade_policy`, `arcade_health`) may query any Arcade.
+- **No keys.** No tool takes, stores or signs with a private key, WIF or seed phrase; `arcade_submit` broadcasts transactions that are already signed. `check_guardrails` only reads the project, and the prompts tell the agent never to ask for or print a key.
+- **Logs.** The startup line on stderr shows the Arcade origin only, never its path, query or credentials.
 
-Ensure the repository names used in arguments match the directory names created by the setup script (e.g., ts-sdk, wallet-toolbox).
+## Development
 
-brc_lookup Fails:
+Requires Node 22 or later (the tipping sample needs 22.9 or later) and pnpm. The repo pins pnpm 11.22.0 in `packageManager`; run `corepack enable` once and corepack picks that version. Node 25 and later no longer bundle corepack; there, or wherever corepack is missing, run `npm install -g pnpm@11.22.0` instead.
 
-Ensure the brc_identifier provided accurately maps to a filename in the bitcoin-sv/BRCs repository.
+```bash
+corepack enable            # or, on Node 25+ or without corepack: npm install -g pnpm@11.22.0
+pnpm install
+pnpm build                 # every package
+pnpm test                  # every package; live-service tests run only with BSV_MCP_NETWORK_TESTS=1
+pnpm sync                  # render content/ into packages/mcp/content and the skill references
+pnpm sync:check            # exit 1 and list the paths when a generated file is out of date
+pnpm check:facts           # every fact carries a verified date (--max-age-days N to bound its age)
+pnpm check:links           # every URL in content/ answers (calls the network)
+```
 
-Check your internet connection, as this tool fetches directly from GitHub.
+Edit facts and guardrails in `content/`, run `pnpm sync`, and commit the generated files with the change; CI fails when they drift.
 
-Development
+To run the local build from Claude Code:
 
-To contribute or run locally:
+```bash
+claude mcp add bsv-mcp-dev -e BSV_NETWORK=testnet -- node "$PWD/packages/mcp/build/index.js"
+```
 
-Clone the repository containing this server's source code.
+## Release
 
-Navigate to the project directory.
+Releases are cut by pushing a tag `v<version>` that matches `packages/mcp/package.json`. The `release.yml` workflow runs on `v*` tags only: it builds, tests, checks that generated content is current, and publishes `@bsv/mcp` with npm trusted publishing (GitHub OIDC, with provenance), so no long-lived npm token exists anywhere. Pushing to `main` never publishes. Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
 
-Install dependencies: npm install
+What must be true before and after the first release is tracked in the [phase-1 exit checklist](docs/evals/phase-1-exit-checklist.md).
 
-Build the TypeScript code: npm run build
+## License
 
-Run locally (requires BSV_REPOS_DIR to be set):
-
-export BSV_REPOS_DIR="/path/to/your/bsv-clones"
-node build/index.js
-
-You can then configure your MCP client to run this local node build/index.js command instead of using npx.
-
-License
-
-This project is licensed under the MIT License.
-
----
-
-**Remember to replace `/path/to/your/bsv-clones` with the actual placeholder path users should modify, and ensure the `setup_bsv_repos.sh` script is either included in the repository or clearly linked. Add badges and repository/author details to `package.json` as needed before publishing.**
+MIT; see [`LICENSE.md`](LICENSE.md).

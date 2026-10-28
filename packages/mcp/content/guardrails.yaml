@@ -1,0 +1,351 @@
+# Canonical guardrail list (G-01..G-38). Source: design spec section 7.
+# Fields: id, title, shape (A | B | both), rule, why,
+# detect (static | manual | contract), severity (error | warn), refs.
+
+# Wallet and identity
+- id: G-01
+  title: Wallet connection and identity
+  shape: A
+  rule: "Use `WalletClient('auto', originator)`; identity is `getPublicKey({identityKey:true})`; gate on `waitForAuthentication()`, never `isAuthenticated()`."
+  why: "SDK 3.2.1 throws on a locked wallet."
+  detect: static
+  severity: error
+  refs: ["docs:guides.wallet-aware-apps", "brc:73", "brc:100"]
+
+- id: G-02
+  title: Network check before money paths
+  shape: both
+  rule: "Read `getNetwork()` (A) or the wallet chain (B) and refuse money paths on mismatch with `BSV_NETWORK`; default testnet; mainnet only by explicit config."
+  why: "Local BSV Desktop is often on mainnet."
+  detect: static
+  severity: error
+  refs: ["fact:networks", "fact:versions"]
+
+- id: G-03
+  title: Wallet permission manifest
+  shape: A
+  rule: "Ship `public/manifest.json` with identical `metanet.groupPermissions` and `babbage.groupPermissions`, served as `application/manifest+json`, open CORS, no cache, before any SPA rewrite."
+  why: "BSV Desktop reads `babbage`; silent signing needs the grouped grant."
+  detect: static
+  severity: error
+  refs: ["docs:guides.wallet-aware-apps", "brc:73", "brc:100"]
+
+- id: G-04
+  title: Protocol levels and spending allowance
+  shape: A
+  rule: "Anything signed repeatedly uses a level-1 protocol; level-2 entries carry `counterparty`; spending allowance monthly and small."
+  why: "Level-2 permissions are granted per counterparty, so repeated signing without a named counterparty re-prompts the user; a small monthly allowance bounds what the grouped grant can spend."
+  detect: static
+  severity: warn
+  refs: ["docs:guides.wallet-aware-apps", "brc:73", "brc:100"]
+
+- id: G-05
+  title: Raise the grouped prompt at login
+  shape: A
+  rule: "Fire one harmless protected call at login to raise the grouped prompt; never await it in the login path."
+  why: "Raising the grouped permission prompt up front keeps later protected calls silent, and awaiting it would block login on the user answering the prompt."
+  detect: manual
+  severity: warn
+  refs: ["docs:guides.wallet-aware-apps", "brc:73", "brc:100"]
+
+- id: G-06
+  title: No private keys in client code
+  shape: both
+  rule: "The app never holds a private key in client code; secrets are never derived from HMAC/symmetric keys a counterparty can compute. (B: the server key is the operator's root key, stored outside the repo.)"
+  why: "A key shipped in client code, or a secret a counterparty can compute, can be extracted and used to spend or impersonate."
+  detect: static
+  severity: error
+  refs: []
+
+- id: G-07
+  title: SDK result limits and wallet extensions
+  shape: both
+  rule: "Respect SDK result limits (33-byte pubkey, ≤72-byte DER; arbitrary bytes only via `encrypt`/`decrypt`); wallet extensions go through a BRC-98 `p` module that authorises itself and rejects `p` baskets/labels."
+  why: "Results outside these limits fail in wallet calls, and an extension that bypasses a self-authorising BRC-98 `p` module escapes the wallet's permission system."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-08
+  title: Sign only digests you rebuilt
+  shape: both
+  rule: "`createSignature({hashToDirectlySign})` gets the double-SHA256 digest; clients sign only digests they rebuilt themselves, never one received over the wire."
+  why: "`hashToDirectlySign` signs whatever digest it is given, so signing a digest received over the wire lets the sender obtain a signature over data of their choosing."
+  detect: static
+  severity: warn
+  refs: []
+
+# Broadcast and chain state
+- id: G-09
+  title: Broadcast only through Arcade
+  shape: both
+  rule: "Broadcast only through Arcade (`POST /tx`, text/plain, EF when sources are attached, never BEEF); never the SDK `ARC` class or `/v1/tx`; `ARCADE_URL` configurable with the public instance per network as default."
+  why: "Arcade's `GET /tx/{txid}` status is what every later money decision reads; the SDK `ARC` class and `/v1/tx` target the legacy ARC API instead, so never send a transaction there."
+  detect: static
+  severity: error
+  refs: ["docs:guides.services.broadcasting", "fact:arcade"]
+
+- id: G-10
+  title: Final at SEEN_ON_NETWORK, never MINED
+  shape: both
+  rule: "A POST 2xx is provisional; read `GET /tx/{txid}`; money counts and is final at `SEEN_ON_NETWORK`+ with no competing tx; never earlier, never `MINED`."
+  why: "A 2xx only means Arcade received the transaction; `SEEN_ON_NETWORK` with no competing tx is the app's finality point, and waiting for `MINED` adds block-time delay for no protection the app needs."
+  detect: static
+  severity: error
+  refs: ["docs:guides.services.broadcasting", "fact:arcade"]
+
+- id: G-11
+  title: Classify Arcade errors
+  shape: both
+  rule: "Classify 400s by ARC code or exact token: 476, 503, `UNREACHABLE` transient; `REJECTED`/`DOUBLE_SPEND_ATTEMPTED` terminal; input-blaming reasons on an accepted tx are no verdict."
+  why: "Retrying a terminal rejection or abandoning a transient failure mishandles money, and an input-blaming reason on an accepted tx does not change its status."
+  detect: manual
+  severity: warn
+  refs: ["docs:guides.services.broadcasting", "fact:arcade"]
+
+- id: G-12
+  title: Arcade first; WhatsOnChain gated
+  shape: both
+  rule: "Arcade first for every known txid (status, `rawTx`); WhatsOnChain only for address/script listings, spent-by and tip height, behind one process-wide gate (≥350 ms) with 429 backoff; a WoC 404 on a fresh tx means \"not yet\"."
+  why: "Arcade is the source of truth for a transaction it has seen; WhatsOnChain lags on fresh transactions and rate-limits with 429, so ungated calls fail."
+  detect: static
+  severity: error
+  refs: ["fact:whatsonchain", "fact:arcade"]
+
+- id: G-13
+  title: Track every transaction in your own Arcade
+  shape: both
+  rule: "Submit every transaction the app cares about (including wallet-broadcast ones) to its own Arcade so it can be tracked; never trust a client-reported txid as money evidence."
+  why: "Only a transaction submitted to the app's own Arcade can be tracked to finality there, and a client-reported txid proves nothing about payment."
+  detect: manual
+  severity: warn
+  refs: ["docs:guides.services.broadcasting", "fact:arcade"]
+
+- id: G-14
+  title: No confirmation waits
+  shape: both
+  rule: "No confirmation waits anywhere in the UX; no logic whose only threat is miner collusion; ordinary drop/eviction handling only (re-post, two-read dead rule)."
+  why: "The app's finality point is `SEEN_ON_NETWORK` with no competing tx (G-10), so block-count waits only add delay; drop and eviction handling covers the failures that actually occur."
+  detect: static
+  severity: warn
+  refs: ["docs:guides.services.broadcasting", "fact:arcade"]
+
+- id: G-15
+  title: Timeouts and bounded polling
+  shape: both
+  rule: "Per-request timeouts on every Arcade/WoC call; bounded polling."
+  why: "A call without a timeout, or polling without a bound, can hang the app or exhaust rate limits."
+  detect: static
+  severity: warn
+  refs: ["docs:guides.services.broadcasting", "fact:arcade"]
+
+- id: G-16
+  title: Arcade rawTx is Extended Format
+  shape: both
+  rule: "Arcade's `rawTx` is Extended Format; re-read it as a plain transaction before building BEEF; never build ancestry one ancestor at a time from an indexer."
+  why: "`Transaction.fromHex` does not read Extended Format, and fetching ancestors one at a time from an indexer is slow, rate-limited and can be incomplete."
+  detect: static
+  severity: error
+  refs: ["docs:guides.services.broadcasting", "fact:arcade"]
+
+# Money and state
+- id: G-17
+  title: Write-ahead before broadcast
+  shape: B
+  rule: "Write-ahead: persist signed hex and remittances before broadcasting; idempotent routes keyed by txid."
+  why: "A crash between broadcast and persistence loses the signed transaction and remittances needed to recover, and txid-keyed idempotent routes make retries safe."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-18
+  title: Coin bookkeeping
+  shape: B
+  rule: "Coin bookkeeping: mark on select, commit change only on a final txid, cascade-forget refused txs, guard stale releases."
+  why: "Without it the server double-selects coins, counts change from transactions that never land, or releases coins that were already spent."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-19
+  title: Bounded operator-paid fees
+  shape: B
+  rule: "Operator-paid fees bounded by construction (per-action cap, per-identity rate, daily budget); an empty funding address yields a clear message and a \"fund the server\" path; a wallet-toolbox wallet cannot spend externally received P2PKH, so operator funds arrive by BRC-29 + `internalizeAction` or a root-key P2PKH signed directly."
+  why: "Unbounded operator-paid fees let any user drain the funding wallet, and a wallet-toolbox wallet cannot spend externally received P2PKH, so funds sent that way are stranded."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-20
+  title: Escrow has a no-counterparty exit
+  shape: both
+  rule: "Every escrow has a no-counterparty exit (presigned `nLockTime` refund or covenant timeout) and the client stores it locally."
+  why: "Without an exit that needs no counterparty, escrowed funds are lost if the other party disappears."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-21
+  title: BRC-29 payouts with remittance
+  shape: both
+  rule: "Payouts to BRC-29-derived keys, collected with `internalizeAction` + `paymentRemittance`, automatically with fast retries, from a complete AtomicBEEF; the recipient verifies its own derivation (`forSelf:true`) before signing anything that pays it."
+  why: "A wallet can only spend a BRC-29 output it internalized with the remittance needed to re-derive the key, and verifying its own derivation stops the recipient signing something that does not pay it."
+  detect: static
+  severity: error
+  refs: ["brc:29", "docs:guides.payments"]
+
+- id: G-22
+  title: Multi-party funding with foreign inputs
+  shape: both
+  rule: "Multi-party funding uses foreign inputs in `createAction` with `signAndProcess:false`, then `signAction`; bind to the tx that spends the counterparty's coin, not a txid."
+  why: "Deferred signing lets each party sign only after checking the whole transaction, and a bare txid does not prove the counterparty's coin is spent by it."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-23
+  title: Never count money from a client report
+  shape: B
+  rule: "Never count money from a client report; re-broadcast through the server's own Arcade and apply G-10."
+  why: "A client can report any transaction or txid; only the server's own Arcade read under G-10 shows the payment is on the network."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-24
+  title: Deterministic test and bot wallets
+  shape: B
+  rule: "Test and bot wallets use deterministic derivations; funding scripts can retry by txid instead of re-paying."
+  why: "Deterministic derivations let test runs recover their wallets, and retrying by txid stops a failed funding script from paying twice."
+  detect: manual
+  severity: warn
+  refs: []
+
+# Contracts
+- id: G-25
+  title: Rúnar from upstream, pinned by commit
+  shape: both
+  rule: "Rúnar from the upstream default branch (≥ 1.0.0-rc.1), vendored and pinned by commit; artifact committed; slim artifact for the browser; Vite aliases for Node builtins plus a build check."
+  why: "The npm `runar-*` 0.4.x releases are stale and unsafe, and browser builds break when Node builtins reach the bundle without aliases."
+  detect: static
+  severity: error
+  refs: ["fact:runar", "fact:consensus"]
+
+- id: G-26
+  title: Pinned outputs and height-gate checks
+  shape: both
+  rule: "No `checkPreimage` under 0.4.x; terminal stateful methods pin outputs with `hash256(outputs) == extractOutputHash`; every height gate asserts `nLockTime < 500,000,000`; version-1 txs; no relative locktimes assumed."
+  why: "`checkPreimage` cannot be relied on under 0.4.x, unpinned outputs let a spender redirect funds, and an `nLockTime` of 500,000,000 or more is a timestamp, not a height."
+  detect: contract
+  severity: warn
+  refs: ["fact:runar", "fact:consensus"]
+
+- id: G-27
+  title: No script-level ECDSA over data
+  shape: both
+  rule: "Signature-over-data needs Rabin (`verifyRabinSig`) or a covenant that reads the spending tx (0xc2 over `nSequence`); never script-level ECDSA."
+  why: "Script-level ECDSA verifies a signature over the spending transaction, not over arbitrary data, so data signatures need Rabin or a covenant that reads the transaction."
+  detect: manual
+  severity: warn
+  refs: ["fact:runar", "fact:consensus"]
+
+- id: G-28
+  title: Contract tests use real transactions
+  shape: both
+  rule: "Contract tests run real transactions through `@bsv/sdk` `Spend`; `TestContract` never stands in for signature/preimage behaviour; every attack from a review becomes a harness case."
+  why: "`TestContract` does not exercise real signature or preimage checks, so tests built on it pass contracts that fail on chain."
+  detect: contract
+  severity: warn
+  refs: ["fact:runar", "fact:consensus"]
+
+- id: G-29
+  title: Fees from the serialized draft
+  shape: both
+  rule: "Fees are sized from the serialized draft at the configured rate; covenants > a few KB pass a testnet size/fee gate before the app is built on them."
+  why: "Fees estimated from anything but the serialized draft are wrong for large covenants, and a size or fee problem found after the app is built is costly to fix."
+  detect: manual
+  severity: warn
+  refs: ["fact:runar", "fact:consensus"]
+
+# Process
+- id: G-30
+  title: Adversarial review and differential tests
+  shape: both
+  rule: "Cold adversarial reviews until one finds nothing; differential test of any digest or vector against an independent implementation."
+  why: "A single review misses bugs, and a digest or vector checked only against its own implementation can be consistently wrong."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-31
+  title: Versions checked against upstream
+  shape: both
+  rule: "Library versions checked against upstream `main`, not just npm, for security fixes; pinned versions carry a verified date."
+  why: "Security fixes can land on upstream `main` before an npm release, and a verified date shows how stale a pin is."
+  detect: static
+  severity: warn
+  refs: ["fact:networks", "fact:versions"]
+
+- id: G-32
+  title: Bundle and deploy-image smoke checks
+  shape: both
+  rule: "Browser builds fail if a Node builtin reaches the bundle unshimmed; deploy images import every workspace package as a smoke test."
+  why: "An unshimmed Node builtin breaks the browser at runtime, and a deploy image missing a workspace package fails only once deployed."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-33
+  title: Testnet gate before UI work
+  shape: both
+  rule: "A testnet gate script exercises every transaction kind at full size plus the wallet flow before UI work; test wallets use `wallet-toolbox` headless."
+  why: "Size, fee and wallet-flow problems are cheap to fix on testnet before UI work and force redesign after it."
+  detect: manual
+  severity: warn
+  refs: []
+
+- id: G-34
+  title: State the trust model
+  shape: both
+  rule: "State the trust model in the app's docs: served-code trust under grouped grants, 0-conf stance, what the server can and cannot do."
+  why: "Users and reviewers need to know what the served code and the server can do under grouped grants and 0-conf payments before trusting the app with money."
+  detect: static
+  severity: warn
+  refs: []
+
+# Payment channels (added after spec section 7; facts in content/facts/payment-channels.md)
+- id: G-35
+  title: Channel states stay off-chain, newest first
+  shape: both
+  rule: "A payment channel never depends on Arcade or a node holding, ordering or replacing a non-final transaction: the parties hold every signed state; the close is final (`nSequence 0xffffffff`, `nLockTime 0`); non-final states are ordered newest-first by decreasing `nLockTime` or an earlier height on a schedule both parties signed; the newest state is posted the moment it matures, retrying on 476."
+  why: "Post-Genesis `nSequence` is only a finality flag, Arcade answers a non-final transaction with 476 and persists nothing, and Teranode rejects it; the only defence against a stale state is that the newest one reaches the network first."
+  detect: manual
+  severity: warn
+  refs: ["fact:payment-channels", "fact:consensus", "fact:arcade"]
+
+- id: G-36
+  title: Lock times in seconds or heights, never milliseconds
+  shape: both
+  rule: "Every `nLockTime` an app sets is an integer number of Unix seconds (`>= 500000000`) or a block height (`< 500000000`), validated in range before signing; a value derived from `Date.now()` is divided by 1000; a height gate also asserts `< 500000000`."
+  why: "A millisecond lock time overflows the uint32 field and wraps to a value that can make a state final at once or lock it for years, and a timestamp passes a height comparison."
+  detect: static
+  severity: error
+  refs: ["fact:payment-channels", "fact:consensus"]
+
+- id: G-37
+  title: Sign channel states only over the channel
+  shape: both
+  rule: "A state signature is `createSignature({ hashToDirectlySign })` over a digest the signer rebuilt itself from the channel outpoint, value, script, state and lock time. Its sighash binds the channel's value: a value split between parties with no covenant is signed `0xc1` (or `0x41`); `0xc2` or `0xc3` is allowed only when the committed outputs cover every satoshi of the input, a covenant pins outputs that carry the input's whole value, or the input carries no value (a 1-sat record channel). The signer refuses unless the channel output's value and script equal what it computed, never signs a digest received over the wire, and never signs two states at one index over one outpoint."
+  why: "NONE commits to no output and SINGLE only to the output at the input's index, so a `0xc2` or `0xc3` signature over a value-bearing input lets whoever closes add an output that takes the rest; the preimage binds the signature to the outpoint, value and script, so it can never spend a deposit or a foreign script; one signature per index is what stops a rewritten history."
+  detect: manual
+  severity: warn
+  refs: ["fact:payment-channels", "fact:consensus"]
+
+- id: G-38
+  title: Every channel has a watcher, a timeout exit and backups
+  shape: both
+  rule: "Each party persists, write-ahead, the opening transaction (AtomicBEEF), the channel outpoint, every signature it received and the newest state signed by both, plus any pre-signed refund; a watcher (a client tab, a bot or a server) posts the newest state at its maturity; the channel has a lifetime after which funds return without the counterparty (a pre-signed `nLockTime` refund or a covenant timeout), and a refund that needs the counterparty's signature is signed over the opening's txid before the opening is submitted; the payee of a one-way channel closes before that expiry, with a margin."
+  why: "A state nobody can produce is worthless, a state nobody posts loses to an older one, a channel with no expiry strands funds when the counterparty disappears, an opening submitted before its refund is signed leaves the funder's exit to the counterparty, and a one-way payee that closes late races the payer's refund, which becomes valid at the expiry."
+  detect: manual
+  severity: warn
+  refs: ["fact:payment-channels", "fact:arcade"]

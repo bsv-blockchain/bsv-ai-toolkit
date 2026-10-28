@@ -1,0 +1,28 @@
+{
+  "verified": "2026-10-22",
+  "packages": {
+    "@bsv/sdk": { "pinned": "3.2.1", "verified": "2026-10-22" },
+    "@bsv/wallet-toolbox": { "pinned": "2.14.9", "verified": "2026-10-22" },
+    "@bsv/simple": { "pinned": "0.7.0", "verified": "2026-10-22" },
+    "@bsv/auth-express-middleware": { "pinned": "2.2.9", "verified": "2026-10-22" },
+    "@modelcontextprotocol/sdk": { "pinned": "1.32.1", "verified": "2026-10-22" },
+    "skills-ref": { "pinned": "0.1.5", "verified": "2026-10-22" },
+    "runar-sdk": { "pinned": "0.4.6", "verified": "2026-10-22", "note": "npm is stale and unsafe; use git.runar" }
+  },
+  "git": {
+    "runar": { "repo": "icellan/runar", "branch": "main", "commit": "d207ee8", "version": "1.0.0-rc.1", "verified": "2026-10-22", "npmVersion": "0.4.6", "npmUnsafe": true }
+  },
+  "services": {
+    "arcade": {
+      "version": "v0.16.0",
+      "verified": "2026-10-22",
+      "hosts": {
+        "testnet": ["https://arcade-testnet-us-1.bsvblockchain.tech", "https://arcade-v2-testnet-us-1.bsvblockchain.tech"],
+        "mainnet": ["https://arcade-us-1.bsvblockchain.tech", "https://arcade-eu-1.bsvblockchain.tech", "https://arcade-ap-1.bsvblockchain.tech", "https://arcade-v2-us-1.bsvblockchain.tech"],
+        "ttn": ["https://arcade-v2-ttn-us-1.bsvblockchain.tech"]
+      },
+      "probeTxid": ""
+    }
+  },
+  "runtime": { "node": ">=22", "typescript": ">=5.8", "pnpm": ">=10" }
+}

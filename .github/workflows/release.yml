@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# npm trusted publishing (OIDC): no npm token is stored anywhere. The trusted publisher for @bsv/mcp on
+# npmjs.com names this repository and this workflow file (release.yml), with no environment.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish @bsv/mcp
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      # fetch-depth 0 brings origin/main for the ancestry check; no token is left in .git/config.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tagged commit is on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$GITHUB_REF_NAME does not point to a commit on main"
+            exit 1
+          fi
+      - name: Package version matches the tag
+        id: version
+        run: |
+          version="$(node -p "require('./packages/mcp/package.json').version")"
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::packages/mcp/package.json version $version does not match tag $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: npm with trusted publishing (needs npm >= 11.5.1)
+        run: npm install -g npm@11
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - name: Generated content matches content/
+        run: pnpm sync:check
+      # Built before npm publish, so a bad zip stops the release before anything is published.
+      - name: Build bsv-dev-skill.zip
+        run: |
+          (cd packages/skill && zip -r ../../bsv-dev-skill.zip . -x 'node_modules/*' 'tests/*' '*.test.ts')
+          listing="$(unzip -l bsv-dev-skill.zip)"
+          for entry in skills/bsv-dev/SKILL.md .claude-plugin/plugin.json; do
+            if ! grep -qF "$entry" <<<"$listing"; then
+              echo "::error::bsv-dev-skill.zip is missing $entry"
+              exit 1
+            fi
+          done
+      - name: Publish to npm (provenance is automatic under OIDC)
+        working-directory: packages/mcp
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          # A rerun after a successful publish skips straight to the GitHub release.
+          if [ "$(npm view "@bsv/mcp@$VERSION" version 2>/dev/null || true)" = "$VERSION" ]; then
+            echo "@bsv/mcp@$VERSION is already on npm; skipping publish"
+            exit 0
+          fi
+          if [ "$PRERELEASE" = "true" ]; then
+            npm publish --access public --tag next
+          else
+            npm publish --access public
+          fi
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          # A rerun finds the release already there and only (re)attaches the zip.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists; uploading bsv-dev-skill.zip"
+            gh release upload "$GITHUB_REF_NAME" bsv-dev-skill.zip --clobber
+            exit 0
+          fi
+          flags=(--generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" bsv-dev-skill.zip

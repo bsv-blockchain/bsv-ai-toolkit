@@ -150,3 +150,10 @@ api-gateway-deployment.zip
 # AWS credentials
 aws-credentials.json
 
+
+# BSV AI devkit
+build/
+*.sqlite
+samples/**/data/
+.bsv-gate/
+*.key

@@ -1,0 +1,36 @@
+{
+  "name": "bsv-dev",
+  "displayName": "BSV Dev",
+  "version": "0.1.0",
+  "description": "Official BSV Association skill, commands and MCP bundle for building BSV apps on BRC-100 wallets, Arcade and Rúnar",
+  "author": { "name": "BSV Association", "url": "https://bsvblockchain.org" },
+  "homepage": "https://github.com/bsv-blockchain/bsv-ai-toolkit",
+  "repository": "https://github.com/bsv-blockchain/bsv-ai-toolkit",
+  "license": "MIT",
+  "keywords": ["bsv", "bitcoin-sv", "brc-100", "arcade", "runar"],
+  "skills": ["./skills/"],
+  "commands": ["./commands/"],
+  "mcpServers": {
+    "bsv-mcp": {
+      "command": "npx",
+      "args": ["-y", "@bsv/mcp@2.0.0"],
+      "env": { "BSV_NETWORK": "${user_config.bsv_network}", "ARCADE_URL": "${user_config.arcade_url}" }
+    },
+    "bsv-docs": { "type": "http", "url": "https://bsv.writedocs.io/mcp" }
+  },
+  "userConfig": {
+    "bsv_network": {
+      "type": "string",
+      "title": "BSV network",
+      "description": "testnet (default) or mainnet. Mainnet broadcasts by the agent additionally need BSV_MCP_ALLOW_MAINNET_BROADCAST=1 in your shell.",
+      "options": ["testnet", "mainnet"],
+      "default": "testnet"
+    },
+    "arcade_url": {
+      "type": "string",
+      "title": "Arcade URL",
+      "description": "Optional. Leave empty for the public instance of the chosen network; set for a local or private Arcade.",
+      "default": ""
+    }
+  }
+}

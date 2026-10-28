@@ -1,0 +1,13 @@
+{
+  "name": "bsv",
+  "owner": { "name": "BSV Association" },
+  "description": "BSV Association plugins for Claude Code",
+  "plugins": [
+    {
+      "name": "bsv-dev",
+      "source": ".",
+      "description": "Official BSV Association skill, commands and MCP bundle for building BSV apps on BRC-100 wallets, Arcade and Rúnar",
+      "category": "development"
+    }
+  ]
+}

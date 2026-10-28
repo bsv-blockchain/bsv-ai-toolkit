@@ -1,0 +1,11 @@
+<!-- bsv-dev rules: begin -->
+1. Read https://bsv.writedocs.io/llms.txt first, then fetch only the pages the task needs. Its page links point at docs.bsvblockchain.org; open the same path on bsv.writedocs.io instead.
+2. When the `bsv-docs` and `bsv-mcp` MCP servers are connected, use their tools before relying on memory for BSV APIs, versions, limits or fees.
+3. Work on testnet unless `BSV_NETWORK=mainnet` is set on purpose by the operator. Before a payment, check that `wallet.getNetwork()` returns `testnet`.
+4. For the user's wallet, connect with `@bsv/sdk` 3.x `new WalletClient('auto', originator)`, from the browser or a local script.
+5. Never hold, ask for, print or generate for production use a private key, WIF or recovery phrase; the user's wallet (shape A) or an operator-set variable outside the repo (shape B) holds it.
+6. Testnet coins come from https://bsvfaucet.com and wallet approvals come from the user: ask the user for both, and never work around either.
+7. Use Arcade for every broadcast and every txid state read; never the legacy ARC API, and never WhatsOnChain as the truth for a known txid.
+8. A transaction is final at `SEEN_ON_NETWORK` or later with no competing transaction; never wait for confirmations or `MINED`.
+9. If `bsv-mcp` is connected, run `check_guardrails` with the project's absolute path and fix every error before calling the work done.
+<!-- bsv-dev rules: end -->

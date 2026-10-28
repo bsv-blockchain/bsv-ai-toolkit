@@ -1,43 +1,25 @@
 {
-  "name": "@bsv/mcp",
-  "version": "1.0.9",
-  "description": "Custom MCP Server for BSV development providing context and tools for development",
+  "name": "bsv-ai-devkit",
+  "private": true,
   "type": "module",
-  "main": "build/index.js",
-  "bin": {
-    "bsv-mcp": "build/index.js"
-  },
-  "files": [
-    "build",
-    "package.json",
-    "README.md",
-    "LICENSE.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/bitcoin-sv/bsv-mcp.git"
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22"
   },
   "scripts": {
-    "start": "node build/index.js",
-    "build": "tsc",
-    "prepublishOnly": "npm run build"
-  },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "bitcoin-sv",
-    "bsv",
-    "wallet"
-  ],
-  "author": "jonesjBSV (BSV Association)",
-  "license": "MIT",
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.7.0",
-    "execa": "^9.5.2",
-    "zod": "^3.23.8"
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r --if-present test",
+    "lint": "pnpm -r --if-present lint",
+    "sync": "pnpm -F @bsv/sync sync",
+    "sync:check": "pnpm -F @bsv/sync sync:check",
+    "check:facts": "pnpm -F @bsv/sync check:facts",
+    "check:links": "pnpm -F @bsv/sync check:links",
+    "validate:skill": "npx -y skills-ref@0.1.5 validate packages/skill/skills/bsv-dev && bash scripts/anti-goals.sh packages/skill/skills",
+    "validate:plugin": "claude plugin validate --strict packages/skill && claude plugin validate --strict packages/skill/.claude-plugin/plugin.json && claude plugin validate --strict packages/skill/commands && claude plugin validate --strict packages/skill/skills && claude plugin validate --strict ."
   },
   "devDependencies": {
-    "@types/node": "^22.13.14",
-    "typescript": "^5.8.2"
+    "@types/node": "^22",
+    "typescript": "^5.8",
+    "vitest": "^4"
   }
 }

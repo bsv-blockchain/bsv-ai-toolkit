@@ -1,0 +1,51 @@
+{
+  "name": "@bsv/mcp",
+  "version": "2.0.0",
+  "description": "MCP server for BSV development: facts, guardrails, and Arcade tools",
+  "type": "module",
+  "main": "build/index.js",
+  "bin": {
+    "bsv-mcp": "build/index.js"
+  },
+  "files": [
+    "build",
+    "content",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bsv-blockchain/bsv-ai-toolkit.git",
+    "directory": "packages/mcp"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "bitcoin-sv",
+    "bsv"
+  ],
+  "author": "BSV Association",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "start": "node build/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "execa": "^9",
+    "fast-glob": "^3.3",
+    "ignore": "^7",
+    "yaml": "^2.9",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@bsv/sdk": "3.2.1"
+  }
+}

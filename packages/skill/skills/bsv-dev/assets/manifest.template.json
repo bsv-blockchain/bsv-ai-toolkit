@@ -1,0 +1,27 @@
+{
+  "_comment": "Copy to public/manifest.json and replace __APP_NAME__. __APP_NAME__: lowercase letters, digits and single spaces only (e.g. 'my app'); the wallet rejects any other protocol name; basket names are lowercased. Keep metanet and babbage groupPermissions identical (G-03); every level-2 protocol names a counterparty and the allowance stays small (G-04). The BRC-29 entry uses counterparty 'self': it is unsettled whether BSV Desktop treats 'self' as grouped; a level-2 entry without counterparty prompts once per peer. This _comment field may be deleted from the deployed manifest.",
+  "metanet": {
+    "groupPermissions": {
+      "spendingAuthorization": { "amount": 10000, "description": "Small monthly allowance for __APP_NAME__" },
+      "protocolPermissions": [
+        { "protocolID": [1, "__APP_NAME__ actions"], "description": "Sign __APP_NAME__ actions" },
+        { "protocolID": [2, "3241645161d8"], "counterparty": "self", "description": "BRC-29 payments" }
+      ],
+      "basketAccess": [
+        { "basket": "__APP_NAME__", "description": "__APP_NAME__ outputs" }
+      ]
+    }
+  },
+  "babbage": {
+    "groupPermissions": {
+      "spendingAuthorization": { "amount": 10000, "description": "Small monthly allowance for __APP_NAME__" },
+      "protocolPermissions": [
+        { "protocolID": [1, "__APP_NAME__ actions"], "description": "Sign __APP_NAME__ actions" },
+        { "protocolID": [2, "3241645161d8"], "counterparty": "self", "description": "BRC-29 payments" }
+      ],
+      "basketAccess": [
+        { "basket": "__APP_NAME__", "description": "__APP_NAME__ outputs" }
+      ]
+    }
+  }
+}

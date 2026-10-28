@@ -1,89 +1,72 @@
 #!/usr/bin/env bash
+# Clones the BSV repositories that @bsv/mcp searches (code_search, find_function_definition) and reads
+# BRCs from (brc_lookup), then prints the BSV_REPOS_DIR line to set for the server.
+#
+#   setup.sh <target_dir>   shallow-clone (--depth 1) each repository into <target_dir>/<name>
+#   setup.sh --list         print the repository URLs, one per line, and exit
+#
+# A repository whose directory already exists is left alone; run `git pull` inside it to update.
+set -uo pipefail
 
-# --- Configuration ---
-# List of repository URLs to clone
 REPOS=(
-  "https://github.com/bitcoin-sv/wallet-toolbox.git"
-  "https://github.com/bitcoin-sv/wallet-toolbox-examples.git"
-  "https://github.com/bitcoin-sv/wui.git"
-  "https://github.com/bitcoin-sv/ts-sdk.git"
-  "https://github.com/bitcoin-sv/BRCs.git"
-  "https://github.com/bitcoin-sv/metanet-desktop.git"
-  "https://github.com/bitcoin-sv/arc.git"
-  "https://github.com/bitcoin-sv/bdk.git"
-  "https://github.com/bitcoin-sv/py-sdk.git"
-  "https://github.com/bitcoin-sv/p2p.git"
-  "https://github.com/bitcoin-sv/authsocket.git"
-  "https://github.com/bitcoin-sv/authsocket-client.git"
+  "https://github.com/bsv-blockchain/ts-stack"
+  "https://github.com/bsv-blockchain/BRCs"
+  "https://github.com/bsv-blockchain/arcade"
+  "https://github.com/bsv-blockchain/bsv-desktop"
+  "https://github.com/bsv-blockchain/go-wallet-toolbox"
+  "https://github.com/icellan/runar"
 )
 
-# --- Argument Handling ---
-# Check if a target directory argument was provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 <target_directory>"
-  echo "Please provide the absolute path where the repositories should be cloned."
+usage() {
+  echo "usage: $(basename "$0") <target_dir> | --list" >&2
+}
+
+case "${1:-}" in
+  --list)
+    printf '%s\n' "${REPOS[@]}"
+    exit 0
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  "")
+    usage
+    exit 1
+    ;;
+  -*)
+    echo "unknown option: $1" >&2
+    usage
+    exit 1
+    ;;
+esac
+
+if ! mkdir -p -- "$1"; then
+  echo "error: cannot create $1" >&2
   exit 1
 fi
+# CDPATH= keeps cd from resolving a relative name elsewhere (and from printing that path into TARGET_DIR).
+TARGET_DIR="$(CDPATH= cd -- "$1" && pwd)" || { echo "error: cannot enter $1" >&2; exit 1; }
 
-TARGET_DIR="$1"
-SCRIPT_START_DIR=$(pwd) # Remember where we started
-
-# --- Directory Creation ---
-echo "Target directory: $TARGET_DIR"
-echo "Creating directory (if it doesn't exist)..."
-if ! mkdir -p "$TARGET_DIR"; then
-  echo "ERROR: Failed to create directory '$TARGET_DIR'. Check permissions." >&2
-  exit 1
-fi
-echo "Directory created or already exists."
-
-# --- Change Directory ---
-echo "Changing to target directory..."
-if ! cd "$TARGET_DIR"; then
-  echo "ERROR: Failed to change directory to '$TARGET_DIR'." >&2
-  exit 1
-fi
-
-# --- Cloning Repositories ---
-echo "Starting repository cloning..."
-CLONE_FAILURES=0
-
-for repo_url in "${REPOS[@]}"; do
-  # Extract the repository name from the URL to use as the subdirectory name
-  subdir_name=$(basename "$repo_url" .git)
-
-  echo "----------------------------------------"
-  echo "Processing: $repo_url"
-
-  if [ -d "$subdir_name" ]; then
-    echo "Directory '$subdir_name' already exists. Skipping clone."
-    # Optional: Add logic here to pull updates if the directory exists
-    # echo "Pulling updates for '$subdir_name'..."
-    # (cd "$subdir_name" && git pull)
-  else
-    echo "Cloning into '$subdir_name'..."
-    if git clone --depth 1 "$repo_url" "$subdir_name"; then # Using --depth 1 for faster initial clone
-      echo "Successfully cloned '$subdir_name'."
-    else
-      echo "ERROR: Failed to clone '$repo_url'." >&2
-      ((CLONE_FAILURES++))
-    fi
+failures=0
+for url in "${REPOS[@]}"; do
+  name="$(basename "$url")"
+  dest="$TARGET_DIR/$name"
+  if [ -d "$dest" ]; then
+    echo "skip   $name (already present; git pull inside it to update)"
+    continue
+  fi
+  echo "clone  $url"
+  if ! git clone --quiet --depth 1 "$url" "$dest"; then
+    echo "error: failed to clone $url" >&2
+    failures=$((failures + 1))
   fi
 done
 
-# --- Return to Original Directory ---
-echo "----------------------------------------"
-echo "Returning to original directory: $SCRIPT_START_DIR"
-if ! cd "$SCRIPT_START_DIR"; then
- echo "Warning: Failed to change back to the starting directory." >&2
+echo
+if [ "$failures" -ne 0 ]; then
+  echo "warning: $failures repository clone(s) failed; see above" >&2
 fi
-
-
-# --- Summary ---
-if [ "$CLONE_FAILURES" -eq 0 ]; then
-  echo "All repositories processed successfully."
-  exit 0
-else
-  echo "WARNING: $CLONE_FAILURES repository clone(s) failed. Please check the output above." >&2
-  exit 1 # Exit with error if any clone failed
-fi
+echo "Set this for @bsv/mcp (or pass it as -e BSV_REPOS_DIR=... to your MCP client):"
+printf 'export BSV_REPOS_DIR=%q\n' "$TARGET_DIR"
+[ "$failures" -eq 0 ]
