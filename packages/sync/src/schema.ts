@@ -48,6 +48,10 @@ export const VersionsFile = z
     services: z.record(
       z
         .object({
+          // The service's GitHub repository and its latest release, when the hosts may run an older one.
+          repo: nonEmpty.optional(),
+          release: nonEmpty.optional(),
+          // The version the hosts report in /health.
           version: nonEmpty,
           verified: isoDate,
           hosts: z.record(z.array(z.string().url())),

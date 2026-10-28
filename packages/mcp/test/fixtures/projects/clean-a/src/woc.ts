@@ -1,4 +1,4 @@
-// WhatsOnChain only for what Arcade cannot answer (tip height), behind one process-wide gate.
+// WhatsOnChain only for what BSV Broadcaster cannot answer (tip height), behind one process-wide gate.
 const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv/test'
 const GAP_MS = 350
 

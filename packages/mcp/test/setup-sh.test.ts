@@ -10,7 +10,7 @@ const SETUP = fileURLToPath(new URL('../../../setup.sh', import.meta.url))
 const REPOS = [
   'https://github.com/bsv-blockchain/ts-stack',
   'https://github.com/bsv-blockchain/BRCs',
-  'https://github.com/bsv-blockchain/arcade',
+  'https://github.com/bsv-blockchain/broadcaster',
   'https://github.com/bsv-blockchain/bsv-desktop',
   'https://github.com/bsv-blockchain/go-wallet-toolbox',
   'https://github.com/icellan/runar',

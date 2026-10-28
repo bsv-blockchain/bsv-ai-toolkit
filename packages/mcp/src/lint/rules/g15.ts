@@ -1,7 +1,8 @@
 import type { Rule } from './index.js'
 import { bracketText, findingList, isSource, lineAt, scan, withAliases } from './util.js'
 
-const SERVICE = /arcade|whatsonchain|\bwoc/i
+// BSV Broadcaster under its new name or its former name Arcade (code in the wild has both), or WhatsOnChain.
+const SERVICE = /arcade|broadcaster|whatsonchain|\bwoc/i
 const FETCH = /\bfetch\s*\(/g
 const SIGNAL = /\bsignal\b/
 const MAX_CALL_LINES = 60
@@ -19,8 +20,8 @@ function firstArgEnd(masked: string): number {
 }
 
 /**
- * G-15: a per-request timeout on every Arcade/WhatsOnChain call. Flags `fetch(` whose URL names
- * Arcade or WoC and whose init (the rest of the call) has no `signal`. An init passed as a
+ * G-15: a per-request timeout on every BSV Broadcaster/WhatsOnChain call. Flags `fetch(` whose URL names
+ * BSV Broadcaster or WoC and whose init (the rest of the call) has no `signal`. An init passed as a
  * variable is accepted when the module sets a `signal` somewhere.
  */
 export const g15: Rule = {

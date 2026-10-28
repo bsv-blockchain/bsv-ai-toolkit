@@ -17,6 +17,9 @@ const TX_POST_PATH = /\/txs?['"`]/
 const POST = /method\s*:\s*['"`]POST['"`]/i
 const TX_READ = /\/tx\/(?!raw\b)/
 const WOC = /whatsonchain|\bwoc/i
+// A user's broadcaster under either name: BSV Broadcaster (`BSV_BROADCASTER_URL`, `broadcaster`) or its former name
+// Arcade (`ARCADE_URL`, an `arcade` host or import), since code in the wild has both.
+const BROADCASTER = /arcade|broadcaster/i
 
 /** The next non-blank comment-free line after `i` (0-based), or ''. */
 function nextCodeLine(s: Scan, i: number, skip: RegExp = /^\s*$/): string {
@@ -90,7 +93,7 @@ function gatesOnBlock(s: Scan, i: number): boolean {
 /**
  * G-10: money is final at SEEN_ON_NETWORK, never MINED. Flags a branch or comparison on `'MINED'` or
  * `.confirmations` (labels, type unions and conditions that also accept SEEN_ON_NETWORK pass), and a module
- * that POSTs to Arcade's `/tx` with no `GET /tx/{txid}` read.
+ * that POSTs to BSV Broadcaster's `/tx` with no `GET /tx/{txid}` read.
  */
 export const g10: Rule = {
   id: 'G-10',
@@ -102,10 +105,10 @@ export const g10: Rule = {
 
       const reads = s.codeLines.some(t => TX_READ.test(t) && !WOC.test(t))
       if (reads) continue
-      // Only a POST to Arcade: a POST to the app's own relay (`/api/tx`) is not a broadcast.
-      const arcade = withAliases(s.code, /arcade/i)
+      // Only a POST to BSV Broadcaster: a POST to the app's own relay (`/api/tx`) is not a broadcast.
+      const service = withAliases(s.code, BROADCASTER)
       s.codeLines.forEach((t, i) => {
-        if (!TX_POST_PATH.test(t) || !arcade.test(t)) return
+        if (!TX_POST_PATH.test(t) || !service.test(t)) return
         const window = s.codeLines.slice(Math.max(0, i - 3), i + 6).join('\n')
         if (POST.test(window)) out.add(f.rel, i + 1, `${s.lines[i].trim()} (no GET /tx/{txid} read in this module)`)
       })

@@ -1,7 +1,7 @@
 import type { TransactionStatus } from '../types.js'
 import { classify400, verdictOf } from './classify.js'
 
-export interface ArcadeClientOptions {
+export interface BroadcasterClientOptions {
   baseUrl: string
   timeoutMs?: number
   fetchImpl?: typeof fetch
@@ -18,14 +18,14 @@ function parseBody(text: string): any {
   }
 }
 
-// Minimal Arcade client: POST /tx, GET /tx/{txid}, GET /policy, GET /health.
+// Minimal BSV Broadcaster client: POST /tx, GET /tx/{txid}, GET /policy, GET /health.
 // Every request carries AbortSignal.timeout(timeoutMs). A 2xx from POST /tx is provisional; callers re-read status.
-export class ArcadeClient {
+export class BroadcasterClient {
   private readonly baseUrl: string
   private readonly timeoutMs: number
   private readonly fetchImpl: typeof fetch
 
-  constructor(opts: ArcadeClientOptions) {
+  constructor(opts: BroadcasterClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '')
     this.timeoutMs = opts.timeoutMs ?? 10000
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch
@@ -38,7 +38,7 @@ export class ArcadeClient {
   private async getJson(path: string): Promise<any> {
     const res = await this.request(path)
     const text = await res.text()
-    if (!res.ok) throw new Error(`Arcade GET ${path} answered ${res.status}: ${text.slice(0, 200)}`)
+    if (!res.ok) throw new Error(`BSV Broadcaster GET ${path} answered ${res.status}: ${text.slice(0, 200)}`)
     return parseBody(text)
   }
 
@@ -69,7 +69,7 @@ export class ArcadeClient {
     const res = await this.request(path)
     const text = await res.text()
     if (res.status === 404) return { notFound: true }
-    if (!res.ok) throw new Error(`Arcade GET /tx/${txid} answered ${res.status}: ${text.slice(0, 200)}`)
+    if (!res.ok) throw new Error(`BSV Broadcaster GET /tx/${txid} answered ${res.status}: ${text.slice(0, 200)}`)
     return parseBody(text) as TransactionStatus
   }
 

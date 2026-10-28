@@ -14,13 +14,13 @@ prose=(
   'waiting for confirmation'
   'fetch the parent from WhatsOnChain'
 )
-# Code tokens: matched as fixed strings, case-sensitive (so `ARCADE_URL` and `arcade` never match).
+# Code tokens: matched as fixed strings, case-sensitive (so the deprecated `ARCADE_URL` alias and the `arcade` hostnames never match).
 tokens=(
   '/v1/tx'
   'ARC_URL'
   'new ARC('
 )
-# `import { ARC` as a named import of the whole word ARC anywhere in the braces, never `ArcadeClient`.
+# `import { ARC` as a named import of the whole word ARC anywhere in the braces, never an Arcade-named import such as `ArcadeClient`.
 import_arc='import \{([^}]*[^A-Za-z0-9_$])?ARC([^A-Za-z0-9_$]|$)'
 markers="never|not |don't|anti-goal|forbidden|G-0|G-1"
 

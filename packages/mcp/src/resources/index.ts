@@ -20,7 +20,7 @@ interface Guardrail {
   refs: string[]
 }
 
-const FACTS = ['arcade', 'networks', 'whatsonchain', 'wallet-limits', 'consensus', 'fees', 'runar', 'tokens-1color', 'versions', 'payment-channels']
+const FACTS = ['bsv-broadcaster', 'networks', 'whatsonchain', 'wallet-limits', 'consensus', 'fees', 'runar', 'tokens-1color', 'versions', 'payment-channels']
 
 // Markdown resources backed by one content file each; the file's frontmatter supplies `title` and `verified`.
 const MARKDOWN: { name: string; uri: string; file: string; description: string }[] = [

@@ -8,7 +8,7 @@ What a BSV app defends against, what it deliberately does not, and what it must 
 
 ## 0-conf is safe
 
-BSV nodes follow first-seen: the first valid transaction to spend an output is the one they accept and relay, and a later conflicting transaction is refused. There is no replace-by-fee and no sequence-number replacement. So once Arcade reports a transaction `SEEN_ON_NETWORK` (or later) with no competing transaction, the app treats it as final:
+BSV nodes follow first-seen: the first valid transaction to spend an output is the one they accept and relay, and a later conflicting transaction is refused. There is no replace-by-fee and no sequence-number replacement. So once BSV Broadcaster (formerly Arcade) reports a transaction `SEEN_ON_NETWORK` (or later) with no competing transaction, the app treats it as final:
 
 - Payments count, goods ship, state moves and payouts are collected at that point.
 - `ACCEPTED_BY_NETWORK` and earlier statuses still wait; they are one step short.
@@ -24,12 +24,12 @@ A party bribing or colluding with a miner to mine a conflicting transaction is o
 
 These happen and need code:
 
-- **Dropped or evicted transactions.** A transaction can disappear without being mined. Keep the signed hex and re-post it to Arcade (idempotent).
-- **The two-read dead rule.** Treat a transaction as dead only when Arcade reports `REJECTED`, or names a competing transaction that is not yours, on two reads at least 20 s apart, with a re-post before the second read. `UNKNOWN`, `PENDING_RETRY` and a 404 are not verdicts.
-- **A 2xx followed by rejection.** Arcade can accept the POST and mark the transaction `REJECTED` milliseconds later. Read the status after every POST.
-- **Indexer lag.** WhatsOnChain indexes unconfirmed spends 6–12 s late, can 404 on fresh transactions, and keeps listing coins already spent by unconfirmed transactions. Use it only for what Arcade cannot answer, and read "not found" as "not yet".
+- **Dropped or evicted transactions.** A transaction can disappear without being mined. Keep the signed hex and re-post it to BSV Broadcaster (idempotent).
+- **The two-read dead rule.** Treat a transaction as dead only when BSV Broadcaster reports `REJECTED`, or names a competing transaction that is not yours, on two reads at least 20 s apart, with a re-post before the second read. `UNKNOWN`, `PENDING_RETRY` and a 404 are not verdicts.
+- **A 2xx followed by rejection.** BSV Broadcaster can accept the POST and mark the transaction `REJECTED` milliseconds later. Read the status after every POST.
+- **Indexer lag.** WhatsOnChain indexes unconfirmed spends 6–12 s late, can 404 on fresh transactions, and keeps listing coins already spent by unconfirmed transactions. Use it only for what BSV Broadcaster cannot answer, and read "not found" as "not yet".
 - **The user's own conflicting broadcast.** A user can spend the same coin from another app or device. That is a normal double-spend: one side gets `DOUBLE_SPEND_ATTEMPTED`, and the app recovers (refund path, re-plan) rather than treating it as an attack.
-- **Unavailable services.** Time out every Arcade and indexer call, retry on 503 and on network errors with a bounded schedule, and never mark money state from a non-terminal answer.
+- **Unavailable services.** Time out every BSV Broadcaster and indexer call, retry on 503 and on network errors with a bounded schedule, and never mark money state from a non-terminal answer.
 
 ## Channel residuals
 

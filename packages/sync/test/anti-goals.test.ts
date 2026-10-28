@@ -52,8 +52,12 @@ describe('scripts/anti-goals.sh', () => {
     expect(run(dir).code).toBe(1)
   })
 
-  it('does not treat an Arcade import as an ARC import', () => {
-    const dir = tempDirWith('import { ArcadeClient } from "@bsv/mcp"\nconst url = process.env.ARCADE_URL\n')
+  // Both the former Arcade names (still in user code and the deprecated alias) and the BSV Broadcaster ones.
+  it('does not treat an Arcade or a BSV Broadcaster import as an ARC import', () => {
+    const dir = tempDirWith(
+      'import { ArcadeClient } from "@bsv/mcp"\nconst url = process.env.ARCADE_URL\n' +
+        'import { BroadcasterClient } from "@bsv/mcp"\nconst next = process.env.BSV_BROADCASTER_URL\n',
+    )
     const r = run(dir)
     expect(r.out).not.toContain('anti-goal hit')
     expect(r.code).toBe(0)

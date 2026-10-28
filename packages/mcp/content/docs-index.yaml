@@ -40,8 +40,8 @@ ids:
     title: Move your app to mainnet
   guides.services.broadcasting:
     path: guides/services/broadcasting
-    title: Broadcast transactions with Arcade
-    legacy: https://docs.bsvblockchain.org/broadcasting/arcade
+    title: Broadcast transactions with BSV Broadcaster
+    legacy: https://docs.bsvblockchain.org/broadcasting/bsv-broadcaster
   guides.services.local-stack:
     path: guides/services/local-stack
     title: Run a local test chain

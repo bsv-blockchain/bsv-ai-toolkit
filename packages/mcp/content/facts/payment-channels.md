@@ -6,7 +6,7 @@ source: "@bsv/mcp content"
 
 # Payment channels
 
-What a payment channel can and cannot be on BSV today, for an app that broadcasts through Arcade. Measurements marked "testnet, Oct 2026" were verified on testnet in BSVA's earlier apps, Oct 2026.
+What a payment channel can and cannot be on BSV today, for an app that broadcasts through BSV Broadcaster (formerly Arcade). Measurements marked "testnet, Oct 2026" were verified on testnet in BSVA's earlier apps, Oct 2026.
 
 ## What a channel is on BSV
 
@@ -34,11 +34,11 @@ Sources: the `consensus` facts; `util/lock_time.go` in `bsv-blockchain/teranode`
 
 | Service | What it does with a non-final transaction | Source |
 | --- | --- | --- |
-| Arcade | Answers `POST /tx` with 400 and ARC code 476, and persists no verdict. `GET /tx/{txid}` keeps answering 404 after a submission that only ever got 476. Resubmit the identical transaction once it is final. Arcade never holds, orders or replaces channel states. | `openapi/arcade.openapi.yaml` in `bsv-blockchain/arcade` (`https://github.com/bsv-blockchain/arcade/blob/main/openapi/arcade.openapi.yaml`, read 2026-10-23); the `arcade` facts; an earlier BSVA design that resubmits every 5 minutes on 476 until the state is accepted (a design constant, not a testnet measurement). |
+| BSV Broadcaster | Answers `POST /tx` with 400 and ARC code 476, and persists no verdict. `GET /tx/{txid}` keeps answering 404 after a submission that only ever got 476. Resubmit the identical transaction once it is final. BSV Broadcaster never holds, orders or replaces channel states. | `openapi/bsv-broadcaster.openapi.yaml` in `bsv-blockchain/broadcaster` (`https://github.com/bsv-blockchain/broadcaster/blob/main/openapi/bsv-broadcaster.openapi.yaml`; read 2026-10-23 as `openapi/arcade.openapi.yaml`, before the rename); the `bsv-broadcaster` facts; an earlier BSVA design that resubmits every 5 minutes on 476 until the state is accepted (a design constant, not a testnet measurement). |
 | Teranode | Rejects it as invalid under the consensus rule its source labels TNJ-13. The same comment says payment channels are for the user to set up and run, and that the node "shouldn't be aware or care about them". | `util/lock_time.go` in `bsv-blockchain/teranode`, read 2026-10-23. Read from source, not probed live. |
 | SV Node | Keeps a separate non-final (time-locked) transaction pool. This is node policy, not consensus. Default size 50 MiB; an entry not updated for 4 weeks is dropped; a non-final transaction that spends the output of another non-final one is refused; to change a submitted transaction the participants negotiate a new version. | The BSV hub page `https://hub.bsvblockchain.org/wiki/transactions-and-utxos/bitcoin-transactions/transaction-pools`, read 2026-10-23. **Not verified:** whether nodes relay these transactions to each other; that the replacing version must carry a higher `nSequence` (stated on other hub pages, not re-read); the defaults in current SV Node releases. |
 
-An app that broadcasts through Arcade therefore cannot park a channel state on the network. The parties hold every state themselves, and only final transactions are broadcast.
+An app that broadcasts through BSV Broadcaster therefore cannot park a channel state on the network. The parties hold every state themselves, and only final transactions are broadcast.
 
 ## Sighash flags a channel uses
 
@@ -76,7 +76,7 @@ The cooperative close is final (`nSequence 0xffffffff`, `nLockTime 0`) and valid
 
 Source: testnet, Oct 2026.
 
-## Arcade observations for channel transactions
+## BSV Broadcaster observations for channel transactions
 
 Testnet, Oct 2026:
 
@@ -86,7 +86,7 @@ Testnet, Oct 2026:
 - `GET /tx/{txid}` answered 0.5–2 s after the POST.
 - The opening reached `SEEN_ON_NETWORK` within seconds, and updates started at 0-conf.
 
-Sources: testnet, Oct 2026; the `arcade` facts carry the same timings.
+Sources: testnet, Oct 2026; the `bsv-broadcaster` facts carry the same timings.
 
 ## Sizes and fees
 
@@ -117,6 +117,6 @@ Sources: the `consensus` facts; testnet, Oct 2026.
 ## Wallet facts for channels
 
 - `createSignature({ hashToDirectlySign })` signs exactly the 32 bytes given (the double SHA-256). Under a level-1 protocol covered by a BRC-73 grouped grant it signs without a prompt, one call per state (see the `wallet-limits` facts).
-- `@bsv/wallet-toolbox` keeps provided inputs first and, with `randomizeOutputs: false`, keeps outputs in the given order. A state signed by both parties can therefore be published through such a wallet with `createAction`, the signed channel input at index 0; then submit its EF to your own Arcade (see the `arcade` facts). **Not verified:** whether BSV Desktop keeps that order. The fallback is to hand the user the signed state as a file.
+- `@bsv/wallet-toolbox` keeps provided inputs first and, with `randomizeOutputs: false`, keeps outputs in the given order. A state signed by both parties can therefore be published through such a wallet with `createAction`, the signed channel input at index 0; then submit its EF to your own BSV Broadcaster (see the `bsv-broadcaster` facts). **Not verified:** whether BSV Desktop keeps that order. The fallback is to hand the user the signed state as a file.
 
 Sources: the `wallet-limits` facts; testnet, Oct 2026 (verified with `wallet-toolbox`; publishing through BSV Desktop was not run).

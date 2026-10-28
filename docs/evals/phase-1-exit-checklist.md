@@ -71,7 +71,7 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   2. Fund the printed testnet address from [bsvfaucet.com](https://bsvfaucet.com) (sign in with a BSV wallet). Optionally, once the faucet transaction is visible, `pnpm -F bsv-tipping-demo gate sweep --txid <faucet txid>` proves it is spendable.
   3. `BSV_MCP_NETWORK_TESTS=1 pnpm -F bsv-tipping-demo gate run` runs one tip end to end, writes the record `docs/evals/gate-<time>.md` and, on a pass, prints `probeTxid: <txid>`.
   4. Set the repository secret `BSV_TESTNET_GATE_KEY` to the key file's contents (Settings, Secrets and variables, Actions; or `gh secret set BSV_TESTNET_GATE_KEY < "${BSV_GATE_KEY_FILE:-$HOME/.bsv-gate/tipping-shape-a.key}"`, the same path `init` used, which never shows it). The nightly `gate` job runs only when this secret exists.
-  5. Put the printed txid in `content/versions.json` at `services.arcade.probeTxid`, run `pnpm sync`, and commit it with the gate record.
+  5. Put the printed txid in `content/versions.json` at `services.broadcaster.probeTxid`, run `pnpm sync`, and commit it with the gate record.
   Evidence: the committed `docs/evals/gate-<time>.md`, the `probeTxid` commit, and a green nightly `gate` run.
 
 - [ ] **9. `@bsv/simple-mcp` 0.0.3 published and deprecated.**

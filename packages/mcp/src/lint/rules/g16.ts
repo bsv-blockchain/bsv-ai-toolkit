@@ -5,7 +5,7 @@ const FROM_HEX = /\bTransaction\.fromHex\s*\(/g
 const TX_HEX = /\/tx\/.*\/hex\b/
 
 /**
- * G-16: Arcade's `rawTx` is Extended Format. Flags `Transaction.fromHex(…rawTx…)` unless the argument
+ * G-16: BSV Broadcaster's `rawTx` is Extended Format. Flags `Transaction.fromHex(…rawTx…)` unless the argument
  * goes through `fromHexEF`, and a `/tx/{txid}/hex` fetch inside a loop (ancestry built one tx at a time).
  */
 export const g16: Rule = {

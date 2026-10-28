@@ -14,7 +14,7 @@ BSV restored the original protocol at the Genesis upgrade. Several Bitcoin habit
 - BIP68 and `OP_CHECKSEQUENCEVERIFY` are NOPs. There are no relative lock times. `OP_CHECKLOCKTIMEVERIFY` is a NOP too; lock-time logic in script reads `nLockTime` from the transaction preimage.
 - `nLockTime < 500000000` is a block height; otherwise it is a Unix time compared with median-time-past (MTP). MTP lags the wall clock by up to about an hour, so a time-locked transaction becomes valid up to an hour after its nominal time.
 - A script that gates on a height must also assert `nLockTime < 500000000`, or a timestamp passes the check.
-- Arcade answers a not-yet-final transaction with ARC code 476 and keeps no record of it. Resubmit the identical transaction once it is final.
+- BSV Broadcaster (formerly Arcade) answers a not-yet-final transaction with ARC code 476 and keeps no record of it. Resubmit the identical transaction once it is final.
 
 ## Opcodes and digests
 
@@ -29,7 +29,7 @@ BSV restored the original protocol at the Genesis upgrade. Several Bitcoin habit
 | `maxtxsizepolicy` | 10 MB |
 | Script numbers | up to 750000 bytes |
 
-Arcade's `/policy` reports what it enforces, which can be larger (see the `arcade` facts). Individual nodes may still apply these defaults.
+BSV Broadcaster's `/policy` reports what it enforces, which can be larger (see the `bsv-broadcaster` facts). Individual nodes may still apply these defaults.
 
 ## Txid malleability
 

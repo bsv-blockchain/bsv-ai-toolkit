@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { verdictOf, detectHexFormat, classify400 } from '../src/arcade/classify.js'
-import { ArcadeClient } from '../src/arcade/client.js'
+import { verdictOf, detectHexFormat, classify400 } from '../src/broadcaster/classify.js'
+import { BroadcasterClient } from '../src/broadcaster/client.js'
 import { mockFetch } from './helpers/mockFetch.js'
 import type { TransactionStatus } from '../src/types.js'
 
-const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'arcade')
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'broadcaster')
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), 'utf8'))
-const BASE = 'https://arcade.example'
+const BASE = 'https://broadcaster.example'
 const TXID = 'a'.repeat(64)
 const received: TransactionStatus = { txid: TXID, txStatus: 'RECEIVED', timestamp: '2026-10-22T16:14:39.000000Z' }
 
@@ -50,10 +50,10 @@ describe('classify400', () => {
   })
 })
 
-describe('ArcadeClient', () => {
+describe('BroadcasterClient', () => {
   it('submit posts text/plain to {base}/tx', async () => {
     const f = mockFetch([{ method: 'POST', path: /^\/tx$/, status: 202, body: fixture('submit-202.json') }])
-    const r = await new ArcadeClient({ baseUrl: BASE + '/', fetchImpl: f }).submit('0100', { callbackToken: 'tok', fullStatusUpdates: true })
+    const r = await new BroadcasterClient({ baseUrl: BASE + '/', fetchImpl: f }).submit('0100', { callbackToken: 'tok', fullStatusUpdates: true })
     expect(r).toEqual({ postStatus: 202, body: fixture('submit-202.json'), transient: false })
     expect(f.calls).toHaveLength(1)
     expect(f.calls[0].method).toBe('POST')
@@ -65,7 +65,7 @@ describe('ArcadeClient', () => {
   })
   it('submit returns transient UNREACHABLE on network error', async () => {
     const fetchImpl = (async () => { throw new TypeError('fetch failed') }) as typeof fetch
-    const r = await new ArcadeClient({ baseUrl: BASE, fetchImpl }).submit('0100')
+    const r = await new BroadcasterClient({ baseUrl: BASE, fetchImpl }).submit('0100')
     expect(r).toEqual({ postStatus: 0, body: { error: 'UNREACHABLE' }, transient: true })
   })
   it('submit sets AbortSignal timeout', async () => {
@@ -74,16 +74,16 @@ describe('ArcadeClient', () => {
       signal = init?.signal
       return new Response(JSON.stringify(fixture('submit-202.json')), { status: 202 })
     }) as typeof fetch
-    await new ArcadeClient({ baseUrl: BASE, fetchImpl, timeoutMs: 50 }).submit('0100')
+    await new BroadcasterClient({ baseUrl: BASE, fetchImpl, timeoutMs: 50 }).submit('0100')
     expect(signal).toBeInstanceOf(AbortSignal)
   })
   it('status 404 returns notFound', async () => {
     const f = mockFetch([{ method: 'GET', path: /^\/tx\/[0-9a-f]{64}$/, status: 404, body: { error: 'transaction not found' } }])
-    expect(await new ArcadeClient({ baseUrl: BASE, fetchImpl: f }).status(TXID)).toEqual({ notFound: true })
+    expect(await new BroadcasterClient({ baseUrl: BASE, fetchImpl: f }).status(TXID)).toEqual({ notFound: true })
   })
   it('policy derives satPerKb 1 from the testnet fixture', async () => {
     const f = mockFetch([{ method: 'GET', path: /^\/policy$/, status: 200, body: fixture('policy.json') }])
-    const p = await new ArcadeClient({ baseUrl: BASE, fetchImpl: f }).policy()
+    const p = await new BroadcasterClient({ baseUrl: BASE, fetchImpl: f }).policy()
     expect(p.satPerKb).toBe(1)
     expect(p.timestamp).toBe(fixture('policy.json').timestamp)
     expect(p.policy.miningFee).toEqual({ satoshis: 1, bytes: 1000 })
@@ -93,13 +93,13 @@ describe('ArcadeClient', () => {
       { method: 'GET', path: /^\/tx\//, status: 200, body: received },
       { method: 'GET', path: /^\/tx\//, status: 200, body: fixture('status-seen.json') },
     ])
-    const s = await new ArcadeClient({ baseUrl: BASE, fetchImpl: f }).waitForSeen(TXID, 5000, 1)
+    const s = await new BroadcasterClient({ baseUrl: BASE, fetchImpl: f }).waitForSeen(TXID, 5000, 1)
     expect(s).toEqual(fixture('status-seen.json'))
     expect(f.calls).toHaveLength(2)
   })
   it('waitForSeen returns last status on timeout', async () => {
     const f = mockFetch([{ method: 'GET', path: /^\/tx\//, status: 200, body: received }])
-    const s = await new ArcadeClient({ baseUrl: BASE, fetchImpl: f }).waitForSeen(TXID, 30, 5)
+    const s = await new BroadcasterClient({ baseUrl: BASE, fetchImpl: f }).waitForSeen(TXID, 30, 5)
     expect(s).toEqual(received)
     expect(f.calls.length).toBeGreaterThan(1)
   })

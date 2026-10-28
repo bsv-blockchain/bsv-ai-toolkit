@@ -125,7 +125,7 @@ describe('versions_check', () => {
 
   const base = (): VersionsFile => JSON.parse(readFileSync(join(CONTENT, 'versions.json'), 'utf8'))
 
-  // npm answers each package's pinned version unless overridden; GitHub and Arcade answer the pinned values;
+  // npm answers each package's pinned version unless overridden; GitHub and BSV Broadcaster answer the pinned values;
   // a request to `failHost` rejects like a network error.
   function registryFetch(v: VersionsFile, overrides: Record<string, unknown> = {}, failHost?: string) {
     const calls: string[] = []
@@ -138,10 +138,12 @@ describe('versions_check', () => {
       if (url.hostname === 'registry.npmjs.org') {
         const name = decodeURIComponent(url.pathname.slice(1).replace(/\/latest$/, ''))
         body = { name, version: name in overrides ? overrides[name] : v.packages[name].pinned }
+      } else if (url.hostname === 'api.github.com' && url.pathname.endsWith('/releases/latest')) {
+        body = { tag_name: v.services.broadcaster.release }
       } else if (url.hostname === 'api.github.com') {
         body = { sha: v.git.runar.commit + '0'.repeat(33) }
       } else if (url.pathname === '/health') {
-        body = { healthy: true, version: v.services.arcade.version }
+        body = { healthy: true, version: v.services.broadcaster.version }
       } else {
         return new Response('not found', { status: 404 })
       }
@@ -160,17 +162,18 @@ describe('versions_check', () => {
     expect(sdk.ageDays).toBeGreaterThanOrEqual(100)
     expect(rows.find((r) => r.name === '@bsv/wallet-toolbox')).toMatchObject({ drift: false })
     expect(rows.find((r) => r.name === 'runar-sdk')).toMatchObject({ drift: false, note: expect.stringMatching(/unsafe/) })
-    const arcade = rows.filter((r) => r.name.startsWith('arcade:'))
-    expect(arcade.length).toBe(v.services.arcade.hosts.testnet.length + v.services.arcade.hosts.mainnet.length)
-    expect(arcade.every((r) => r.pinned === 'v0.16.0' && !r.drift)).toBe(true)
+    const hosts = rows.filter((r) => r.name.startsWith('broadcaster:'))
+    expect(hosts.length).toBe(v.services.broadcaster.hosts.testnet.length + v.services.broadcaster.hosts.mainnet.length)
+    expect(hosts.every((r) => r.pinned === 'v0.16.0' && !r.drift)).toBe(true)
+    expect(rows.find((r) => r.name === 'broadcaster release (bsv-blockchain/broadcaster)')).toMatchObject({ pinned: 'v0.19.0', latest: 'v0.19.0', drift: false })
     expect(rows.find((r) => r.name.includes('runar') && r.pinned === 'd207ee8')).toMatchObject({ latest: 'd207ee8', drift: false })
   })
 
-  it('an unreachable Arcade host is drift with latest unknown', async () => {
+  it('an unreachable BSV Broadcaster host is drift with latest unknown', async () => {
     const v = base()
-    const host = new URL(v.services.arcade.hosts.mainnet[0]).hostname
+    const host = new URL(v.services.broadcaster.hosts.mainnet[0]).hostname
     const { rows } = await versionsCheck(v, registryFetch(v, {}, host))
-    expect(rows.find((r) => r.name === `arcade:${host}`)).toMatchObject({ latest: 'unknown', drift: true, note: expect.stringMatching(/^check failed: fetch failed/) })
+    expect(rows.find((r) => r.name === `broadcaster:${host}`)).toMatchObject({ latest: 'unknown', drift: true, note: expect.stringMatching(/^check failed: fetch failed/) })
     expect(rows.filter((r) => r.drift).length).toBe(1)
   })
 
@@ -211,7 +214,8 @@ describe('versions_check', () => {
     try {
       vi.stubEnv('GITHUB_TOKEN', token)
       const { rows } = await versionsCheck(v, f, { probe: false })
-      expect(seen.filter((s) => s.host === 'api.github.com').map((s) => s.auth)).toEqual([`Bearer ${token}`])
+      // The runar head and the BSV Broadcaster release.
+      expect(seen.filter((s) => s.host === 'api.github.com').map((s) => s.auth)).toEqual([`Bearer ${token}`, `Bearer ${token}`])
       expect(seen.filter((s) => s.host !== 'api.github.com').every((s) => s.auth === undefined)).toBe(true)
       expect(JSON.stringify(rows)).not.toContain(token)
 
@@ -226,9 +230,25 @@ describe('versions_check', () => {
     }
   })
 
+  it('a newer BSV Broadcaster release is drift; the hosts stay pinned to the version they report', async () => {
+    const v = base()
+    expect(v.services.broadcaster).toMatchObject({ repo: 'bsv-blockchain/broadcaster', release: 'v0.19.0', version: 'v0.16.0' })
+    const inner = registryFetch(v)
+    const f = (async (input: string | URL | Request, init: RequestInit = {}) => {
+      const url = input instanceof Request ? input.url : input.toString()
+      if (url === 'https://api.github.com/repos/bsv-blockchain/broadcaster/releases/latest') {
+        return new Response(JSON.stringify({ tag_name: 'v0.20.0' }), { status: 200 })
+      }
+      return inner(input, init)
+    }) as typeof fetch
+    const { rows } = await versionsCheck(v, f, { probe: false })
+    expect(rows.find((r) => r.name === 'broadcaster release (bsv-blockchain/broadcaster)')).toMatchObject({ pinned: 'v0.19.0', latest: 'v0.20.0', drift: true })
+    expect(rows.filter((r) => r.name.startsWith('broadcaster:')).every((r) => !r.drift)).toBe(true)
+  })
+
   it('versionsCheck skips the probe when probeTxid is empty', async () => {
     const v = base()
-    v.services.arcade.probeTxid = ''
+    v.services.broadcaster.probeTxid = ''
     const f = registryFetch(v)
     const r = await versionsCheck(v, f, { probe: true })
     expect(r.rawTxProbe).toBeUndefined()

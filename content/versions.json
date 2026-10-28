@@ -13,9 +13,11 @@
     "runar": { "repo": "icellan/runar", "branch": "main", "commit": "d207ee8", "version": "1.0.0-rc.1", "verified": "2026-10-22", "npmVersion": "0.4.6", "npmUnsafe": true }
   },
   "services": {
-    "arcade": {
+    "broadcaster": {
+      "repo": "bsv-blockchain/broadcaster",
+      "release": "v0.19.0",
       "version": "v0.16.0",
-      "verified": "2026-10-22",
+      "verified": "2026-10-28",
       "hosts": {
         "testnet": ["https://arcade-testnet-us-1.bsvblockchain.tech", "https://arcade-v2-testnet-us-1.bsvblockchain.tech"],
         "mainnet": ["https://arcade-us-1.bsvblockchain.tech", "https://arcade-eu-1.bsvblockchain.tech", "https://arcade-ap-1.bsvblockchain.tech", "https://arcade-v2-us-1.bsvblockchain.tech"],

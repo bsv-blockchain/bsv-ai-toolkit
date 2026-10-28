@@ -30,7 +30,7 @@ The same values as `content/versions.json`, which tools read. Check drift with t
 
 | Service | Version | Verified | Hosts |
 | --- | --- | --- | --- |
-| Arcade | v0.16.0 | 2026-10-22 | testnet: `arcade-testnet-us-1`, `arcade-v2-testnet-us-1`; mainnet: `arcade-us-1`, `arcade-eu-1`, `arcade-ap-1`, `arcade-v2-us-1`; ttn: `arcade-v2-ttn-us-1` (all `.bsvblockchain.tech`) |
+| BSV Broadcaster (formerly Arcade), `bsv-blockchain/broadcaster` | v0.16.0 on every host (latest release v0.19.0) | 2026-10-28 | testnet: `arcade-testnet-us-1`, `arcade-v2-testnet-us-1`; mainnet: `arcade-us-1`, `arcade-eu-1`, `arcade-ap-1`, `arcade-v2-us-1`; ttn: `arcade-v2-ttn-us-1` (all `.bsvblockchain.tech`) |
 
 ## Runtime floors
 

@@ -8,7 +8,7 @@ import { createServer } from '../src/server.js'
 import { mockFetch } from './helpers/mockFetch.js'
 
 const STATIC_URIS = [
-  'bsv://facts/arcade',
+  'bsv://facts/bsv-broadcaster',
   'bsv://facts/networks',
   'bsv://facts/whatsonchain',
   'bsv://facts/wallet-limits',
@@ -136,7 +136,7 @@ describe('prompts', () => {
     expect(text).toMatch(/absolute/i)
   })
 
-  it('simple prompts read the simple resources, default to testnet and route tracking to Arcade', async () => {
+  it('simple prompts read the simple resources, default to testnet and route tracking to BSV Broadcaster', async () => {
     const texts = [
       await promptText('integrate_simple', { framework: 'next' }),
       await promptText('add_simple_feature', { feature: 'payments' }),
@@ -153,16 +153,16 @@ describe('prompts', () => {
     }
   })
 
-  it('money paths gate on the app\'s own Arcade client; the MCP tools are the dev-time equivalent', async () => {
+  it('money paths gate on the app\'s own BSV Broadcaster client; the MCP tools are the dev-time equivalent', async () => {
     const texts = [
       await promptText('integrate_simple', { framework: 'node' }),
       await promptText('add_simple_feature', { feature: 'payments' }),
       await promptText('tokenize_with_1color', { mode: 'deploy' }),
     ]
     for (const text of texts) {
-      expect(text).toContain("In app code, submit to the app's own Arcade client (`POST /tx` as EF hex) and gate on `GET /tx/{txid}`")
-      expect(text).toContain('While developing, `arcade_submit`/`arcade_status` do the same from here.')
-      expect(text).not.toMatch(/gate on `arcade_status`/)
+      expect(text).toContain("In app code, submit to the app's own BSV Broadcaster client (`POST /tx` as EF hex) and gate on `GET /tx/{txid}`")
+      expect(text).toContain('While developing, `broadcaster_submit`/`broadcaster_status` do the same from here.')
+      expect(text).not.toMatch(/gate on `broadcaster_status`/)
     }
   })
 
