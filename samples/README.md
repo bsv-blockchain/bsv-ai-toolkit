@@ -1,6 +1,6 @@
 # Samples
 
-Sample BSV applications built the way the kit recommends: testnet first, Arcade for broadcast and status, and `check_guardrails` reporting zero errors.
+Sample BSV applications built the way the kit recommends: testnet first, BSV Broadcaster (formerly Arcade) for broadcast and status, and `check_guardrails` reporting zero errors.
 
 | Sample | Custody shape | Status |
 | --- | --- | --- |
