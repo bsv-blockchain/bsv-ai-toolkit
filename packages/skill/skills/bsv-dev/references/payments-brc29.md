@@ -29,19 +29,21 @@ const lockingScript = new P2PKH().lock(PublicKey.fromString(publicKey).toAddress
 
 ## Pay
 
+The wallet signs and broadcasts; the app then submits the transaction to its own BSV Broadcaster (formerly Arcade) so it can track it.
+
 ```ts
 const { txid, tx } = await wallet.createAction({
   description: 'Payment for order 42',
   outputs: [{ lockingScript, satoshis, outputDescription: 'BRC-29 payment' }],
   options: { randomizeOutputs: false, acceptDelayedBroadcast: false },
 })
-await arcade.submit(Transaction.fromAtomicBEEF(tx!).toHexEF()) // track it in your own Arcade
+await broadcaster.submit(Transaction.fromAtomicBEEF(tx!).toHexEF()) // track it in your own BSV Broadcaster
 ```
 
 - `randomizeOutputs: false` keeps your output at the index you planned, so the remittance's `outputIndex` stays right.
 - `acceptDelayedBroadcast: false` makes the wallet broadcast now and return errors in the result instead of retrying later in the background.
 - The result's `tx` is AtomicBEEF (BRC-95): the transaction plus its whole ancestry. Hand it to the recipient as is, with `{ senderIdentityKey, derivationPrefix, derivationSuffix, outputIndex }`.
-- The wallet broadcast through its own services, so your Arcade has never seen the transaction. Submit it as EF (`arcade-0conf.md`, "Submit") and gate on your own `GET /tx/{txid}`.
+- The wallet broadcast through its own services, so your BSV Broadcaster has never seen the transaction. Submit it as EF (`broadcaster-0conf.md`, "Submit") and gate on your own `GET /tx/{txid}`.
 - Payout outputs carry at least 546 sats, the dust threshold for outputs a wallet will track.
 
 ## Collect
@@ -49,7 +51,7 @@ await arcade.submit(Transaction.fromAtomicBEEF(tx!).toHexEF()) // track it in yo
 The recipient (a user's wallet, or the server's wallet in shape B) collects in this order:
 
 1. Verify the output pays its own derived key ("Verify before signing anything that pays you", below).
-2. Submit the transaction to its own Arcade and wait for the gate: `SEEN_ON_NETWORK` or later with no competing transaction (`arcade-0conf.md`). A txid or BEEF reported by a client is a hint, never money evidence.
+2. Submit the transaction to its own BSV Broadcaster and wait for the gate: `SEEN_ON_NETWORK` or later with no competing transaction (`broadcaster-0conf.md`). A txid or BEEF reported by a client is a hint, never money evidence.
 3. Internalize:
 
 ```ts
@@ -75,7 +77,7 @@ await wallet.internalizeAction({
 const beef = new Beef()
 for (const held of heldBeefs) beef.mergeBeef(held) // createAction results, a counterparty's funding BEEF
 for (const parent of parentsNotHeld) {
-  const s = await arcade.status(parent)             // GET /tx/{txid} on your Arcade
+  const s = await broadcaster.status(parent)             // GET /tx/{txid} on your BSV Broadcaster
   const bump = s.merklePath ? beef.mergeBump(MerklePath.fromHex(s.merklePath)) : undefined
   beef.mergeRawTx(Transaction.fromHexEF(s.rawTx!).toBinary(), bump) // EF re-read as plain
 }
@@ -83,7 +85,7 @@ beef.mergeRawTx(payoutTx.toBinary())
 const atomicBeef = beef.toBinaryAtomic(payoutTx.id('hex'))
 ```
 
-- Arcade's `rawTx` is Extended Format with placeholder parents. `Transaction.fromHexEF(hex)` then `.toBinary()` (or `.toHex()`) gives the plain transaction. In `@bsv/sdk` 3.2.1 `beef.mergeRawTx` takes bytes, not hex (verified 2026-10-22).
+- BSV Broadcaster's `rawTx` is Extended Format with placeholder parents. `Transaction.fromHexEF(hex)` then `.toBinary()` (or `.toHex()`) gives the plain transaction. In `@bsv/sdk` 3.2.1 `beef.mergeRawTx` takes bytes, not hex (verified 2026-10-22).
 - Never call `beef.mergeTransaction` on a transaction parsed from EF: it merges the placeholder parents too and the BEEF is invalid.
 - `rawTx` is not guaranteed to be present (verified 2026-10-22); when it is missing, the parent must come from a BEEF you already hold. Keep every BEEF a wallet or counterparty gives you.
 - Never rebuild ancestry one ancestor at a time from an indexer: it is slow, hits 429 rate limits and can be incomplete.

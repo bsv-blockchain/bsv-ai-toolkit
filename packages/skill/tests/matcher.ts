@@ -2,9 +2,13 @@
 // It reads the trigger phrases out of the description itself, so the corpus tests the description, not a copy.
 
 const NUMERIC = /^\d+$/
-// A numeric error code (Arcade 476, WhatsOnChain 429) counts only beside a BSV service in the same prompt;
-// on its own, 429 is any rate limit.
+// A numeric error code (BSV Broadcaster 476 under its old name Arcade, WhatsOnChain 429) counts only beside a BSV
+// service in the same prompt; on its own, 429 is any rate limit.
 const BSV_SERVICE = /\b(arc|arcade|whatsonchain|woc|bsv|txid)\b/
+// A trigger that is also an everyday word (Arcade, BSV Broadcaster's former name) counts only as a whole word beside
+// a BSV service, a broadcast or transaction term, or an error code; "an arcade game" is not BSV work.
+const SHARED_WORD_TRIGGERS = new Set(['arcade'])
+const BROADCAST_CONTEXT = /\b(bsv|whatsonchain|woc|txid|broadcast\w*|transactions?|tx|post|\d{3})\b/
 // Another chain named as the target ("to Solana", "on Polygon") means the work is not BSV work.
 const OTHER_CHAIN =
   'solana|ethereum|eth|sepolia|polygon|avalanche|cardano|tron|arbitrum|optimism|aptos|sui|metamask|solidity|hardhat|evm|lightning'
@@ -57,6 +61,10 @@ export function matches(prompt: string, triggers: string[]): boolean {
   return triggers.some((trigger) => {
     const t = normalize(trigger)
     if (NUMERIC.test(t)) return new RegExp(`\\b${t}\\b`).test(p) && BSV_SERVICE.test(p)
+    if (SHARED_WORD_TRIGGERS.has(t)) {
+      const word = new RegExp(`\\b${t}\\b`, 'g')
+      return word.test(p) && BROADCAST_CONTEXT.test(p.replace(word, ' '))
+    }
     if (p.includes(t)) return true
     const kws = keywords(trigger)
     return kws !== undefined && kws.every((kw) => hasWord(promptWords, kw))

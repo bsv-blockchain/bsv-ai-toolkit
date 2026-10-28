@@ -16,7 +16,7 @@ Guardrails: G-02, G-06, G-09, G-13, G-21, G-23
 
 ## What it does not
 
-- **Arcade.** There is no `arcadeUrl` option, so the library gives you no `SEEN_ON_NETWORK` gate, no `competingTxs` and no rejection reasons.
+- **BSV Broadcaster (formerly Arcade).** There is no `arcadeUrl` option, so the library gives you no `SEEN_ON_NETWORK` gate, no `competingTxs` and no rejection reasons.
 - **A network check.** In the browser `network` is only a label: `createWallet` does not ask the wallet which network it is on.
 - **HTTP 402.** No helper. Use `@bsv/402-pay` (BRC-121) next to a shape B server wallet.
 - **1Color tokens, Rúnar contracts, multi-party funding with foreign inputs, AtomicBEEF assembly.**
@@ -29,7 +29,7 @@ Guardrails: G-02, G-06, G-09, G-13, G-21, G-23
   - `Overlay.create` takes `'testnet' | 'mainnet'` unchanged, and defaults to `'mainnet'`.
   - For comparison, `getNetwork()` on a BRC-100 wallet returns `'testnet' | 'mainnet'`, and wallet-toolbox's `Chain` is `'test' | 'main'`.
 - **Check the wallet's real network.** Call `wallet.getClient().getNetwork({})` before every money path and refuse on a mismatch (G-02). A local BSV Desktop is often on mainnet.
-- **No `arcadeUrl`.** In the browser the user's wallet broadcasts. `ServerWallet.create` builds wallet-toolbox `Services` with their defaults, which in 2.14.9 broadcast through legacy ARC endpoints, not Arcade, for `main` and `test`.
+- **No `arcadeUrl`.** In the browser the user's wallet broadcasts. `ServerWallet.create` builds wallet-toolbox `Services` with their defaults, which in 2.14.9 broadcast through legacy ARC endpoints, not BSV Broadcaster, for `main` and `test`.
 - **`pay()` may return an empty txid.** It pays through MessageBox and can return `txid: ''`; in 0.7.0 it also ignores `memo` and `description`. `sendMessageBoxPayment` puts `'sent'` or `''` in its `txid` field. Never treat either as proof of payment.
 - **Server `authorize` callback.** `createServerWalletHandler` answers 403 on every route until `authorize` returns literal `true`. Bind it to your authenticated session and check the specific action (`status`, `create`, `request`, `balance`, `outputs`, `receive`, `reset`). Never deploy `authorize: () => true` on a public route. `createCredentialIssuerHandler` follows the same rule.
 - **Server key and storage.** `ServerWalletManager` reads `SERVER_PRIVATE_KEY`; when it is unset it generates a key and writes it in plain JSON to `.server-wallet.json` in the working directory. Add that file to `.gitignore` and have the operator set the variable in every deployed environment. `ServerWallet.create` keeps wallet records on `https://storage.babbage.systems` unless you pass `storageUrl`.
@@ -44,7 +44,7 @@ if (actual !== BSV_NETWORK) throw new Error(`Wallet is on ${actual}; switch it t
 
 ## When to drop to @bsv/sdk
 
-- **Any money decision.** Take the transaction the action returns, submit it as EF to your own Arcade (`POST /tx`) and gate on your own `GET /tx/{txid}`: `SEEN_ON_NETWORK` or later with no competing transaction (`arcade-0conf.md`).
+- **Any money decision.** Take the transaction the action returns, submit it as EF to your own BSV Broadcaster (`POST /tx`) and gate on your own `GET /tx/{txid}`: `SEEN_ON_NETWORK` or later with no competing transaction (`broadcaster-0conf.md`).
 - **A payment the app must verify.** Use `createPaymentRequest` + `sendDirectPayment`, not `pay()`, and count it only at the gate (G-23).
 - **A grouped-permission manifest under your own origin.** Connect with your own `WalletClient('auto', yourOrigin)` from `@bsv/sdk` for that part (`wallet-brc100.md`).
 - **1Color tokens, contracts, foreign inputs, multi-party funding, AtomicBEEF.** Use `@bsv/sdk` and the wallet's `createAction` / `signAction` through `getClient()` (`payments-brc29.md`).
@@ -57,15 +57,15 @@ Until ts-stack gives `@bsv/simple`'s server wallet a testnet default and an `arc
 
   ```ts
   const options = Services.createDefaultOptions(chain) // chain: 'test' | 'main', from BSV_NETWORK
-  options.arcadeUrl = ARCADE_URL || PUBLIC_ARCADE[BSV_NETWORK] // never '': an empty string drops Arcade
+  options.arcadeUrl = BSV_BROADCASTER_URL || PUBLIC_BROADCASTER[BSV_NETWORK] // never '': an empty string drops BSV Broadcaster
   const services = new Services(options) // then new Wallet({ chain, keyDeriver, storage, services, monitor })
   ```
 
-  `PUBLIC_ARCADE` maps `testnet` and `mainnet` to the public Arcade hosts in `arcade-0conf.md`.
+  `PUBLIC_BROADCASTER` maps `testnet` and `mainnet` to the public BSV Broadcaster hosts in `broadcaster-0conf.md`.
 
-- **or go-wallet-toolbox** with Arcade configured as its broadcaster.
+- **or go-wallet-toolbox** with BSV Broadcaster configured as its broadcaster.
 
-Setting `arcadeUrl` only puts Arcade first in the broadcaster list; it does not make Arcade the only one. In the default `UntilSuccess` mode the toolbox still falls back to GorillaPool and Taal ARC (unless you blank `arcUrl` and `arcGorillaPoolUrl`), and then to Bitails and WhatsOnChain, which no option turns off on `main` or `test`. Its own status reads ask WhatsOnChain first and Arcade second. So the app also submits every money transaction (as EF) to its own Arcade and gates on its own `GET /tx/{txid}`, whatever the wallet did. The other shape B rules (root key outside the repo, write-ahead records, bounded budgets, a "fund the server" path) are in `custody-shapes.md`.
+Setting `arcadeUrl` only puts BSV Broadcaster first in the broadcaster list; it does not make BSV Broadcaster the only one. In the default `UntilSuccess` mode the toolbox still falls back to GorillaPool and Taal ARC (unless you blank `arcUrl` and `arcGorillaPoolUrl`), and then to Bitails and WhatsOnChain, which no option turns off on `main` or `test`. Its own status reads ask WhatsOnChain first and BSV Broadcaster second. So the app also submits every money transaction (as EF) to its own BSV Broadcaster and gates on its own `GET /tx/{txid}`, whatever the wallet did. The other shape B rules (root key outside the repo, write-ahead records, bounded budgets, a "fund the server" path) are in `custody-shapes.md`.
 
 ## Prompts in @bsv/mcp
 
@@ -73,6 +73,6 @@ With the `bsv-mcp` server installed, three prompts build on the same facts, test
 
 - `integrate_simple` (`framework`: `next`, `express`, `react` or `node`): add `@bsv/simple` 0.7 to a project.
 - `add_simple_feature` (`feature`: `payments`, `tokens`, `inscriptions`, `messagebox`, `certificates`, `did` or `overlay`).
-- `debug_simple` (`symptom`): checks the network, each gotcha, then `arcade_status` for a known txid.
+- `debug_simple` (`symptom`): checks the network, each gotcha, then `broadcaster_status` for a known txid.
 
 Docs: `get_doc` or `search_docs` on the BSV docs MCP for the `@bsv/simple` pages.

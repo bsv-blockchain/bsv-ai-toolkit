@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { ArcadeClient } from '../arcade/client.js'
+import { BroadcasterClient } from '../broadcaster/client.js'
 import type { TxStatus, VersionRow } from '../types.js'
 import { CONTENT_DIR } from '../content.js'
 import { errorResult, textResult } from './result.js'
@@ -12,7 +12,19 @@ export interface VersionsFile {
   packages: Record<string, { pinned: string; verified: string; note?: string }>
   git: Record<string, { repo: string; branch: string; commit: string; version: string; verified: string; npmVersion?: string; npmUnsafe?: boolean }>
   services: {
-    arcade: { version: string; verified: string; hosts: { testnet: string[]; mainnet: string[]; ttn?: string[] }; probeTxid: string }
+    /**
+     * BSV Broadcaster (formerly Arcade). `version` is what the public hosts report in `/health` (the probe and the
+     * host rows check it); `release` is the latest release of `repo`, which the hosts may not run yet. Both are
+     * optional, as in the sync schema; without both there is no release row.
+     */
+    broadcaster: {
+      repo?: string
+      release?: string
+      version: string
+      verified: string
+      hosts: { testnet: string[]; mainnet: string[]; ttn?: string[] }
+      probeTxid: string
+    }
   }
   runtime: Record<string, string>
 }
@@ -42,9 +54,9 @@ export function loadVersionsFile(contentDir = CONTENT_DIR): VersionsFile {
 
 /**
  * Compares every pinned version in versions.json with what is live: npm `latest`, the runar git branch head,
- * and `/health` on every testnet and mainnet Arcade host. A check that fails is reported as drift with the
+ * the latest BSV Broadcaster release on GitHub, and `/health` on every testnet and mainnet BSV Broadcaster host. A check that fails is reported as drift with the
  * error in `note`, so a broken source is never read as "up to date". The raw-tx probe runs only when
- * `services.arcade.probeTxid` is set (and `opts.probe` is not false).
+ * `services.broadcaster.probeTxid` is set (and `opts.probe` is not false).
  */
 export async function versionsCheck(
   versions: VersionsFile,
@@ -111,21 +123,30 @@ export async function versionsCheck(
     rows.push(row(`git:${key} (${g.repo}@${g.branch})`, g.commit, g.verified, head))
   }
 
-  const arcade = versions.services.arcade
-  for (const host of [...arcade.hosts.testnet, ...arcade.hosts.mainnet]) {
-    const version = new ArcadeClient({ baseUrl: host, timeoutMs: TIMEOUT_MS, fetchImpl }).health().then((h) => String(h.version))
-    rows.push(row(`arcade:${new URL(host).hostname}`, arcade.version, arcade.verified, version))
+  const broadcaster = versions.services.broadcaster
+  const { repo, release: pinnedRelease } = broadcaster
+  if (repo !== undefined && repo !== '' && pinnedRelease !== undefined && pinnedRelease !== '') {
+    const release = getJson(`https://api.github.com/repos/${repo}/releases/latest`, githubHeaders).then((j) => {
+      const tag = String(j?.tag_name)
+      if (!VERSION.test(tag)) throw new Error(`GitHub answered a malformed release tag: ${tag}`)
+      return tag
+    })
+    rows.push(row(`broadcaster release (${repo})`, pinnedRelease, broadcaster.verified, release))
+  }
+  for (const host of [...broadcaster.hosts.testnet, ...broadcaster.hosts.mainnet]) {
+    const version = new BroadcasterClient({ baseUrl: host, timeoutMs: TIMEOUT_MS, fetchImpl }).health().then((h) => String(h.version))
+    rows.push(row(`broadcaster:${new URL(host).hostname}`, broadcaster.version, broadcaster.verified, version))
   }
 
   const report: VersionsReport = { rows: await Promise.all(rows) }
-  if (opts.probe !== false && arcade.probeTxid !== '') report.rawTxProbe = await probe(arcade.probeTxid, arcade.hosts.testnet[0], fetchImpl)
+  if (opts.probe !== false && broadcaster.probeTxid !== '') report.rawTxProbe = await probe(broadcaster.probeTxid, broadcaster.hosts.testnet[0], fetchImpl)
   return report
 }
 
-// Reads the probe txid's status from the first testnet Arcade: does it still return rawTx?
+// Reads the probe txid's status from the first testnet BSV Broadcaster: does it still return rawTx?
 async function probe(txid: string, host: string, fetchImpl: typeof fetch): Promise<RawTxProbe> {
   try {
-    const s = await new ArcadeClient({ baseUrl: host, timeoutMs: TIMEOUT_MS, fetchImpl }).status(txid)
+    const s = await new BroadcasterClient({ baseUrl: host, timeoutMs: TIMEOUT_MS, fetchImpl }).status(txid)
     if ('notFound' in s) return { txid, rawTxPresent: false, txStatus: 'UNKNOWN' }
     return { txid, rawTxPresent: typeof s.rawTx === 'string' && s.rawTx !== '', txStatus: s.txStatus }
   } catch {
@@ -170,7 +191,8 @@ export function registerVersionsTools(server: McpServer, fetchImpl: typeof fetch
     'versions_check',
     {
       description:
-        'Compare the pinned BSV stack (npm packages, runar git head, Arcade version on every testnet and mainnet host) ' +
+        'Compare the pinned BSV stack (npm packages, runar git head, the latest BSV Broadcaster release and the version on ' +
+        'every testnet and mainnet BSV Broadcaster host) ' +
         'with what is live now. Returns one row per item with drift and the age of its verified date.',
       inputSchema: {},
     },

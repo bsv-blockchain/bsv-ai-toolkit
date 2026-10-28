@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { ArcadeClient } from '../arcade/client.js'
-import { classify400, detectHexFormat, verdictOf } from '../arcade/classify.js'
+import { BroadcasterClient } from '../broadcaster/client.js'
+import { classify400, detectHexFormat, verdictOf } from '../broadcaster/classify.js'
 import { resolveNetwork, type Config } from '../config.js'
 import type { Network, StatusResult, SubmitResult, TransactionStatus, TxStatus } from '../types.js'
 import { respond } from './result.js'
 
 export interface SubmitInput {
   hex: string
-  arcadeUrl?: string
+  broadcasterUrl?: string
   network?: Network
   waitForSeen?: boolean
   timeoutMs?: number
@@ -20,12 +20,12 @@ export interface SubmitInput {
 
 export interface StatusInput {
   txid: string
-  arcadeUrl?: string
+  broadcasterUrl?: string
   callbackToken?: string
 }
 
 export interface UrlInput {
-  arcadeUrl?: string
+  broadcasterUrl?: string
 }
 
 const MAX_REQUEST_TIMEOUT_MS = 10000
@@ -50,7 +50,7 @@ function joinNotes(...notes: (string | undefined)[]): string | undefined {
   return present.length > 0 ? present.join('; ') : undefined
 }
 
-// The error strings an Arcade/ARC error body may carry, most specific first.
+// The error strings a BSV Broadcaster/ARC error body may carry, most specific first.
 function errorTexts(body: any): string[] {
   return [body?.extraInfo, body?.reason, body?.detail, body?.error, body?.title].filter((v): v is string => typeof v === 'string' && v !== '')
 }
@@ -59,7 +59,7 @@ function errorText(body: any): string | undefined {
   return errorTexts(body)[0]
 }
 
-// Only HTTP 400/422, or a body with an ARC code in 460-476, is Arcade's verdict on the transaction itself;
+// Only HTTP 400/422, or a body with an ARC code in 460-476, is BSV Broadcaster's verdict on the transaction itself;
 // any other 4xx (401, 403, 404, 405, ...) is about the request or the URL.
 function isValidationAnswer(postStatus: number, body: any): boolean {
   if (postStatus === 400 || postStatus === 422) return true
@@ -121,13 +121,13 @@ export function txidOfHex(hex: string): string | undefined {
   }
 }
 
-export async function arcadeSubmit(input: SubmitInput, cfg: Config, fetchImpl: typeof fetch): Promise<SubmitResult> {
+export async function broadcasterSubmit(input: SubmitInput, cfg: Config, fetchImpl: typeof fetch): Promise<SubmitResult> {
   // Normalise once: the same string is format-checked and posted.
   const hex = input.hex.trim()
   if (detectHexFormat(hex) === 'beef') {
     throw new Error('BEEF is not accepted by POST /tx; convert to EF or raw hex (e.g. Transaction.fromHexBEEF(hex).toHexEF()) and submit that')
   }
-  const { network, arcadeUrl, warning: hostWarning } = resolveNetwork({ network: input.network, arcadeUrl: input.arcadeUrl }, cfg)
+  const { network, broadcasterUrl, warning: hostWarning } = resolveNetwork({ network: input.network, broadcasterUrl: input.broadcasterUrl }, cfg)
   // Gate on the effective network only, never on the host string.
   if (network === 'mainnet' && !cfg.allowMainnetBroadcast) throw new Error(MAINNET_DISABLED)
 
@@ -136,7 +136,7 @@ export async function arcadeSubmit(input: SubmitInput, cfg: Config, fetchImpl: t
   // waitForSeen can overrun its deadline by one in-flight request, so while waiting each request (the POST
   // included) gets at most min(10 s, timeoutMs). Worst case: one POST timeout + timeoutMs + one poll timeout.
   const requestTimeoutMs = waitForSeen ? Math.max(1, Math.min(MAX_REQUEST_TIMEOUT_MS, timeoutMs)) : MAX_REQUEST_TIMEOUT_MS
-  const client = new ArcadeClient({ baseUrl: arcadeUrl, timeoutMs: requestTimeoutMs, fetchImpl })
+  const client = new BroadcasterClient({ baseUrl: broadcasterUrl, timeoutMs: requestTimeoutMs, fetchImpl })
 
   const posted = await client.submit(hex, {
     callbackUrl: input.callbackUrl,
@@ -160,7 +160,7 @@ export async function arcadeSubmit(input: SubmitInput, cfg: Config, fetchImpl: t
   if (is4xx && !isValidationAnswer(postStatus, body)) {
     return finish(
       { ...base, txStatus: 'UNKNOWN', verdict: 'pending', transient: false, ...extra(errorText(body)) },
-      `Arcade answered HTTP ${postStatus} — check arcadeUrl; this is not a transaction verdict`,
+      `BSV Broadcaster answered HTTP ${postStatus} — check broadcasterUrl; this is not a transaction verdict`,
     )
   }
 
@@ -184,13 +184,13 @@ export async function arcadeSubmit(input: SubmitInput, cfg: Config, fetchImpl: t
   if (!readStatus) {
     // No response, backpressure (503), rate limit or a server error: nothing to read; re-posting is safe.
     const txStatus = postStatus === 0 || postStatus === 503 ? 'UNREACHABLE' : 'UNKNOWN'
-    const info = postStatus === 0 ? 'no response from Arcade (network error or timeout)' : errorText(body)
+    const info = postStatus === 0 ? 'no response from BSV Broadcaster (network error or timeout)' : errorText(body)
     return finish({ ...base, txStatus, verdict: 'pending', transient, ...extra(info) })
   }
 
   // A 2xx (or already-known) is provisional; the truth is GET /tx/{txid}.
   if (txid === '') {
-    return finish({ ...base, txStatus: 'UNKNOWN', verdict: 'pending', transient: false }, 'could not determine the txid to re-read status; call arcade_status')
+    return finish({ ...base, txStatus: 'UNKNOWN', verdict: 'pending', transient: false }, 'could not determine the txid to re-read status; call broadcaster_status')
   }
   let s: TransactionStatus | { notFound: true }
   try {
@@ -199,11 +199,11 @@ export async function arcadeSubmit(input: SubmitInput, cfg: Config, fetchImpl: t
     const what = typeof body?.txStatus === 'string' && TX_STATUSES.has(body.txStatus) ? ` (POST said ${body.txStatus})` : ''
     return finish(
       { ...base, txStatus: 'UNKNOWN', verdict: 'pending', transient: false },
-      `status re-read failed${what}: ${(e as Error).message}; call arcade_status`,
+      `status re-read failed${what}: ${(e as Error).message}; call broadcaster_status`,
     )
   }
   if ('notFound' in s) {
-    return finish({ ...base, txStatus: 'UNKNOWN', verdict: 'pending', transient: false }, `Arcade answered ${postStatus} to POST /tx but GET /tx/${txid} answered 404; call arcade_status`)
+    return finish({ ...base, txStatus: 'UNKNOWN', verdict: 'pending', transient: false }, `BSV Broadcaster answered ${postStatus} to POST /tx but GET /tx/${txid} answered 404; call broadcaster_status`)
   }
   const verdict = verdictOf(s)
   const code = arcCode ?? (verdict === 'terminal' && typeof s.status === 'number' ? s.status : undefined)
@@ -225,13 +225,13 @@ function extra(extraInfo: string | undefined): { extraInfo?: string } {
   return extraInfo === undefined || extraInfo === '' ? {} : { extraInfo }
 }
 
-// Reads never broadcast, so they skip the network/host cross-check: any Arcade can be asked about any txid.
-function readClient(input: UrlInput, cfg: Config, fetchImpl: typeof fetch): ArcadeClient {
-  const arcadeUrl = input.arcadeUrl === undefined || input.arcadeUrl === '' ? cfg.arcadeUrl : input.arcadeUrl
-  return new ArcadeClient({ baseUrl: arcadeUrl, fetchImpl })
+// Reads never broadcast, so they skip the network/host cross-check: any BSV Broadcaster instance can be asked about any txid.
+function readClient(input: UrlInput, cfg: Config, fetchImpl: typeof fetch): BroadcasterClient {
+  const broadcasterUrl = input.broadcasterUrl === undefined || input.broadcasterUrl === '' ? cfg.broadcasterUrl : input.broadcasterUrl
+  return new BroadcasterClient({ baseUrl: broadcasterUrl, fetchImpl })
 }
 
-export async function arcadeStatus(input: StatusInput, cfg: Config, fetchImpl: typeof fetch): Promise<StatusResult> {
+export async function broadcasterStatus(input: StatusInput, cfg: Config, fetchImpl: typeof fetch): Promise<StatusResult> {
   const s = await readClient(input, cfg, fetchImpl).status(input.txid, input.callbackToken)
   if ('notFound' in s) {
     return {
@@ -258,27 +258,27 @@ export async function arcadeStatus(input: StatusInput, cfg: Config, fetchImpl: t
   }
 }
 
-export function arcadePolicy(input: UrlInput, cfg: Config, fetchImpl: typeof fetch): Promise<{ policy: any; timestamp: string; satPerKb: number }> {
+export function broadcasterPolicy(input: UrlInput, cfg: Config, fetchImpl: typeof fetch): Promise<{ policy: any; timestamp: string; satPerKb: number }> {
   return readClient(input, cfg, fetchImpl).policy()
 }
 
-export function arcadeHealth(input: UrlInput, cfg: Config, fetchImpl: typeof fetch): Promise<any> {
+export function broadcasterHealth(input: UrlInput, cfg: Config, fetchImpl: typeof fetch): Promise<any> {
   return readClient(input, cfg, fetchImpl).health()
 }
 
-const arcadeUrl = z.string().url().optional().describe('Arcade base URL; defaults to ARCADE_URL or the network default')
+const broadcasterUrl = z.string().url().optional().describe('BSV Broadcaster base URL; defaults to BSV_BROADCASTER_URL or the network default')
 
-export function registerArcadeTools(server: McpServer, cfg: Config, fetchImpl: typeof fetch): void {
+export function registerBroadcasterTools(server: McpServer, cfg: Config, fetchImpl: typeof fetch): void {
   server.registerTool(
-    'arcade_submit',
+    'broadcaster_submit',
     {
       description:
-        'Broadcast a raw or EF transaction hex to Arcade (POST /tx; BEEF is refused). A 2xx is provisional: the tool re-reads ' +
+        'Broadcast a raw or EF transaction hex to BSV Broadcaster (formerly Arcade) with POST /tx; BEEF is refused. A 2xx is provisional: the tool re-reads ' +
         'GET /tx/{txid} and, with waitForSeen, polls until SEEN_ON_NETWORK or later with no competing tx, or timeoutMs. ' +
         'Mainnet broadcast needs BSV_MCP_ALLOW_MAINNET_BROADCAST=1.',
       inputSchema: {
         hex: z.string().describe('Raw or EF transaction hex (not BEEF)'),
-        arcadeUrl,
+        broadcasterUrl,
         network: z.enum(['testnet', 'mainnet']).optional().describe('Defaults to BSV_NETWORK'),
         waitForSeen: z.boolean().default(true).describe('Poll status until seen with no competitor, or timeoutMs'),
         timeoutMs: z.number().int().default(15000).describe('How long to wait for seen'),
@@ -287,33 +287,33 @@ export function registerArcadeTools(server: McpServer, cfg: Config, fetchImpl: t
         fullStatusUpdates: z.boolean().optional().describe('Sent as X-FullStatusUpdates'),
       },
     },
-    (input) => respond(() => arcadeSubmit(input, cfg, fetchImpl)),
+    (input) => respond(() => broadcasterSubmit(input, cfg, fetchImpl)),
   )
 
   server.registerTool(
-    'arcade_status',
+    'broadcaster_status',
     {
       description:
-        'Read GET /tx/{txid} from Arcade with a verdict. isFinalForApp is true at SEEN_ON_NETWORK or later with no competing tx ' +
-        '(never wait for MINED). A 404 means this Arcade was never given the txid: no verdict, not rejected.',
+        'Read GET /tx/{txid} from BSV Broadcaster with a verdict. isFinalForApp is true at SEEN_ON_NETWORK or later with no competing tx ' +
+        '(never wait for MINED). A 404 means this instance was never given the txid: no verdict, not rejected.',
       inputSchema: {
         txid: z.string().regex(/^[0-9a-f]{64}$/i).describe('Transaction id (64 hex characters)'),
-        arcadeUrl,
+        broadcasterUrl,
         callbackToken: z.string().optional().describe('Callback token the tx was submitted with'),
       },
     },
-    (input) => respond(() => arcadeStatus(input, cfg, fetchImpl)),
+    (input) => respond(() => broadcasterStatus(input, cfg, fetchImpl)),
   )
 
   server.registerTool(
-    'arcade_policy',
-    { description: 'Read GET /policy from Arcade, with the mining fee as satPerKb.', inputSchema: { arcadeUrl } },
-    (input) => respond(() => arcadePolicy(input, cfg, fetchImpl)),
+    'broadcaster_policy',
+    { description: 'Read GET /policy from BSV Broadcaster, with the mining fee as satPerKb.', inputSchema: { broadcasterUrl } },
+    (input) => respond(() => broadcasterPolicy(input, cfg, fetchImpl)),
   )
 
   server.registerTool(
-    'arcade_health',
-    { description: 'Read GET /health from Arcade (version, block height, upstream nodes).', inputSchema: { arcadeUrl } },
-    (input) => respond(() => arcadeHealth(input, cfg, fetchImpl)),
+    'broadcaster_health',
+    { description: 'Read GET /health from BSV Broadcaster (version, block height, upstream nodes).', inputSchema: { broadcasterUrl } },
+    (input) => respond(() => broadcasterHealth(input, cfg, fetchImpl)),
   )
 }

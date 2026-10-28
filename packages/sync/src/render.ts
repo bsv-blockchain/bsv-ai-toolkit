@@ -196,7 +196,9 @@ function renderStack(v: Versions): string {
   for (const [name, s] of Object.entries(v.services)) {
     parts.push(
       `### ${name}`,
-      `Version ${s.version}, verified ${s.verified}.`,
+      s.release === undefined
+        ? `Version ${s.version}, verified ${s.verified}.`
+        : `The hosts report ${s.version}; the latest release${s.repo === undefined ? '' : ` of \`${s.repo}\``} is ${s.release}. Verified ${s.verified}.`,
       table(['network', 'hosts'], Object.entries(s.hosts).map(([network, hosts]) => [network, hosts.map((h) => `\`${h}\``).join(', ')])),
     )
   }

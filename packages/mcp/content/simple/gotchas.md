@@ -19,18 +19,18 @@ Read from the `@bsv/simple` 0.7.0 package source on 2026-10-22. Each item says w
 
 ## No `arcadeUrl` option
 
-There is no way to point `@bsv/simple` at Arcade.
+There is no way to point `@bsv/simple` at BSV Broadcaster (formerly Arcade).
 
 - In the browser the user's wallet broadcasts.
 - `ServerWallet.create` builds wallet-toolbox `Services` with their defaults, which in `@bsv/wallet-toolbox` 2.14.9 broadcast through legacy ARC endpoints for `main` and `test`.
 
-When you need tracking (the `SEEN_ON_NETWORK` gate, `competingTxs`, rejection reasons), drop to `@bsv/sdk` + Arcade for that step: take the transaction the action returns, submit it to your own Arcade (`POST /tx`, as EF), and read `GET /tx/{txid}`. For a server wallet that broadcasts through Arcade first, build the wallet-toolbox wallet yourself with `arcadeUrl` in its services options. That alone is not enough: the toolbox still falls back to GorillaPool and Taal ARC (unless `arcUrl` and `arcGorillaPoolUrl` are blank), and then to Bitails and WhatsOnChain. No option disables those last two on `main` or `test`, and the toolbox's status reads ask WhatsOnChain first. For money decisions, keep submitting to your own Arcade and gating on its `GET /tx/{txid}`.
+When you need tracking (the `SEEN_ON_NETWORK` gate, `competingTxs`, rejection reasons), drop to `@bsv/sdk` + BSV Broadcaster for that step: take the transaction the action returns, submit it to your own BSV Broadcaster (`POST /tx`, as EF), and read `GET /tx/{txid}`. For a server wallet that broadcasts through BSV Broadcaster first, build the wallet-toolbox wallet yourself with `arcadeUrl` in its services options. That alone is not enough: the toolbox still falls back to GorillaPool and Taal ARC (unless `arcUrl` and `arcGorillaPoolUrl` are blank), and then to Bitails and WhatsOnChain. No option disables those last two on `main` or `test`, and the toolbox's status reads ask WhatsOnChain first. For money decisions, keep submitting to your own BSV Broadcaster and gating on its `GET /tx/{txid}`.
 
 ## `pay()` via MessageBox may return an empty txid
 
 `pay({ to, satoshis })` sends through MessageBox peer-to-peer payment and can return `txid: ''`. In 0.7.0 it also ignores `memo` and `description`. `sendMessageBoxPayment` returns `'sent'` or `''` in its `txid` field, never a real txid.
 
-Never treat either result as proof of payment. For a payment the app must verify, use `createPaymentRequest` + `sendDirectPayment`, submit the transaction to Arcade, and wait for the 0-conf gate.
+Never treat either result as proof of payment. For a payment the app must verify, use `createPaymentRequest` + `sendDirectPayment`, submit the transaction to BSV Broadcaster, and wait for the 0-conf gate.
 
 ## `basket insertion` and `wallet payment` are mutually exclusive per output
 

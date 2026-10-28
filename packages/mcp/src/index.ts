@@ -13,10 +13,11 @@ function origin(url: string): string {
   }
 }
 
-// Replaces the raw ARCADE_URL and any other URL in a config error message with its origin.
+// Replaces the raw BSV_BROADCASTER_URL (or the deprecated ARCADE_URL) and any other URL in a config error message
+// with its origin.
 function redact(message: string, env: NodeJS.ProcessEnv): string {
-  const raw = env.ARCADE_URL
-  const out = raw ? message.split(raw).join(origin(raw)) : message
+  let out = message
+  for (const raw of [env.BSV_BROADCASTER_URL, env.ARCADE_URL]) if (raw) out = out.split(raw).join(origin(raw))
   return out.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, origin)
 }
 
@@ -32,5 +33,5 @@ try {
 const server = createServer(cfg)
 await server.connect(new StdioServerTransport())
 console.error(
-  `@bsv/mcp v${cfg.version} network=${cfg.network} arcade=${origin(cfg.arcadeUrl)} repos=${cfg.reposDir ? 'set' : 'unset'}`,
+  `@bsv/mcp v${cfg.version} network=${cfg.network} broadcaster=${origin(cfg.broadcasterUrl)} repos=${cfg.reposDir ? 'set' : 'unset'}`,
 )

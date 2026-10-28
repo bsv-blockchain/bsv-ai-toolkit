@@ -1,12 +1,12 @@
 import { ARC, Transaction, type WalletInterface } from '@bsv/sdk'
 
 // Deliberate violations for the broadcast and money guardrail tests (G-09 to G-21).
-const ARCADE_URL = process.env.ARCADE_URL ?? 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const BSV_BROADCASTER_URL = process.env.BSV_BROADCASTER_URL ?? 'https://arcade-testnet-us-1.bsvblockchain.tech'
 
 export const arc = new ARC('https://arc.taal.com', { deploymentId: 'tipjar' })
 
 export async function submit(efHex: string): Promise<string> {
-  const res = await fetch(ARCADE_URL + '/tx', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: efHex })
+  const res = await fetch(BSV_BROADCASTER_URL + '/tx', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: efHex })
   const { txid } = (await res.json()) as { txid: string }
   return txid
 }

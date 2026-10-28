@@ -1,5 +1,5 @@
-// A minimal Arcade client for the relay: POST /tx (EF hex) and GET /tx/{txid}. The rules mirror @bsv/mcp's
-// arcade client and arcade_submit tool (copied, not imported, so this folder stands alone):
+// A minimal BSV Broadcaster (formerly Arcade) client for the relay: POST /tx (EF hex) and GET /tx/{txid}. The rules
+// mirror @bsv/mcp's broadcaster client and broadcaster_submit tool (copied, not imported, so this folder stands alone):
 // - a 2xx (or "already known") from POST /tx is provisional; the verdict comes from re-reading GET /tx/{txid}
 // - final for the app = SEEN_ON_NETWORK or later with no competing tx; never wait for MINED
 // - only HTTP 400/422 or an ARC code 460-476 is a verdict on the transaction; any other 4xx is about the request
@@ -8,7 +8,7 @@
 
 export type Verdict = 'seen-no-competitor' | 'on-network-not-seen' | 'pending' | 'terminal' | 'no-verdict'
 
-export interface ArcadeStatus {
+export interface BroadcasterStatus {
   txid?: string
   txStatus: string
   competingTxs?: string[]
@@ -17,7 +17,7 @@ export interface ArcadeStatus {
   [k: string]: unknown
 }
 
-/** What the relay stores for a tip after talking to Arcade. `transient`: nothing reached Arcade; retrying is safe. */
+/** What the relay stores for a tip after talking to BSV Broadcaster. `transient`: nothing reached BSV Broadcaster; retrying is safe. */
 export interface Outcome {
   txStatus: string
   verdict: Verdict
@@ -49,7 +49,7 @@ function rejectedMayNotBeFinal(txStatus: string, extraInfo: unknown): boolean {
   return /^\s*parent rejected/i.test(extraInfo) || /missingorspent|utxo_spent|already spent/i.test(extraInfo)
 }
 
-// The error strings an Arcade/ARC error body may carry, most specific first.
+// The error strings a BSV Broadcaster/ARC error body may carry, most specific first.
 function errorTexts(body: any): string[] {
   return [body?.extraInfo, body?.reason, body?.detail, body?.error, body?.title].filter((v): v is string => typeof v === 'string' && v !== '')
 }
@@ -63,7 +63,7 @@ function parseBody(text: string): any {
   }
 }
 
-function outcome(s: ArcadeStatus, note?: string): Outcome {
+function outcome(s: BroadcasterStatus, note?: string): Outcome {
   const o: Outcome = { txStatus: s.txStatus, verdict: verdictOf(s), competingTxs: s.competingTxs ?? [], transient: false }
   if (typeof s.extraInfo === 'string' && s.extraInfo !== '') o.extraInfo = s.extraInfo
   const n = note ?? (rejectedMayNotBeFinal(s.txStatus, s.extraInfo) ? REJECTED_MAY_NOT_BE_FINAL : undefined)
@@ -71,7 +71,7 @@ function outcome(s: ArcadeStatus, note?: string): Outcome {
   return o
 }
 
-export class Arcade {
+export class BroadcasterClient {
   readonly baseUrl: string
 
   constructor(
@@ -89,7 +89,7 @@ export class Arcade {
   /** POST /tx with EF (or raw) hex as text/plain. Never throws on an HTTP error; no answer → postStatus 0, transient. */
   async submit(hex: string): Promise<{ postStatus: number; body: any; transient: boolean }> {
     const tx = hex.trim()
-    if (/^(0100beef|0200beef|01010101)/i.test(tx)) throw new Error('Arcade POST /tx takes EF or raw hex, never BEEF')
+    if (/^(0100beef|0200beef|01010101)/i.test(tx)) throw new Error('BSV Broadcaster POST /tx takes EF or raw hex, never BEEF')
     let postStatus: number
     let body: any
     try {
@@ -104,21 +104,21 @@ export class Arcade {
     return { postStatus, body, transient }
   }
 
-  /** GET /tx/{txid}. 404 → { notFound: true } (this Arcade was never given the txid); other errors throw. */
-  async status(txid: string): Promise<ArcadeStatus | { notFound: true }> {
+  /** GET /tx/{txid}. 404 → { notFound: true } (this instance was never given the txid); other errors throw. */
+  async status(txid: string): Promise<BroadcasterStatus | { notFound: true }> {
     const res = await this.request(`/tx/${encodeURIComponent(txid)}`)
     const text = await res.text()
     if (res.status === 404) return { notFound: true }
-    if (!res.ok) throw new Error(`Arcade GET /tx/${txid} answered ${res.status}: ${text.slice(0, 200)}`)
+    if (!res.ok) throw new Error(`BSV Broadcaster GET /tx/${txid} answered ${res.status}: ${text.slice(0, 200)}`)
     const s = parseBody(text)
-    if (typeof s?.txStatus !== 'string') throw new Error(`Arcade GET /tx/${txid} answered without a txStatus`)
-    return s as ArcadeStatus
+    if (typeof s?.txStatus !== 'string') throw new Error(`BSV Broadcaster GET /tx/${txid} answered without a txStatus`)
+    return s as BroadcasterStatus
   }
 
   /** Polls status until seen-no-competitor or terminal, or until timeoutMs; returns the last read. */
-  async waitForSeen(txid: string, timeoutMs: number, intervalMs = 1000): Promise<ArcadeStatus | { notFound: true }> {
+  async waitForSeen(txid: string, timeoutMs: number, intervalMs = 1000): Promise<BroadcasterStatus | { notFound: true }> {
     const deadline = Date.now() + timeoutMs
-    let last: ArcadeStatus | { notFound: true } | undefined
+    let last: BroadcasterStatus | { notFound: true } | undefined
     let lastError: unknown
     for (;;) {
       try {
@@ -138,7 +138,7 @@ export class Arcade {
     throw lastError
   }
 
-  /** Submits EF hex and decides from GET /tx/{txid} (polled up to waitMs). Never throws for Arcade's answers. */
+  /** Submits EF hex and decides from GET /tx/{txid} (polled up to waitMs). Never throws for BSV Broadcaster's answers. */
   async broadcast(efHex: string, txid: string, waitMs: number): Promise<Outcome> {
     const { postStatus, body, transient } = await this.submit(efHex)
     const pending = (txStatus: string, note?: string, isTransient = false): Outcome => {
@@ -152,7 +152,7 @@ export class Arcade {
     if (postStatus >= 400 && postStatus < 500 && postStatus !== 429) {
       const arcCode = typeof body?.status === 'number' ? body.status : undefined
       const validation = postStatus === 400 || postStatus === 422 || (arcCode !== undefined && arcCode >= 460 && arcCode <= 476)
-      if (!validation) return pending('UNKNOWN', `Arcade answered HTTP ${postStatus}: check ARCADE_URL; this is not a transaction verdict`)
+      if (!validation) return pending('UNKNOWN', `BSV Broadcaster answered HTTP ${postStatus}: check BSV_BROADCASTER_URL; this is not a transaction verdict`)
       if (arcCode === 476) return pending('UNKNOWN', 'locktime not final yet (ARC 476); retry later', true)
       if (!errorTexts(body).some(t => ALREADY_KNOWN.test(t))) {
         const blames = errorTexts(body).some(t => rejectedMayNotBeFinal('REJECTED', t))
@@ -161,19 +161,19 @@ export class Arcade {
       // Already known: treat as submitted and read its status below.
     } else if (!is2xx) {
       // No answer, backpressure (503), rate limit or a server error: nothing to read; re-posting is safe.
-      if (postStatus === 0) return pending('UNREACHABLE', 'no response from Arcade (network error or timeout)', true)
-      return pending(postStatus === 503 ? 'UNREACHABLE' : 'UNKNOWN', `Arcade answered HTTP ${postStatus}; retry`, transient)
+      if (postStatus === 0) return pending('UNREACHABLE', 'no response from BSV Broadcaster (network error or timeout)', true)
+      return pending(postStatus === 503 ? 'UNREACHABLE' : 'UNKNOWN', `BSV Broadcaster answered HTTP ${postStatus}; retry`, transient)
     }
     try {
       const o = await this.read(txid, waitMs)
-      return o ?? pending('UNKNOWN', `Arcade answered ${postStatus} to POST /tx but has no status for it yet; re-read status`)
+      return o ?? pending('UNKNOWN', `BSV Broadcaster answered ${postStatus} to POST /tx but has no status for it yet; re-read status`)
     } catch (e) {
       // The POST got through, so this is not transient: the next status read decides.
       return pending('UNKNOWN', `status re-read failed: ${e instanceof Error ? e.message : String(e)}; re-read status`)
     }
   }
 
-  /** The current outcome (polled up to waitMs); undefined when this Arcade was never given the txid. Throws when Arcade cannot be read. */
+  /** The current outcome (polled up to waitMs); undefined when this instance was never given the txid. Throws when BSV Broadcaster cannot be read. */
   async read(txid: string, waitMs = 0): Promise<Outcome | undefined> {
     const s = waitMs > 0 ? await this.waitForSeen(txid, waitMs) : await this.status(txid)
     return 'notFound' in s ? undefined : outcome(s)

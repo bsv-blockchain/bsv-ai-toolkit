@@ -4,7 +4,7 @@ import type { Network } from './config'
 import type { KeyValueStore } from './tip'
 import { assertNetwork, signText, walletNetwork } from './wallet'
 
-// The creator's side. A tip is collected automatically, at 0-conf, once the relay's live Arcade read says
+// The creator's side. A tip is collected automatically, at 0-conf, once the relay's live BSV Broadcaster read says
 // seen-no-competitor. Which candidate (if any) pays this wallet is decided by the wallet itself:
 // internalizeAction with protocol 'wallet payment' derives the BRC-29 key for self from the remittance and
 // refuses an output that it does not lock to (@bsv/wallet-toolbox 2.14.9, signer/methods/internalizeAction.js:
@@ -45,14 +45,14 @@ export interface CollectDeps {
 const sleepMs = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const P2PKH_SCRIPT = /^76a914[0-9a-f]{40}88ac$/
-// The relay's note on a REJECTED that may be a stale view of an accepted transaction (server/arcade.ts).
+// The relay's note on a REJECTED that may be a stale view of an accepted transaction (server/broadcaster.ts).
 const MAY_NOT_BE_FINAL = /may not be final/
 
 /**
  * The tip's AtomicBEEF, complete. A BEEF whose ancestors are all present is returned as is; otherwise each
- * ancestor named by txid only (or missing) comes from the relay's GET /api/tx/:txid, which reads Arcade and
+ * ancestor named by txid only (or missing) comes from the relay's GET /api/tx/:txid, which reads BSV Broadcaster and
  * re-reads its Extended Format rawTx as a plain transaction. It is merged as bytes, with its merkle path when
- * Arcade has one.
+ * BSV Broadcaster has one.
  */
 export async function buildAtomicBeef(
   beefHex: string,
@@ -66,7 +66,7 @@ export async function buildAtomicBeef(
     if (needed.length === 0) break
     for (const id of needed) {
       const a = await ancestor(id)
-      if (a === undefined) throw new Error(`Arcade has no rawTx for ancestor ${id}, so the tip's BEEF cannot be completed`)
+      if (a === undefined) throw new Error(`BSV Broadcaster has no rawTx for ancestor ${id}, so the tip's BEEF cannot be completed`)
       const bump = a.merklePath === undefined ? undefined : beef.mergeBump(MerklePath.fromHex(a.merklePath))
       const merged = beef.mergeRawTx(Utils.toArray(a.rawTx, 'hex'), bump)
       if (merged.txid !== id) throw new Error(`the relay's transaction for ancestor ${id} hashes to ${merged.txid}`)
@@ -100,7 +100,7 @@ function paysAsClaimed(atomic: number[], txid: string, c: Remittance): boolean {
  * Collects one tip into the wallet. Each attempt reads the relay's live status and goes on only at
  * seen-no-competitor; then it tries every candidate with that candidate's own BEEF.
  * - 'not-for-me': the wallet refused every candidate as not its own.
- * - 'failed': Arcade reported REJECTED on two reads at least 20 s apart, with a re-post between.
+ * - 'failed': BSV Broadcaster reported REJECTED on two reads at least 20 s apart, with a re-post between.
  * - 'gave-up': the schedule ran out; `error` says why.
  */
 export async function collectTip(wallet: WalletInterface, tip: TipRow, api: RelayApi, deps: CollectDeps): Promise<CollectOutcome> {
@@ -132,7 +132,7 @@ export async function collectTip(wallet: WalletInterface, tip: TipRow, api: Rela
       const at = Date.now()
       firstRejectedAt ??= at
       if (reposted && at - firstRejectedAt >= DEAD_AFTER_MS) {
-        return { result: 'failed', error: `Arcade reported ${view.txStatus}${view.extraInfo ? ` (${view.extraInfo})` : ''} on two reads, with a re-post between` }
+        return { result: 'failed', error: `BSV Broadcaster reported ${view.txStatus}${view.extraInfo ? ` (${view.extraInfo})` : ''} on two reads, with a re-post between` }
       }
       if (!reposted) {
         try {
@@ -143,14 +143,14 @@ export async function collectTip(wallet: WalletInterface, tip: TipRow, api: Rela
           continue
         }
       }
-      gate = `Arcade reports ${view.txStatus}; reading again before calling it failed`
+      gate = `BSV Broadcaster reports ${view.txStatus}; reading again before calling it failed`
       continue
     }
     firstRejectedAt = undefined
     reposted = false
     if (view.verdict !== 'seen-no-competitor') {
       const competing = view.competingTxs.length > 0 ? ` with ${view.competingTxs.length} competing transaction(s)` : ''
-      gate = `Arcade has not seen it with no competitor yet (${view.txStatus}${competing})`
+      gate = `BSV Broadcaster has not seen it with no competitor yet (${view.txStatus}${competing})`
       continue
     }
 

@@ -3,7 +3,7 @@
 Applies to: both
 Guardrails: G-08, G-10, G-11, G-13, G-19, G-20, G-22, G-25, G-26, G-28, G-29, G-30, G-33, G-35, G-36, G-37, G-38
 
-A payment channel is one outpoint shared by two parties. They exchange signed states off-chain and broadcast only the open, the close and, in a dispute, one state. The facts (finality rules, what Arcade, Teranode and SV Node do with a non-final transaction, sighash flags, measured sizes) are in `facts.md`, section "Payment channels". This file is the judgment: whether to build one, which shape, and how to open, update and close it safely.
+A payment channel is one outpoint shared by two parties. They exchange signed states off-chain and broadcast only the open, the close and, in a dispute, one state. The facts (finality rules, what BSV Broadcaster (formerly Arcade), Teranode and SV Node do with a non-final transaction, sighash flags, measured sizes) are in `facts.md`, section "Payment channels". This file is the judgment: whether to build one, which shape, and how to open, update and close it safely.
 
 ## When a channel is worth it
 
@@ -31,9 +31,9 @@ The reasons:
 
 ## What works today
 
-- Arcade answers a non-final transaction with 476 and persists nothing; it never holds a channel state.
+- BSV Broadcaster answers a non-final transaction with 476 and persists nothing; it never holds a channel state.
 - Teranode rejects a non-final transaction as invalid.
-- SV Node's non-final pool is node policy that an app broadcasting through Arcade cannot reach; do not build on it.
+- SV Node's non-final pool is node policy that an app broadcasting through BSV Broadcaster cannot reach; do not build on it.
 - So: private channels only. The parties hold every state, and the newest state carries the earliest lock time (G-35). Nodes keep the first version they see (policy); consensus accepts whichever version is mined.
 
 Of the three ways the Bitcoin SV wiki lists to manage a channel, "in public via mining network" is not available; the two private options are what this file covers.
@@ -69,9 +69,9 @@ const expiry = assertSeconds(Math.floor(Date.now() / 1000) + 24 * 3600)
 ```
 
 3. Build the opening. One funder: create it signed but unsent (`createAction` with `options.noSend: true`, or `signAndProcess: false` and then `signAction` with `noSend`), so its txid is fixed. Two funders: a foreign input, `signAndProcess: false`, then `signAction` (G-22; the phase-2 multi-party funding reference has the steps).
-4. Get every refund signed before the opening is submitted (G-20, G-38). One funder (construction A): the counterparty co-signs the funder's refund over the unsent opening's txid; only then release the opening to the wallet with `createAction({ description, options: { sendWith: [txid] } })` and submit its EF to your own Arcade. In the `@bsv/sdk` 3.2.1 and `@bsv/wallet-toolbox` 2.14.9 sources, a `createAction` with only `sendWith` creates no new transaction and sends the listed `noSend` actions; this release step was not run against wallet-toolbox or BSV Desktop. Co-funded: build and sign the refund of your own funding coin **before** you hand over any signature on the opening.
-5. Submit the opening as EF to your own Arcade, and have the counterparty submit it to theirs; submission is idempotent (G-13).
-6. Sign no state until Arcade reports the opening `SEEN_ON_NETWORK` or later with no `competingTxs` (G-10).
+4. Get every refund signed before the opening is submitted (G-20, G-38). One funder (construction A): the counterparty co-signs the funder's refund over the unsent opening's txid; only then release the opening to the wallet with `createAction({ description, options: { sendWith: [txid] } })` and submit its EF to your own BSV Broadcaster. In the `@bsv/sdk` 3.2.1 and `@bsv/wallet-toolbox` 2.14.9 sources, a `createAction` with only `sendWith` creates no new transaction and sends the listed `noSend` actions; this release step was not run against wallet-toolbox or BSV Desktop. Co-funded: build and sign the refund of your own funding coin **before** you hand over any signature on the opening.
+5. Submit the opening as EF to your own BSV Broadcaster, and have the counterparty submit it to theirs; submission is idempotent (G-13).
+6. Sign no state until BSV Broadcaster reports the opening `SEEN_ON_NETWORK` or later with no `competingTxs` (G-10).
 7. Bind the channel to "the transaction that spends my funding coin", not to a txid seen before every signature was in: the last signer can make a twin.
 
 ## Update
@@ -110,7 +110,7 @@ const checksigSig = [...signature, scope] // DER plus the sighash byte, as scrip
   - A (`0xc1`): every output is signed, so either the fee is budgeted inside the signed outputs (agree at the open whose output it comes from; by default the payer's change), or the payee adds a coin that goes wholly to the fee, with no change. The payee-signed refund pays its fee the same way: budgeted inside the refund output (the payer bears it), or co-signed `0xc1` so the payer can add a fee coin with no change.
   - B (`0xc3`): the closer adds a fee input (`0x41`) and change at index 1 or later; the state signatures cover only input 0 and output 0, so they stay valid.
   - C: only what the covenant pins; a terminal method pays its fee from the pot or from the inputs it allows.
-- Write the hex ahead (write-ahead), submit it as EF to Arcade, and gate on `GET /tx/{txid}` (`arcade-0conf.md`).
+- Write the hex ahead (write-ahead), submit it as EF to BSV Broadcaster, and gate on `GET /tx/{txid}` (`broadcaster-0conf.md`).
 - Collect payouts to BRC-29 keys with `internalizeAction` automatically once the close passes the gate (`payments-brc29.md`).
 - A close rejected because its fee coin was spent is rebuilt with a fresh fee input; the state signatures stay valid (in A only if the new coin also goes wholly to the fee).
 
@@ -125,7 +125,7 @@ const checksigSig = [...signature, scope] // DER plus the sighash byte, as scrip
 
 ## Stale states and disputes
 
-- The newest state matures first; nodes' first-seen policy then makes a stale one a double spend that Arcade reports `REJECTED` 466 with the winner in `competingTxs`. Apply the two-read dead rule (`threat-model.md`) before concluding either way.
+- The newest state matures first; nodes' first-seen policy then makes a stale one a double spend that BSV Broadcaster reports `REJECTED` 466 with the winner in `competingTxs`. Apply the two-read dead rule (`threat-model.md`) before concluding either way.
 - Seconds schedules are nominal: blocks come about every 10 minutes and median-time-past lags, so neighbouring states mature together. The party that holds every state is the enforcer.
 - Height schedules with `W` blocks between states let each party defend itself.
 - The liveness bound is inherent, because there are no relative lock times: a party must act within `W` blocks of a maturity point.
@@ -138,7 +138,7 @@ const checksigSig = [...signature, scope] // DER plus the sighash byte, as scrip
 - **What.** The opening AtomicBEEF; the outpoint, value, script and lifetime; every counterparty signature; the newest state both signed, with its unlocking script ready; the pre-signed refund; the list of indices you signed per outpoint.
 - **When.** Write-ahead, before you send your signature; after every signature you receive. Keep everything after the close until it is final at the gate, then prune after some days.
 - **Where.** Client storage under a per-session key with a single writer per session (two tabs must not overwrite each other), plus the server as a second copy when there is one.
-- **Publishing it yourself.** `createAction` with the signed channel input at index 0, `inputBEEF`, and `randomizeOutputs: false`, then submit its EF to your own Arcade (`arcade-0conf.md`). Verified with `@bsv/wallet-toolbox`, not with BSV Desktop; offer the state as a downloadable file as the fallback.
+- **Publishing it yourself.** `createAction` with the signed channel input at index 0, `inputBEEF`, and `randomizeOutputs: false`, then submit its EF to your own BSV Broadcaster (`broadcaster-0conf.md`). Verified with `@bsv/wallet-toolbox`, not with BSV Desktop; offer the state as a downloadable file as the fallback.
 
 ## Rúnar for the covenant
 
@@ -151,13 +151,13 @@ Only for construction C and the close methods of A and B.
 - A transition carries the script three times (29 KB for a 9.6 KB script), so run the testnet size gate before UI work (G-29, G-33).
 - Upstream Rúnar only (G-25).
 
-## Arcade for the open and the close
+## BSV Broadcaster for the open and the close
 
 - Submit EF hex. A 2xx is provisional; gate on `SEEN_ON_NETWORK` or later with no competitor.
 - 476 is transient and persists nothing: resubmit the identical bytes later. A 404 is no verdict.
 - Chains of unconfirmed spends are fine.
 - Re-post a dropped transaction from its stored hex.
-- Submit everything you care about to your own Arcade, including what the counterparty broadcast.
+- Submit everything you care about to your own BSV Broadcaster, including what the counterparty broadcast.
 
 ## Review checklist
 

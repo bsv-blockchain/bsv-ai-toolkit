@@ -80,50 +80,50 @@ Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 - **Severity:** warn
 - **Refs:** none
 
-### G-09 Broadcast only through Arcade
+### G-09 Broadcast only through BSV Broadcaster (formerly Arcade)
 
-- **Rule:** Broadcast only through Arcade (`POST /tx`, text/plain, EF when sources are attached, never BEEF); never the SDK `ARC` class or `/v1/tx`; `ARCADE_URL` configurable with the public instance per network as default.
-- **Why:** Arcade's `GET /tx/{txid}` status is what every later money decision reads; the SDK `ARC` class and `/v1/tx` target the legacy ARC API instead, so never send a transaction there.
+- **Rule:** Broadcast only through BSV Broadcaster (`POST /tx`, text/plain, EF when sources are attached, never BEEF); never the SDK `ARC` class or `/v1/tx`; `BSV_BROADCASTER_URL` configurable with the public instance per network as default.
+- **Why:** BSV Broadcaster's `GET /tx/{txid}` status is what every later money decision reads; the SDK `ARC` class and `/v1/tx` target the legacy ARC API instead, so never send a transaction there.
 - **Shape:** both
 - **Detect:** static
 - **Severity:** error
-- **Refs:** `docs:guides.services.broadcasting`, `fact:arcade`
+- **Refs:** `docs:guides.services.broadcasting`, `fact:bsv-broadcaster`
 
 ### G-10 Final at SEEN_ON_NETWORK, never MINED
 
 - **Rule:** A POST 2xx is provisional; read `GET /tx/{txid}`; money counts and is final at `SEEN_ON_NETWORK`+ with no competing tx; never earlier, never `MINED`.
-- **Why:** A 2xx only means Arcade received the transaction; `SEEN_ON_NETWORK` with no competing tx is the app's finality point, and waiting for `MINED` adds block-time delay for no protection the app needs.
+- **Why:** A 2xx only means BSV Broadcaster received the transaction; `SEEN_ON_NETWORK` with no competing tx is the app's finality point, and waiting for `MINED` adds block-time delay for no protection the app needs.
 - **Shape:** both
 - **Detect:** static
 - **Severity:** error
-- **Refs:** `docs:guides.services.broadcasting`, `fact:arcade`
+- **Refs:** `docs:guides.services.broadcasting`, `fact:bsv-broadcaster`
 
-### G-11 Classify Arcade errors
+### G-11 Classify BSV Broadcaster errors
 
 - **Rule:** Classify 400s by ARC code or exact token: 476, 503, `UNREACHABLE` transient; `REJECTED`/`DOUBLE_SPEND_ATTEMPTED` terminal; input-blaming reasons on an accepted tx are no verdict.
 - **Why:** Retrying a terminal rejection or abandoning a transient failure mishandles money, and an input-blaming reason on an accepted tx does not change its status.
 - **Shape:** both
 - **Detect:** manual
 - **Severity:** warn
-- **Refs:** `docs:guides.services.broadcasting`, `fact:arcade`
+- **Refs:** `docs:guides.services.broadcasting`, `fact:bsv-broadcaster`
 
-### G-12 Arcade first; WhatsOnChain gated
+### G-12 BSV Broadcaster first; WhatsOnChain gated
 
-- **Rule:** Arcade first for every known txid (status, `rawTx`); WhatsOnChain only for address/script listings, spent-by and tip height, behind one process-wide gate (≥350 ms) with 429 backoff; a WoC 404 on a fresh tx means "not yet".
-- **Why:** Arcade is the source of truth for a transaction it has seen; WhatsOnChain lags on fresh transactions and rate-limits with 429, so ungated calls fail.
+- **Rule:** BSV Broadcaster first for every known txid (status, `rawTx`); WhatsOnChain only for address/script listings, spent-by and tip height, behind one process-wide gate (≥350 ms) with 429 backoff; a WoC 404 on a fresh tx means "not yet".
+- **Why:** BSV Broadcaster is the source of truth for a transaction it has seen; WhatsOnChain lags on fresh transactions and rate-limits with 429, so ungated calls fail.
 - **Shape:** both
 - **Detect:** static
 - **Severity:** error
-- **Refs:** `fact:whatsonchain`, `fact:arcade`
+- **Refs:** `fact:whatsonchain`, `fact:bsv-broadcaster`
 
-### G-13 Track every transaction in your own Arcade
+### G-13 Track every transaction in your own BSV Broadcaster
 
-- **Rule:** Submit every transaction the app cares about (including wallet-broadcast ones) to its own Arcade so it can be tracked; never trust a client-reported txid as money evidence.
-- **Why:** Only a transaction submitted to the app's own Arcade can be tracked to finality there, and a client-reported txid proves nothing about payment.
+- **Rule:** Submit every transaction the app cares about (including wallet-broadcast ones) to its own BSV Broadcaster so it can be tracked; never trust a client-reported txid as money evidence.
+- **Why:** Only a transaction submitted to the app's own BSV Broadcaster can be tracked to finality there, and a client-reported txid proves nothing about payment.
 - **Shape:** both
 - **Detect:** manual
 - **Severity:** warn
-- **Refs:** `docs:guides.services.broadcasting`, `fact:arcade`
+- **Refs:** `docs:guides.services.broadcasting`, `fact:bsv-broadcaster`
 
 ### G-14 No confirmation waits
 
@@ -132,25 +132,25 @@ Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 - **Shape:** both
 - **Detect:** static
 - **Severity:** warn
-- **Refs:** `docs:guides.services.broadcasting`, `fact:arcade`
+- **Refs:** `docs:guides.services.broadcasting`, `fact:bsv-broadcaster`
 
 ### G-15 Timeouts and bounded polling
 
-- **Rule:** Per-request timeouts on every Arcade/WoC call; bounded polling.
+- **Rule:** Per-request timeouts on every BSV Broadcaster/WoC call; bounded polling.
 - **Why:** A call without a timeout, or polling without a bound, can hang the app or exhaust rate limits.
 - **Shape:** both
 - **Detect:** static
 - **Severity:** warn
-- **Refs:** `docs:guides.services.broadcasting`, `fact:arcade`
+- **Refs:** `docs:guides.services.broadcasting`, `fact:bsv-broadcaster`
 
-### G-16 Arcade rawTx is Extended Format
+### G-16 BSV Broadcaster rawTx is Extended Format
 
-- **Rule:** Arcade's `rawTx` is Extended Format; re-read it as a plain transaction before building BEEF; never build ancestry one ancestor at a time from an indexer.
+- **Rule:** BSV Broadcaster's `rawTx` is Extended Format; re-read it as a plain transaction before building BEEF; never build ancestry one ancestor at a time from an indexer.
 - **Why:** `Transaction.fromHex` does not read Extended Format, and fetching ancestors one at a time from an indexer is slow, rate-limited and can be incomplete.
 - **Shape:** both
 - **Detect:** static
 - **Severity:** error
-- **Refs:** `docs:guides.services.broadcasting`, `fact:arcade`
+- **Refs:** `docs:guides.services.broadcasting`, `fact:bsv-broadcaster`
 
 ### G-17 Write-ahead before broadcast
 
@@ -208,8 +208,8 @@ Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 
 ### G-23 Never count money from a client report
 
-- **Rule:** Never count money from a client report; re-broadcast through the server's own Arcade and apply G-10.
-- **Why:** A client can report any transaction or txid; only the server's own Arcade read under G-10 shows the payment is on the network.
+- **Rule:** Never count money from a client report; re-broadcast through the server's own BSV Broadcaster and apply G-10.
+- **Why:** A client can report any transaction or txid; only the server's own BSV Broadcaster read under G-10 shows the payment is on the network.
 - **Shape:** B
 - **Detect:** manual
 - **Severity:** warn
@@ -316,12 +316,12 @@ Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 
 ### G-35 Channel states stay off-chain, newest first
 
-- **Rule:** A payment channel never depends on Arcade or a node holding, ordering or replacing a non-final transaction: the parties hold every signed state; the close is final (`nSequence 0xffffffff`, `nLockTime 0`); non-final states are ordered newest-first by decreasing `nLockTime` or an earlier height on a schedule both parties signed; the newest state is posted the moment it matures, retrying on 476.
-- **Why:** Post-Genesis `nSequence` is only a finality flag, Arcade answers a non-final transaction with 476 and persists nothing, and Teranode rejects it; the only defence against a stale state is that the newest one reaches the network first.
+- **Rule:** A payment channel never depends on BSV Broadcaster or a node holding, ordering or replacing a non-final transaction: the parties hold every signed state; the close is final (`nSequence 0xffffffff`, `nLockTime 0`); non-final states are ordered newest-first by decreasing `nLockTime` or an earlier height on a schedule both parties signed; the newest state is posted the moment it matures, retrying on 476.
+- **Why:** Post-Genesis `nSequence` is only a finality flag, BSV Broadcaster answers a non-final transaction with 476 and persists nothing, and Teranode rejects it; the only defence against a stale state is that the newest one reaches the network first.
 - **Shape:** both
 - **Detect:** manual
 - **Severity:** warn
-- **Refs:** `fact:payment-channels`, `fact:consensus`, `fact:arcade`
+- **Refs:** `fact:payment-channels`, `fact:consensus`, `fact:bsv-broadcaster`
 
 ### G-36 Lock times in seconds or heights, never milliseconds
 
@@ -348,4 +348,4 @@ Rules G-01..G-38 from `content/guardrails.yaml`. Shape A is a user-side BRC-100 
 - **Shape:** both
 - **Detect:** manual
 - **Severity:** warn
-- **Refs:** `fact:payment-channels`, `fact:arcade`
+- **Refs:** `fact:payment-channels`, `fact:bsv-broadcaster`

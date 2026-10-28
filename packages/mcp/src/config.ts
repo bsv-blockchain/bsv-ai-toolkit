@@ -3,12 +3,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Network } from './types.js'
 
-export const DEFAULT_ARCADE: Record<Network, string> = {
+// Public BSV Broadcaster (formerly Arcade) instances; the hostnames keep the old name.
+export const DEFAULT_BROADCASTER: Record<Network, string> = {
   testnet: 'https://arcade-testnet-us-1.bsvblockchain.tech',
   mainnet: 'https://arcade-us-1.bsvblockchain.tech',
 }
 
-// Hostnames. Mirrors content/versions.json#services.arcade.hosts (a test keeps them in step),
+// Hostnames. Mirrors content/versions.json#services.broadcaster.hosts (a test keeps them in step),
 // plus arcade.gorillapool.io on mainnet.
 export const KNOWN_HOSTS: { mainnet: string[]; testnet: string[]; ttn: string[] } = {
   mainnet: [
@@ -24,7 +25,7 @@ export const KNOWN_HOSTS: { mainnet: string[]; testnet: string[]; ttn: string[] 
 
 export interface Config {
   network: Network
-  arcadeUrl: string
+  broadcasterUrl: string
   allowMainnetBroadcast: boolean
   reposDir?: string
   wocApiKey?: string
@@ -44,17 +45,35 @@ function nonEmpty(value: string | undefined): string | undefined {
   return value === undefined || value === '' || UNRESOLVED_PLACEHOLDER.test(value) ? undefined : value
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+export const ARCADE_URL_DEPRECATED = 'ARCADE_URL is deprecated; use BSV_BROADCASTER_URL'
+
+/**
+ * The configured broadcaster URL: BSV_BROADCASTER_URL, else the deprecated ARCADE_URL (with one warning), else
+ * undefined. An explicit new name wins, so the old one is then ignored without a warning.
+ */
+export function configuredBroadcasterUrl(env: NodeJS.ProcessEnv, warn: (line: string) => void): string | undefined {
+  const url = nonEmpty(env.BSV_BROADCASTER_URL)
+  if (url !== undefined) return url
+  const legacy = nonEmpty(env.ARCADE_URL)
+  if (legacy !== undefined) warn(ARCADE_URL_DEPRECATED)
+  return legacy
+}
+
+/** Reads the server settings from the environment. `warn` receives the ARCADE_URL deprecation line (stderr by default). */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env, warn: (line: string) => void = (line) => console.error(line)): Config {
   const raw = nonEmpty(env.BSV_NETWORK) ?? 'testnet'
   if (raw !== 'testnet' && raw !== 'mainnet') {
     throw new Error(`BSV_NETWORK must be "testnet" or "mainnet", got "${raw}"`)
   }
   const network: Network = raw
-  const arcadeUrl = nonEmpty(env.ARCADE_URL) ?? DEFAULT_ARCADE[network]
-  checkHost(network, arcadeUrl) // fail fast at startup; a ttn warning is surfaced per call by resolveNetwork
+  const configured = configuredBroadcasterUrl(env, warn)
+  const broadcasterUrl = configured ?? DEFAULT_BROADCASTER[network]
+  // Errors name the variable the value came from. Fail fast at startup; a ttn warning is surfaced per call by resolveNetwork.
+  const source = configured === undefined ? 'default URL' : nonEmpty(env.BSV_BROADCASTER_URL) !== undefined ? 'BSV_BROADCASTER_URL' : 'ARCADE_URL'
+  checkHost(network, broadcasterUrl, source)
   return {
     network,
-    arcadeUrl,
+    broadcasterUrl,
     allowMainnetBroadcast: env.BSV_MCP_ALLOW_MAINNET_BROADCAST === '1',
     reposDir: nonEmpty(env.BSV_REPOS_DIR),
     wocApiKey: nonEmpty(env.WOC_API_KEY),
@@ -63,30 +82,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 }
 
 export function resolveNetwork(
-  input: { network?: Network; arcadeUrl?: string },
+  input: { network?: Network; broadcasterUrl?: string },
   cfg: Config,
-): { network: Network; arcadeUrl: string; warning?: string } {
+): { network: Network; broadcasterUrl: string; warning?: string } {
   const network = input.network ?? cfg.network
-  // A configured ARCADE_URL belongs to the configured network; switching network without a URL uses that network's default.
-  const arcadeUrl = nonEmpty(input.arcadeUrl) ?? (network === cfg.network ? cfg.arcadeUrl : DEFAULT_ARCADE[network])
+  // A configured BSV_BROADCASTER_URL belongs to the configured network; switching network without a URL uses that network's default.
+  const broadcasterUrl = nonEmpty(input.broadcasterUrl) ?? (network === cfg.network ? cfg.broadcasterUrl : DEFAULT_BROADCASTER[network])
 
-  const warning = checkHost(network, arcadeUrl)
-  return warning ? { network, arcadeUrl, warning } : { network, arcadeUrl }
+  const warning = checkHost(network, broadcasterUrl)
+  return warning ? { network, broadcasterUrl, warning } : { network, broadcasterUrl }
 }
 
 // Throws on an unparseable URL or a host known to belong to the other network; returns a warning for a ttn host.
-function checkHost(network: Network, arcadeUrl: string): string | undefined {
+function checkHost(network: Network, broadcasterUrl: string, source = 'broadcasterUrl'): string | undefined {
   let host: string
   try {
     // Lowercase and drop trailing dots so a fully-qualified 'host.' (or 'host%2E') cannot dodge the lists.
-    host = new URL(arcadeUrl).hostname.toLowerCase().replace(/\.+$/, '')
+    host = new URL(broadcasterUrl).hostname.toLowerCase().replace(/\.+$/, '')
   } catch {
-    throw new Error(`invalid arcadeUrl: ${arcadeUrl}`)
+    throw new Error(`invalid ${source}: ${broadcasterUrl}`)
   }
 
   const other: Network = network === 'mainnet' ? 'testnet' : 'mainnet'
   if (KNOWN_HOSTS[other].includes(host)) {
-    throw new Error(`network/host mismatch: ${host} is a known ${other} Arcade host, but network is ${network}`)
+    throw new Error(`network/host mismatch: ${host} is a known ${other} BSV Broadcaster host, but network is ${network}`)
   }
   if (KNOWN_HOSTS.ttn.includes(host)) {
     return `ttn host: neither testnet nor mainnet (${host} is the Teranode test network)`

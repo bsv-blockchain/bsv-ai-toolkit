@@ -55,7 +55,7 @@ Other MCP clients take the same command in their JSON configuration:
 **Local code search (optional).** `code_search` and `find_function_definition` need local clones; `brc_lookup` uses them when present. Clone them and pass the directory to the server:
 
 ```bash
-./setup.sh ~/bsv-repos      # ts-stack, BRCs, arcade, bsv-desktop, go-wallet-toolbox, runar (shallow)
+./setup.sh ~/bsv-repos      # ts-stack, BRCs, broadcaster, bsv-desktop, go-wallet-toolbox, runar (shallow)
 ./setup.sh --list           # just print the repository URLs
 claude mcp add bsv-mcp -e BSV_NETWORK=testnet -e BSV_REPOS_DIR="$HOME/bsv-repos" -- npx -y @bsv/mcp
 ```
@@ -68,18 +68,18 @@ The server starts without `BSV_REPOS_DIR`; the two search tools then answer with
 
 | Tool | Input | What it does |
 | --- | --- | --- |
-| `arcade_submit` | `hex`, `arcadeUrl?`, `network?`, `waitForSeen?` (true), `timeoutMs?` (15000), `callbackUrl?`, `callbackToken?`, `fullStatusUpdates?` | Broadcasts raw or EF hex to Arcade `POST /tx` (refuses BEEF: convert to EF or raw first); a 2xx is provisional, so it re-reads `GET /tx/{txid}` and, with `waitForSeen`, polls until `SEEN_ON_NETWORK` or later with no competing tx, or the timeout. Returns `txid`, `txStatus`, `verdict`, `competingTxs`. |
-| `arcade_status` | `txid`, `arcadeUrl?`, `callbackToken?` | Reads `GET /tx/{txid}` with a `verdict` and `isFinalForApp`; a 404 means this Arcade was never given the txid (no verdict, not a rejection). Says whether `rawTx` is EF or raw. |
-| `arcade_policy` | `arcadeUrl?` | Reads `GET /policy`, with the mining fee as `satPerKb`. |
-| `arcade_health` | `arcadeUrl?` | Reads `GET /health` (version, block height, upstream nodes). |
+| `broadcaster_submit` | `hex`, `broadcasterUrl?`, `network?`, `waitForSeen?` (true), `timeoutMs?` (15000), `callbackUrl?`, `callbackToken?`, `fullStatusUpdates?` | Broadcasts raw or EF hex to BSV Broadcaster (formerly Arcade) `POST /tx` (refuses BEEF: convert to EF or raw first); a 2xx is provisional, so it re-reads `GET /tx/{txid}` and, with `waitForSeen`, polls until `SEEN_ON_NETWORK` or later with no competing tx, or the timeout. Returns `txid`, `txStatus`, `verdict`, `competingTxs`. |
+| `broadcaster_status` | `txid`, `broadcasterUrl?`, `callbackToken?` | Reads `GET /tx/{txid}` with a `verdict` and `isFinalForApp`; a 404 means this instance was never given the txid (no verdict, not a rejection). Says whether `rawTx` is EF or raw. |
+| `broadcaster_policy` | `broadcasterUrl?` | Reads `GET /policy`, with the mining fee as `satPerKb`. |
+| `broadcaster_health` | `broadcasterUrl?` | Reads `GET /health` (version, block height, upstream nodes). |
 | `check_guardrails` | `path` (absolute), `shape?` (`A`, `B`, `auto`), `include?`, `exclude?` | Statically checks a project against the guardrails and returns findings (`id`, `severity`, `file`, `line`, `fix`, `ref: bsv://guardrails#G-xx`) plus the passed, not-applicable and manual-checklist ids. Read-only: never edits files. Rejects a relative path. |
 | `brc_lookup` | `brc` (`29`, `0029`, `BRC-29`) | Returns a BRC as Markdown: local clone first (`$BSV_REPOS_DIR/BRCs`), GitHub fallback (`bsv-blockchain/BRCs`). |
-| `versions_check` | none | Compares the pinned stack in `versions.json` with npm `latest`, the Rúnar git head and the Arcade version on every known testnet and mainnet host; one row per item with drift and age. A check that fails counts as drift. |
+| `versions_check` | none | Compares the pinned stack in `versions.json` with npm `latest`, the Rúnar git head, the latest BSV Broadcaster release and the version every known testnet and mainnet host reports; one row per item with drift and age. A check that fails counts as drift. |
 | `docs_url` | `id` (e.g. `guides.payments`) | Resolves a docs id from `bsv://docs/index` to a live page and its Markdown URL, trying each docs host and then the legacy URL; a "Page Not Found" body counts as a miss. |
 | `code_search` | `query`, `repository_name?`, `file_extension?` | Regex search with ripgrep (`grep` fallback) over the clones under `BSV_REPOS_DIR`; first matching line per file. |
 | `find_function_definition` | `function_name`, `repository_name?` | Finds likely definitions of a function, method or constant (TypeScript, JavaScript, Python, Go, Rust, Java) under `BSV_REPOS_DIR`, searching `src/`, `lib/` and `source/` first. |
 
-A transaction is final for an app at `SEEN_ON_NETWORK` or later with no `competingTxs`; `arcade_status` reports exactly that as `isFinalForApp`. Nothing in the kit waits for `MINED`.
+A transaction is final for an app at `SEEN_ON_NETWORK` or later with no `competingTxs`; `broadcaster_status` reports exactly that as `isFinalForApp`. Nothing in the kit waits for `MINED`.
 
 Suppress a `check_guardrails` finding with `// bsv-guardrail-ignore G-xx reason` (or the `#`, `<!--`, `/*` comment forms) on the flagged line or the line above.
 
@@ -91,7 +91,7 @@ For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [-
 
 | URI | Content |
 | --- | --- |
-| `bsv://facts/{arcade,networks,whatsonchain,wallet-limits,consensus,fees,runar,tokens-1color,versions,payment-channels}` | Dated facts, one resource per file |
+| `bsv://facts/{bsv-broadcaster,networks,whatsonchain,wallet-limits,consensus,fees,runar,tokens-1color,versions,payment-channels}` | Dated facts, one resource per file |
 | `bsv://guardrails` | Every guardrail `G-01`..`G-38`: rule, reason, custody shape, how it is checked, refs |
 | `bsv://guardrails{#id}` | One guardrail, e.g. `bsv://guardrails#G-09`; this is the `ref` every finding carries |
 | `bsv://custody-shapes` | Shape A (the user's wallet holds the keys) and shape B (a server wallet does) |
@@ -114,21 +114,22 @@ For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [-
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `BSV_NETWORK` | `testnet` | `testnet` or `mainnet`. Picks the default Arcade and gates mainnet broadcast. Any other value stops the server at startup. |
-| `ARCADE_URL` | per network | Arcade base URL. Defaults: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
-| `BSV_MCP_ALLOW_MAINNET_BROADCAST` | unset | `1` lets `arcade_submit` broadcast on mainnet. |
+| `BSV_NETWORK` | `testnet` | `testnet` or `mainnet`. Picks the default BSV Broadcaster and gates mainnet broadcast. Any other value stops the server at startup. |
+| `BSV_BROADCASTER_URL` | per network | BSV Broadcaster base URL. Defaults: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
+| `ARCADE_URL` | unset | Deprecated: the old name of `BSV_BROADCASTER_URL`. Read only when `BSV_BROADCASTER_URL` is unset, and then the server logs `ARCADE_URL is deprecated; use BSV_BROADCASTER_URL` on stderr. |
+| `BSV_MCP_ALLOW_MAINNET_BROADCAST` | unset | `1` lets `broadcaster_submit` broadcast on mainnet. |
 | `BSV_REPOS_DIR` | unset | Directory filled by `setup.sh`. Needed by `code_search` and `find_function_definition`; `brc_lookup` reads the `BRCs` clone there first. |
 | `WOC_API_KEY` | unset | Optional WhatsOnChain key, reserved for `versions_check`; no tool sends it today. |
 | `BSV_MCP_NETWORK_TESTS` | unset | Test suite only: `1` enables the tests that call live services. |
 
 ## Safety
 
-- **Testnet by default.** With no configuration the server uses testnet and the testnet Arcade. Mainnet is real money and is used only when you configure it.
-- **Set `BSV_NETWORK=mainnet` for any mainnet Arcade**, including custom and self-hosted hosts. The MCP gates mainnet broadcast on the configured network, not on the URL: it refuses known mainnet hosts while on testnet, but it cannot classify a host it does not know, so an unknown mainnet Arcade under `BSV_NETWORK=testnet` would be treated as testnet.
-- **Mainnet broadcast needs a second switch.** On mainnet, `arcade_submit` also requires `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`; without it the tool returns an error before contacting Arcade.
-- **Network and host must agree.** An `ARCADE_URL` that is a known host of the other network stops the server at startup, and `arcade_submit` refuses an `arcadeUrl` that is a known host of the other network. The Teranode test network host (`arcade-v2-ttn-us-1.bsvblockchain.tech`) is neither testnet nor mainnet; it is accepted only when you name it, with a warning. Read-only tools (`arcade_status`, `arcade_policy`, `arcade_health`) may query any Arcade.
-- **No keys.** No tool takes, stores or signs with a private key, WIF or seed phrase; `arcade_submit` broadcasts transactions that are already signed. `check_guardrails` only reads the project, and the prompts tell the agent never to ask for or print a key.
-- **Logs.** The startup line on stderr shows the Arcade origin only, never its path, query or credentials.
+- **Testnet by default.** With no configuration the server uses testnet and the testnet BSV Broadcaster. Mainnet is real money and is used only when you configure it.
+- **Set `BSV_NETWORK=mainnet` for any mainnet BSV Broadcaster**, including custom and self-hosted hosts. The MCP gates mainnet broadcast on the configured network, not on the URL: it refuses known mainnet hosts while on testnet, but it cannot classify a host it does not know, so an unknown mainnet BSV Broadcaster under `BSV_NETWORK=testnet` would be treated as testnet.
+- **Mainnet broadcast needs a second switch.** On mainnet, `broadcaster_submit` also requires `BSV_MCP_ALLOW_MAINNET_BROADCAST=1`; without it the tool returns an error before contacting BSV Broadcaster.
+- **Network and host must agree.** A `BSV_BROADCASTER_URL` that is a known host of the other network stops the server at startup, and `broadcaster_submit` refuses a `broadcasterUrl` that is a known host of the other network. The Teranode test network host (`arcade-v2-ttn-us-1.bsvblockchain.tech`) is neither testnet nor mainnet; it is accepted only when you name it, with a warning. Read-only tools (`broadcaster_status`, `broadcaster_policy`, `broadcaster_health`) may query any BSV Broadcaster.
+- **No keys.** No tool takes, stores or signs with a private key, WIF or seed phrase; `broadcaster_submit` broadcasts transactions that are already signed. `check_guardrails` only reads the project, and the prompts tell the agent never to ask for or print a key.
+- **Logs.** The startup line on stderr shows the BSV Broadcaster origin only, never its path, query or credentials.
 
 ## Development
 

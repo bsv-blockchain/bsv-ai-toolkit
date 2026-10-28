@@ -28,7 +28,7 @@ import { createElement, isValidElement, type ReactElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../server/app.js'
-import { Arcade } from '../server/arcade.js'
+import { BroadcasterClient } from '../server/broadcaster.js'
 import { internalizedMessage, verifyCreatorSignature } from '../server/auth.js'
 import { loadServerConfig } from '../server/config.js'
 import { openDb } from '../server/db.js'
@@ -43,7 +43,7 @@ import { forgetQuestion, forgetTip, forgetWithConsent, pendingTips, postPending,
 import { assertNetwork, login, TIPS_PROTOCOL } from '../web/wallet'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
-const ARCADE = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const BROADCASTER = 'https://arcade-testnet-us-1.bsvblockchain.tech'
 const ORIGIN = 'http://localhost:5173' // PUBLIC_ORIGIN's development default
 const quiet = () => {}
 
@@ -390,7 +390,7 @@ describe('tip.ts', () => {
     const w = new FakeWallet()
     const storage = new MemoryStorage()
     const relay = okRelay()
-    const answers = [new RelayError('too many', 429, 7000), new RelayError('Arcade did not take it', 502), new RelayError('unreachable', 0)]
+    const answers = [new RelayError('too many', 429, 7000), new RelayError('BSV Broadcaster did not take it', 502), new RelayError('unreachable', 0)]
     const ok = relay.postTip
     relay.postTip = async tip => {
       const next = answers.shift()
@@ -631,7 +631,7 @@ describe('collect.ts', () => {
     expect(partial.isValid()).toBe(false)
 
     const asked: string[] = []
-    // GET /api/tx/:txid: the relay has already re-read Arcade's EF rawTx as plain (relay.test.ts covers that).
+    // GET /api/tx/:txid: the relay has already re-read BSV Broadcaster's EF rawTx as plain (relay.test.ts covers that).
     const ancestor = async (id: string) => {
       asked.push(id)
       return { txid: id, rawTx: parent.toHex(), merklePath: parentPath.toHex() }
@@ -645,10 +645,10 @@ describe('collect.ts', () => {
     expect(merged.isValid()).toBe(true)
     expect(merged.findTxid(parent.id('hex'))!.isTxidOnly).toBe(false)
 
-    // A complete BEEF is returned as is, without asking Arcade.
+    // A complete BEEF is returned as is, without asking BSV Broadcaster.
     const full = Utils.toHex(child.toAtomicBEEF())
     expect(Utils.toHex(await buildAtomicBeef(full, txid, async () => { throw new Error('no') }))).toBe(full)
-    // No rawTx at Arcade: the BEEF cannot be completed.
+    // No rawTx at BSV Broadcaster: the BEEF cannot be completed.
     await expect(buildAtomicBeef(Utils.toHex(partial.toBinaryAtomic(txid)), txid, async () => undefined)).rejects.toThrow(/no rawTx/)
     // A transaction that is not the ancestor asked for is refused.
     await expect(buildAtomicBeef(Utils.toHex(partial.toBinaryAtomic(txid)), txid, async id => ({ txid: id, rawTx: grand.toHex() }))).rejects.toThrow(/hashes to/)
@@ -682,7 +682,7 @@ describe('collect.ts', () => {
     const t = await makeTip(tipper, creator.identityKey)
     const relay = fakeRelay(t.row, { [t.row.remittances[0].beefId]: t.beef }, [
       { verdict: 'pending', txStatus: 'RECEIVED' },
-      new RelayError('Arcade status read failed', 502),
+      new RelayError('BSV Broadcaster status read failed', 502),
       { verdict: 'seen-no-competitor', txStatus: 'SEEN_ON_NETWORK' },
     ])
     const done = collectTip(asWallet(creator), t.row, relay, collectDeps({ sleep: undefined }))
@@ -738,7 +738,7 @@ describe('collect.ts', () => {
     expect(creator.callsTo('internalizeAction')).toHaveLength(0)
     creator.network = 'testnet'
 
-    // An ancestor Arcade has no rawTx for: the BEEF cannot be completed, and that is what the creator sees.
+    // An ancestor BSV Broadcaster has no rawTx for: the BEEF cannot be completed, and that is what the creator sees.
     const partial = new Beef()
     partial.mergeTxidOnly('22'.repeat(32))
     const child = Transaction.fromAtomicBEEF(Utils.toArray(t.beef, 'hex'))
@@ -967,7 +967,7 @@ describe('TipList', () => {
         collect: {
           ['7'.repeat(64)]: { state: 'accepted', satoshis: 1234 },
           ['6'.repeat(64)]: { state: 'gave-up', error: 'wallet is on mainnet, app is on testnet' },
-          ['8'.repeat(64)]: { state: 'failed', error: 'Arcade reported REJECTED on two reads, with a re-post between' },
+          ['8'.repeat(64)]: { state: 'failed', error: 'BSV Broadcaster reported REJECTED on two reads, with a re-post between' },
         },
       }),
     )
@@ -980,11 +980,11 @@ describe('TipList', () => {
 })
 
 describe('web app and the real relay', () => {
-  /** The real relay on 127.0.0.1 with a fake Arcade: SEEN_ON_NETWORK for every tip, `ancestors` by txid. */
+  /** The real relay on 127.0.0.1 with a fake BSV Broadcaster: SEEN_ON_NETWORK for every tip, `ancestors` by txid. */
   async function startRelay(ancestors: Record<string, object> = {}) {
-    const arcadeFetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
+    const broadcasterFetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
       const url = String(input)
-      if (!url.startsWith(ARCADE)) throw new Error(`unexpected fetch ${url}`)
+      if (new URL(url).origin !== new URL(BROADCASTER).origin) throw new Error(`unexpected fetch ${url}`)
       const txid = init.method === 'POST' ? Transaction.fromHexEF(String(init.body)).id('hex') : url.split('/').pop()!
       if (init.method !== 'POST' && ancestors[txid]) return new Response(JSON.stringify(ancestors[txid]), { status: 200 })
       const body = init.method === 'POST' ? { txid, status: 202, txStatus: 'RECEIVED' } : { txid, txStatus: 'SEEN_ON_NETWORK' }
@@ -992,7 +992,7 @@ describe('web app and the real relay', () => {
     }) as typeof fetch
     const cfg = loadServerConfig({}, quiet)
     const db = openDb(':memory:')
-    const server = http.createServer(createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl, arcadeFetch), limits: { tipBurst: 1000 } }))
+    const server = http.createServer(createApp(cfg, { db, broadcasterClient: new BroadcasterClient(cfg.broadcasterUrl, broadcasterFetch), limits: { tipBurst: 1000 } }))
     await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
     return {
       api: relayApi(fetch, `http://127.0.0.1:${(server.address() as AddressInfo).port}`),
@@ -1030,7 +1030,7 @@ describe('web app and the real relay', () => {
     }
   })
 
-  it('an ancestor the BEEF names by txid only comes from Arcade through the relay', async () => {
+  it('an ancestor the BEEF names by txid only comes from BSV Broadcaster through the relay', async () => {
     const key = PrivateKey.fromRandom()
     const lock = new P2PKH().lock(key.toAddress('testnet'))
     const g0 = new Transaction()
@@ -1071,7 +1071,7 @@ describe('web app and the real relay', () => {
         remittance: { senderIdentityKey: tipper.identityKey, derivationPrefix, derivationSuffix },
       })
       expect(await api.ancestor(grand.id('hex'))).toEqual({ txid: grand.id('hex'), rawTx: grand.toHex(), merklePath: grandPath.toHex() })
-      expect(await api.ancestor('44'.repeat(32))).toBeUndefined() // Arcade holds no rawTx
+      expect(await api.ancestor('44'.repeat(32))).toBeUndefined() // BSV Broadcaster holds no rawTx
       expect((await collectTip(asWallet(creator), await api.getTip(txid), api, collectDeps())).result).toBe('accepted')
       const internalized = Beef.fromBinary(creator.accepted[0].tx)
       expect(internalized.isValid()).toBe(true)

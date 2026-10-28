@@ -8,11 +8,11 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 const ENTRY = fileURLToPath(new URL('../build/index.js', import.meta.url))
 
 const TOOLS = [
-  'arcade_health',
-  'arcade_policy',
-  'arcade_status',
-  'arcade_submit',
   'brc_lookup',
+  'broadcaster_health',
+  'broadcaster_policy',
+  'broadcaster_status',
+  'broadcaster_submit',
   'check_guardrails',
   'code_search',
   'docs_url',
@@ -39,7 +39,7 @@ function runEntry(env: Record<string, string>): Promise<{ code: number | null; s
     child.stderr.on('data', (chunk) => {
       stderr += chunk
       // A running server never exits on its own: stop it once the startup line is in.
-      if (/^@bsv\/mcp v\S+ network=.*\n/.test(stderr)) {
+      if (/^@bsv\/mcp v\S+ network=.*\n/m.test(stderr)) {
         child.kill()
         finish(null)
       }
@@ -76,11 +76,27 @@ describe('stdio bootstrap', () => {
       const { tools } = await client.listTools()
       expect(tools.map((t) => t.name).sort()).toEqual(TOOLS)
       expect(stderr).toContain(
-        '@bsv/mcp v2.0.0 network=testnet arcade=https://arcade-testnet-us-1.bsvblockchain.tech repos=unset\n',
+        '@bsv/mcp v2.0.0 network=testnet broadcaster=https://arcade-testnet-us-1.bsvblockchain.tech repos=unset\n',
       )
     } finally {
       await client.close()
     }
+  })
+
+  it('warns once on stderr when only the deprecated ARCADE_URL is set, and never prints its value', async () => {
+    const started = await runEntry({
+      PATH: process.env.PATH ?? '',
+      ARCADE_URL: 'https://user:s3cret@arcade-testnet-us-1.bsvblockchain.tech/p/s3cret',
+    })
+    expect(started.stderr).toContain('ARCADE_URL is deprecated; use BSV_BROADCASTER_URL\n')
+    expect(started.stderr.match(/deprecated/g)).toHaveLength(1)
+    expect(started.stderr).toContain('network=testnet broadcaster=https://arcade-testnet-us-1.bsvblockchain.tech repos=unset\n')
+    expect(started.stderr).not.toContain('s3cret')
+
+    const failed = await runEntry({ PATH: process.env.PATH ?? '', ARCADE_URL: 'https://user:s3cret@[bad/p' })
+    expect(failed.code).toBe(1)
+    expect(failed.stderr).toContain('invalid ARCADE_URL')
+    expect(failed.stderr).not.toContain('s3cret')
   })
 
   it('rejects BSV_NETWORK=main with exit code 1', async () => {
@@ -89,21 +105,21 @@ describe('stdio bootstrap', () => {
     expect(stderr).toContain('BSV_NETWORK must be "testnet" or "mainnet", got "main"')
   })
 
-  it('never prints ARCADE_URL userinfo, path or query', async () => {
+  it('never prints BSV_BROADCASTER_URL userinfo, path or query', async () => {
     const started = await runEntry({
       PATH: process.env.PATH ?? '',
-      ARCADE_URL: 'https://user:s3cret@arcade-testnet-us-1.bsvblockchain.tech/p/s3cret?key=s3cret',
+      BSV_BROADCASTER_URL: 'https://user:s3cret@arcade-testnet-us-1.bsvblockchain.tech/p/s3cret?key=s3cret',
       BSV_REPOS_DIR: '/tmp/repos-s3cret',
       WOC_API_KEY: 's3cret',
     })
     expect(started.stderr).toContain(
-      'network=testnet arcade=https://arcade-testnet-us-1.bsvblockchain.tech repos=set\n',
+      'network=testnet broadcaster=https://arcade-testnet-us-1.bsvblockchain.tech repos=set\n',
     )
     expect(started.stderr).not.toContain('s3cret')
 
-    const failed = await runEntry({ PATH: process.env.PATH ?? '', ARCADE_URL: 'https://user:s3cret@[bad/p' })
+    const failed = await runEntry({ PATH: process.env.PATH ?? '', BSV_BROADCASTER_URL: 'https://user:s3cret@[bad/p' })
     expect(failed.code).toBe(1)
-    expect(failed.stderr).toContain('invalid arcadeUrl')
+    expect(failed.stderr).toContain('invalid BSV_BROADCASTER_URL')
     expect(failed.stderr).not.toContain('s3cret')
   })
 })

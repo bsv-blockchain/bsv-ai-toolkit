@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Reads a transaction's status from Arcade and prints the app's gate verdict.
+# Reads a transaction's status from BSV Broadcaster (formerly Arcade) and prints the app's gate verdict.
 #
-# usage: scripts/arcade-check.sh <txid> [arcadeUrl]
-#        scripts/arcade-check.sh --policy [arcadeUrl]
-#   The URL defaults to ARCADE_URL, else to the public Arcade for BSV_NETWORK (unset means testnet).
+# usage: scripts/broadcaster-check.sh <txid> [broadcasterUrl]
+#        scripts/broadcaster-check.sh --policy [broadcasterUrl]
+#   The URL defaults to BSV_BROADCASTER_URL, else to the deprecated ARCADE_URL (with a warning), else to the public
+#   BSV Broadcaster for BSV_NETWORK (unset means testnet).
 #   Prints the GET /tx/{txid} JSON, then one line:
 #     verdict: <seen-no-competitor|on-network-not-seen|pending|terminal|no-verdict>
-#   using the same rules as the bsv-mcp arcade_status tool. Only seen-no-competitor is final for the app.
+#   using the same rules as the bsv-mcp broadcaster_status tool. Only seen-no-competitor is final for the app.
 #   With --policy, prints the GET /policy JSON, then `satPerKb: <n>`.
-#   Exits 0 on any answer from Arcade (a 404 is no-verdict: this Arcade never saw the txid, which is not a
-#   rejection), 2 on a usage error, 3 when Arcade cannot be reached or gives no usable answer.
+#   Exits 0 on any answer from BSV Broadcaster (a 404 is no-verdict: this instance never saw the txid, which is not a
+#   rejection), 2 on a usage error, 3 when BSV Broadcaster cannot be reached or gives no usable answer.
 #   Uses jq when it is installed, else grep and sed.
 set -euo pipefail
 
-usage_line="usage: arcade-check.sh <txid> [arcadeUrl] | arcade-check.sh --policy [arcadeUrl]"
+usage_line="usage: broadcaster-check.sh <txid> [broadcasterUrl] | broadcaster-check.sh --policy [broadcasterUrl]"
 usage() {
   echo "$usage_line" >&2
   exit 2
@@ -32,12 +33,16 @@ else
   txid="$(printf '%s' "$1" | tr 'A-F' 'a-f')"
   hex64='^[0-9a-f]{64}$'
   if ! [[ "$txid" =~ $hex64 ]]; then
-    echo "arcade-check: txid must be 64 hex characters" >&2
+    echo "broadcaster-check: txid must be 64 hex characters" >&2
     usage
   fi
 fi
 
-url="${2:-${ARCADE_URL:-}}"
+url="${2:-${BSV_BROADCASTER_URL:-}}"
+if [ -z "$url" ] && [ -n "${ARCADE_URL:-}" ]; then
+  echo "broadcaster-check: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL" >&2
+  url="$ARCADE_URL"
+fi
 if [ -z "$url" ]; then
   network="${BSV_NETWORK:-testnet}"
   case "$network" in
@@ -52,27 +57,27 @@ fi
 while [ "${url%/}" != "$url" ]; do url="${url%/}"; done
 http_url='^https?://[^[:space:]]+$'
 if ! [[ "$url" =~ $http_url ]]; then
-  echo "arcade-check: arcadeUrl must start with http:// or https://" >&2
+  echo "broadcaster-check: broadcasterUrl must start with http:// or https://" >&2
   exit 2
 fi
 
 have_jq=0
 command -v jq >/dev/null 2>&1 && have_jq=1
 
-# GET $1 with a 10 s timeout, ignoring ~/.curlrc (-q) and URL globbing (-g); sets $code (HTTP status) and $body. Exits 3 when Arcade cannot be reached.
+# GET $1 with a 10 s timeout, ignoring ~/.curlrc (-q) and URL globbing (-g); sets $code (HTTP status) and $body. Exits 3 when BSV Broadcaster cannot be reached.
 code=""
 body=""
 fetch() {
   local out nl=$'\n'
   if ! out="$(curl -q -g -sS -m 10 -w '\n%{http_code}' "$1")"; then
-    echo "arcade-check: could not reach Arcade" >&2
+    echo "broadcaster-check: could not reach BSV Broadcaster" >&2
     exit 3
   fi
   code="${out##*"$nl"}"
   body="${out%"$nl"*}"
 }
 
-# The same rules as verdictOf in @bsv/mcp (src/arcade/classify.ts). $1 txStatus, $2 number of competing txids.
+# The same rules as verdictOf in @bsv/mcp (src/broadcaster/classify.ts). $1 txStatus, $2 number of competing txids.
 verdict_of() {
   case "$1" in
     REJECTED | DOUBLE_SPEND_ATTEMPTED) echo terminal; return ;;
@@ -92,7 +97,7 @@ verdict_of() {
 if [ "$mode" = policy ]; then
   fetch "$url/policy"
   if [ "$code" != 200 ]; then
-    echo "arcade-check: GET /policy answered HTTP $code" >&2
+    echo "broadcaster-check: GET /policy answered HTTP $code" >&2
     exit 3
   fi
   printf '%s\n' "$body"
@@ -106,14 +111,14 @@ if [ "$mode" = policy ]; then
   fi
   number='^[0-9]+(\.[0-9]+)?$'
   if ! [[ "$sats" =~ $number && "$bytes" =~ $number ]]; then
-    echo "arcade-check: the answer has no policy.miningFee" >&2
+    echo "broadcaster-check: the answer has no policy.miningFee" >&2
     exit 3
   fi
   awk -v s="$sats" -v b="$bytes" 'BEGIN {
     if (b + 0 <= 0) exit 1
     v = s * 1000 / b
     if (v == int(v)) printf "satPerKb: %d\n", v; else printf "satPerKb: %.6g\n", v
-  }' || { echo "arcade-check: policy.miningFee.bytes is zero" >&2; exit 3; }
+  }' || { echo "broadcaster-check: policy.miningFee.bytes is zero" >&2; exit 3; }
   exit 0
 fi
 
@@ -122,12 +127,12 @@ case "$code" in
   200) ;;
   404)
     if [ -n "$body" ]; then printf '%s\n' "$body"; fi
-    echo "arcade-check: 404 means this Arcade never saw the txid; it is not a rejection" >&2
+    echo "broadcaster-check: 404 means this instance never saw the txid; it is not a rejection" >&2
     echo "verdict: no-verdict"
     exit 0
     ;;
   *)
-    echo "arcade-check: GET /tx answered HTTP $code; no answer yet, read again later" >&2
+    echo "broadcaster-check: GET /tx answered HTTP $code; no answer yet, read again later" >&2
     exit 3
     ;;
 esac

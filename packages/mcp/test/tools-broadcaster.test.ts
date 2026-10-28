@@ -6,14 +6,14 @@ import { Transaction } from '@bsv/sdk'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { loadConfig } from '../src/config.js'
-import { arcadeSubmit, arcadeStatus, arcadePolicy, arcadeHealth } from '../src/tools/arcade.js'
+import { broadcasterSubmit, broadcasterStatus, broadcasterPolicy, broadcasterHealth } from '../src/tools/broadcaster.js'
 import { createServer } from '../src/server.js'
 import { mockFetch, type MockRoute } from './helpers/mockFetch.js'
 
-const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'arcade')
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'broadcaster')
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), 'utf8'))
 
-// A real transaction: the EF hex Arcade returned for a mined testnet tx, and the same tx re-read as plain.
+// A real transaction: the EF hex BSV Broadcaster returned for a mined testnet tx, and the same tx re-read as plain.
 const EF_STATUS = fixture('status-mined-ef-rawtx.json')
 const EF_HEX: string = EF_STATUS.rawTx
 const REAL_TXID: string = EF_STATUS.txid
@@ -28,22 +28,22 @@ const post = (status: number, body: any, delayMs?: number): MockRoute => ({ meth
 const get = (status: number, body: any): MockRoute => ({ method: 'GET', path: /^\/tx\/[0-9a-f]{64}$/, status, body })
 const received = { txid: TXID, txStatus: 'RECEIVED', timestamp: '2026-10-22T16:14:39.000000Z' }
 
-describe('arcadeSubmit', () => {
-  it('refuses BEEF before contacting Arcade', async () => {
+describe('broadcasterSubmit', () => {
+  it('refuses BEEF before contacting BSV Broadcaster', async () => {
     const f = mockFetch([])
-    await expect(arcadeSubmit({ hex: BEEF_HEX }, testnet(), f)).rejects.toThrow(/convert to EF or raw/)
+    await expect(broadcasterSubmit({ hex: BEEF_HEX }, testnet(), f)).rejects.toThrow(/convert to EF or raw/)
     expect(f.calls.length).toBe(0)
   })
 
-  it('refuses BEEF with leading whitespace before contacting Arcade', async () => {
+  it('refuses BEEF with leading whitespace before contacting BSV Broadcaster', async () => {
     const f = mockFetch([])
-    await expect(arcadeSubmit({ hex: '\n' + BEEF_HEX }, testnet(), f)).rejects.toThrow(/convert to EF or raw/)
+    await expect(broadcasterSubmit({ hex: '\n' + BEEF_HEX }, testnet(), f)).rejects.toThrow(/convert to EF or raw/)
     expect(f.calls.length).toBe(0)
   })
 
   it('mainnet broadcast disabled without the flag', async () => {
     const f = mockFetch([post(202, fixture('submit-202.json'))])
-    await expect(arcadeSubmit({ hex: RAW_HEX }, loadConfig({ BSV_NETWORK: 'mainnet' }), f)).rejects.toThrow(
+    await expect(broadcasterSubmit({ hex: RAW_HEX }, loadConfig({ BSV_NETWORK: 'mainnet' }), f)).rejects.toThrow(
       /^mainnet broadcast disabled; set BSV_MCP_ALLOW_MAINNET_BROADCAST=1$/,
     )
     expect(f.calls.length).toBe(0)
@@ -51,7 +51,7 @@ describe('arcadeSubmit', () => {
 
   it('mainnet broadcast disabled when the network input selects mainnet', async () => {
     const f = mockFetch([post(202, fixture('submit-202.json'))])
-    await expect(arcadeSubmit({ hex: RAW_HEX, network: 'mainnet' }, testnet(), f)).rejects.toThrow(
+    await expect(broadcasterSubmit({ hex: RAW_HEX, network: 'mainnet' }, testnet(), f)).rejects.toThrow(
       /^mainnet broadcast disabled; set BSV_MCP_ALLOW_MAINNET_BROADCAST=1$/,
     )
     expect(f.calls.length).toBe(0)
@@ -60,7 +60,7 @@ describe('arcadeSubmit', () => {
   it('mainnet allowed with the flag', async () => {
     const f = mockFetch([post(202, fixture('submit-202.json')), get(200, fixture('status-seen.json'))])
     const cfg = loadConfig({ BSV_NETWORK: 'mainnet', BSV_MCP_ALLOW_MAINNET_BROADCAST: '1' })
-    const r = await arcadeSubmit({ hex: RAW_HEX, waitForSeen: false }, cfg, f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX, waitForSeen: false }, cfg, f)
     expect(f.calls[0].method).toBe('POST')
     expect(f.calls[0].url).toBe('https://arcade-us-1.bsvblockchain.tech/tx')
     expect(r.verdict).toBe('seen-no-competitor')
@@ -68,7 +68,7 @@ describe('arcadeSubmit', () => {
 
   it('2xx is provisional: re-reads status and waits for seen', async () => {
     const f = mockFetch([post(202, fixture('submit-202.json')), get(200, received), get(200, fixture('status-seen.json'))])
-    const r = await arcadeSubmit({ hex: '  ' + RAW_HEX + '\n' }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: '  ' + RAW_HEX + '\n' }, testnet(), f)
     expect(r).toMatchObject({ verdict: 'seen-no-competitor', postStatus: 202, txStatus: 'SEEN_ON_NETWORK', transient: false, competingTxs: [] })
     expect(f.calls[0].url).toBe(TESTNET_TX)
     expect(f.calls[0].body).toBe(RAW_HEX)
@@ -77,20 +77,20 @@ describe('arcadeSubmit', () => {
 
   it('476 is transient', async () => {
     const f = mockFetch([post(400, fixture('submit-400-476.json'))])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ transient: true, arcCode: 476, txStatus: 'UNKNOWN', verdict: 'pending', postStatus: 400 })
     expect(f.calls).toHaveLength(1)
   })
 
   it('already-known reads status', async () => {
     const f = mockFetch([post(400, fixture('submit-400-exists.json')), get(200, fixture('status-seen.json'))])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ verdict: 'seen-no-competitor', txStatus: 'SEEN_ON_NETWORK', postStatus: 400, transient: false })
   })
 
   it('terminal 400 carries the ARC code', async () => {
     const f = mockFetch([post(400, fixture('submit-400-terminal.json'))])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ verdict: 'terminal', arcCode: 461, transient: false, postStatus: 400 })
     expect(r.extraInfo).toMatch(/malformed/)
     expect(f.calls).toHaveLength(1)
@@ -98,19 +98,19 @@ describe('arcadeSubmit', () => {
 
   it('terminal 400 blaming inputs carries the re-read warning', async () => {
     const f = mockFetch([post(400, { status: 466, error: 'UTXO_SPENT' })])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ verdict: 'terminal', txStatus: 'REJECTED', arcCode: 466, extraInfo: 'UTXO_SPENT', warning: R15 })
   })
 
   it('terminal 400 reads the reason field for extraInfo and the re-read warning', async () => {
     const f = mockFetch([post(400, { status: 466, reason: 'UTXO_SPENT' })])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ verdict: 'terminal', extraInfo: 'UTXO_SPENT', warning: R15 })
   })
 
   it('a 404 from POST /tx is not a transaction verdict', async () => {
     const f = mockFetch([post(404, { error: 'not found' })])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ txStatus: 'UNKNOWN', verdict: 'pending', transient: false, postStatus: 404 })
     expect(r.warning).toMatch(/HTTP 404.*not a transaction verdict/)
     expect(f.calls).toHaveLength(1)
@@ -118,51 +118,51 @@ describe('arcadeSubmit', () => {
 
   it('a 422 from POST /tx is a validation answer', async () => {
     const f = mockFetch([post(422, { error: 'invalid script' })])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ txStatus: 'REJECTED', verdict: 'terminal', transient: false, postStatus: 422 })
     expect(r.warning).toBeUndefined()
   })
 
   it('503 is transient UNREACHABLE', async () => {
     const f = mockFetch([post(503, { error: 'busy' })])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ txStatus: 'UNREACHABLE', transient: true, verdict: 'pending', postStatus: 503 })
-    expect(r.txid).toBe(REAL_TXID) // computed locally; Arcade's body carries none
+    expect(r.txid).toBe(REAL_TXID) // computed locally; BSV Broadcaster's body carries none
     expect(f.calls).toHaveLength(1)
   })
 
   it('network error is transient UNREACHABLE with the txid of an EF submission', async () => {
     const f = mockFetch([]) // no route: fetch throws
-    const r = await arcadeSubmit({ hex: EF_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: EF_HEX }, testnet(), f)
     expect(r).toMatchObject({ txid: REAL_TXID, postStatus: 0, txStatus: 'UNREACHABLE', transient: true, verdict: 'pending' })
   })
 
   it('per-request timeout stays within timeoutMs when waiting for seen', async () => {
     const f = mockFetch([post(202, fixture('submit-202.json'), 5000)])
     const started = Date.now()
-    const r = await arcadeSubmit({ hex: RAW_HEX, timeoutMs: 200 }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX, timeoutMs: 200 }, testnet(), f)
     expect(Date.now() - started).toBeLessThan(2000)
     expect(r).toMatchObject({ txStatus: 'UNREACHABLE', transient: true })
   })
 
   it('ttn host returns a warning', async () => {
     const f = mockFetch([post(202, fixture('submit-202.json')), get(200, fixture('status-seen.json'))])
-    const r = await arcadeSubmit({ hex: RAW_HEX, arcadeUrl: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech', waitForSeen: false }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX, broadcasterUrl: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech', waitForSeen: false }, testnet(), f)
     expect(r.warning).toMatch(/ttn/)
     expect(f.calls[0].url).toBe('https://arcade-v2-ttn-us-1.bsvblockchain.tech/tx')
   })
 
   it('REJECTED blaming inputs stays terminal with a re-read warning', async () => {
     const f = mockFetch([post(202, fixture('submit-202.json')), get(200, fixture('status-rejected.json'))])
-    const r = await arcadeSubmit({ hex: RAW_HEX }, testnet(), f)
+    const r = await broadcasterSubmit({ hex: RAW_HEX }, testnet(), f)
     expect(r).toMatchObject({ verdict: 'terminal', txStatus: 'REJECTED', extraInfo: 'UTXO_SPENT', warning: R15 })
   })
 })
 
-describe('arcadeStatus', () => {
+describe('broadcasterStatus', () => {
   it('404 is no-verdict', async () => {
     const f = mockFetch([get(404, {})])
-    const r = await arcadeStatus({ txid: TXID }, testnet(), f)
+    const r = await broadcasterStatus({ txid: TXID }, testnet(), f)
     expect(r).toMatchObject({ txid: TXID, verdict: 'no-verdict', isFinalForApp: false, rawTxPresent: false })
     expect(r.txStatus).not.toBe('REJECTED')
     expect(r.note).toMatch(/never given this txid/)
@@ -170,41 +170,41 @@ describe('arcadeStatus', () => {
 
   it('status reports rawTx format ef with the EF reminder', async () => {
     const f = mockFetch([get(200, EF_STATUS)])
-    const r = await arcadeStatus({ txid: REAL_TXID }, testnet(), f)
+    const r = await broadcasterStatus({ txid: REAL_TXID }, testnet(), f)
     expect(r).toMatchObject({ rawTxPresent: true, rawTxFormat: 'ef', verdict: 'seen-no-competitor', isFinalForApp: true, blockHeight: 1764542 })
     expect(r.note).toMatch(/re-read as plain/)
   })
 
   it('isFinalForApp false with competitors', async () => {
     const f = mockFetch([get(200, fixture('status-competing.json'))])
-    const r = await arcadeStatus({ txid: TXID }, testnet(), f)
+    const r = await broadcasterStatus({ txid: TXID }, testnet(), f)
     expect(r).toMatchObject({ isFinalForApp: false, verdict: 'pending', rawTxPresent: false })
     expect(r.competingTxs).toHaveLength(1)
   })
 
   it('REJECTED with parent rejected stays terminal with a re-read note', async () => {
     const parent = { ...fixture('status-rejected.json'), extraInfo: 'Parent rejected: input tx not found' }
-    const r = await arcadeStatus({ txid: TXID }, testnet(), mockFetch([get(200, parent)]))
+    const r = await broadcasterStatus({ txid: TXID }, testnet(), mockFetch([get(200, parent)]))
     expect(r).toMatchObject({ verdict: 'terminal', isFinalForApp: false, note: R15 })
 
     const script = { ...fixture('status-rejected.json'), extraInfo: 'script verification failed' }
-    const s = await arcadeStatus({ txid: TXID }, testnet(), mockFetch([get(200, script)]))
+    const s = await broadcasterStatus({ txid: TXID }, testnet(), mockFetch([get(200, script)]))
     expect(s.verdict).toBe('terminal')
     expect(s.note).toBeUndefined()
   })
 })
 
-describe('arcadePolicy and arcadeHealth', () => {
+describe('broadcasterPolicy and broadcasterHealth', () => {
   it('policy returns satPerKb', async () => {
     const f = mockFetch([{ method: 'GET', path: /^\/policy$/, status: 200, body: fixture('policy.json') }])
-    const r = await arcadePolicy({}, testnet(), f)
+    const r = await broadcasterPolicy({}, testnet(), f)
     expect(r.satPerKb).toBe(1)
     expect(f.calls[0].url).toBe('https://arcade-testnet-us-1.bsvblockchain.tech/policy')
   })
 
   it('health returns version', async () => {
     const f = mockFetch([{ method: 'GET', path: /^\/health$/, status: 200, body: fixture('health.json') }])
-    const r = await arcadeHealth({}, testnet(), f)
+    const r = await broadcasterHealth({}, testnet(), f)
     expect(r.version).toBe('v0.16.0')
   })
 })
@@ -218,16 +218,16 @@ describe('createServer', () => {
     return client
   }
 
-  it('reports @bsv/mcp with the package version and lists the arcade tools', async () => {
+  it('reports @bsv/mcp with the package version and lists the broadcaster tools', async () => {
     const client = await connect([])
     expect(client.getServerVersion()).toMatchObject({ name: '@bsv/mcp', version: '2.0.0' })
     const names = (await client.listTools()).tools.map((t) => t.name)
-    expect(names).toEqual(expect.arrayContaining(['arcade_submit', 'arcade_status', 'arcade_policy', 'arcade_health']))
+    expect(names).toEqual(expect.arrayContaining(['broadcaster_submit', 'broadcaster_status', 'broadcaster_policy', 'broadcaster_health']))
   })
 
   it('returns structuredContent and JSON text', async () => {
     const client = await connect([get(404, {})])
-    const r: any = await client.callTool({ name: 'arcade_status', arguments: { txid: TXID } })
+    const r: any = await client.callTool({ name: 'broadcaster_status', arguments: { txid: TXID } })
     expect(r.isError).toBeFalsy()
     expect(r.structuredContent.verdict).toBe('no-verdict')
     expect(JSON.parse(r.content[0].text)).toEqual(r.structuredContent)
@@ -235,7 +235,7 @@ describe('createServer', () => {
 
   it('returns isError with the message when a handler throws', async () => {
     const client = await connect([])
-    const r: any = await client.callTool({ name: 'arcade_submit', arguments: { hex: BEEF_HEX } })
+    const r: any = await client.callTool({ name: 'broadcaster_submit', arguments: { hex: BEEF_HEX } })
     expect(r.isError).toBe(true)
     expect(r.content[0].text).toMatch(/convert to EF or raw/)
   })

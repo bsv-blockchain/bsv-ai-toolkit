@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import Database from 'better-sqlite3'
 
-// The relay's store. A tip is one transaction (keyed by txid) with Arcade's view of it; the remittances that
+// The relay's store. A tip is one transaction (keyed by txid) with BSV Broadcaster's view of it; the remittances that
 // tippers posted for it are candidates, because anyone who sees the transaction can post it with a different
 // remittance, or with the same transaction wrapped in a different BEEF (the relay checks a BEEF's structure, not
 // its merkle proofs). So each candidate keeps the BEEF it arrived with, and the creator's wallet tries each
@@ -21,12 +21,12 @@ export interface Remittance {
 
 export interface TipRow {
   txid: string
-  /** Arcade's txStatus, or UNREACHABLE when Arcade could not be reached. */
+  /** BSV Broadcaster's txStatus, or UNREACHABLE when BSV Broadcaster could not be reached. */
   txStatus: string
   verdict: string
   competingTxs: string[]
   extraInfo?: string
-  /** A caveat on the verdict (e.g. a REJECTED that may not be final, or an Arcade answer that is not a verdict). */
+  /** A caveat on the verdict (e.g. a REJECTED that may not be final, or a BSV Broadcaster answer that is not a verdict). */
   note?: string
   receivedAt: string
   updatedAt: string

@@ -88,7 +88,7 @@ describe('broadcast and money guardrails on fixtures', () => {
     expect(f.snippet).toContain('browser code')
     expect(f.snippet).toContain('inside a loop, no rate-limit gate')
     const { findings } = await lint('broken-a')
-    expect(findings.filter(f => f.id === 'G-12').map(f => f.line)).toEqual([17]) // the Arcade POST is not a WoC call
+    expect(findings.filter(f => f.id === 'G-12').map(f => f.line)).toEqual([17]) // the BSV Broadcaster POST is not a WoC call
   })
 
   it('broken-a: G-14 waiting for confirmation (warn)', async () => {
@@ -192,11 +192,13 @@ describe('G-09 never ARC', () => {
   })
 
   it.each([
-    '// never use ARC or /v1/tx; Arcade only',
+    '// never use ARC or /v1/tx; BSV Broadcaster only',
     '/* not arc.taal.com */',
     "const url = 'https://arcade.gorillapool.io'",
     "await fetch(ARCADE_URL + '/tx', { method: 'POST' })",
     "import { ARCADE_URL } from './config.js'",
+    "await fetch(BSV_BROADCASTER_URL + '/tx', { method: 'POST' })",
+    "import { BroadcasterClient } from './broadcaster.js'",
   ])('does not flag %s', text => {
     expect(runOn(g09, text)).toEqual([])
   })
@@ -258,7 +260,7 @@ describe('G-10 SEEN_ON_NETWORK, never MINED', () => {
     expect(runOn(g10, "if (\n  s.txStatus === 'MINED'\n) {\n  return 'In a block'\n}")).toEqual([])
   })
 
-  it('does not count a POST to the app\'s own relay as an Arcade broadcast', () => {
+  it('does not count a POST to the app\'s own relay as a BSV Broadcaster broadcast', () => {
     const relay = "await fetch('/api/tx', {\n  method: 'POST',\n  body: JSON.stringify({ beef }),\n  signal: AbortSignal.timeout(10000),\n})"
     expect(runOn(g10, relay)).toEqual([])
   })
@@ -269,12 +271,35 @@ describe('G-10 SEEN_ON_NETWORK, never MINED', () => {
     expect(findings).toHaveLength(1)
     expect(findings[0].line).toBe(1)
     expect(runOn(g10, `${post}\nconst s = await fetch(\`\${ARCADE_URL}/tx/\${txid}\`)`)).toEqual([])
-    // A WhatsOnChain read is not an Arcade status read.
+    // A WhatsOnChain read is not a BSV Broadcaster status read.
     expect(runOn(g10, `${post}\nawait fetch('https://api.whatsonchain.com/v1/bsv/test/tx/' + txid)`)).toHaveLength(1)
+  })
+
+  // User code in the wild names its broadcaster either way: the old Arcade names and the new BSV Broadcaster ones.
+  it.each([
+    "const r = await fetch(`${BSV_BROADCASTER_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
+    "const r = await fetch(`${process.env.BSV_BROADCASTER_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
+    "const base = 'https://broadcaster.example.com'\nconst r = await fetch(`${base}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
+    "import { url as broadcasterBase } from './broadcaster.js'\nconst r = await fetch(broadcasterBase + '/tx', {\n  method: 'POST',\n  body: hex,\n})",
+    "const BASE = 'https://arcade-us-1.bsvblockchain.tech'\nconst r = await fetch(`${BASE}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
+    "import { url as base } from './arcade.js'\nconst r = await fetch(base + '/tx', {\n  method: 'POST',\n  body: hex,\n})",
+  ])('recognises a BSV Broadcaster POST /tx with no status read: %s', post => {
+    expect(runOn(g10, post)).toHaveLength(1)
+    expect(runOn(g10, `${post}\nconst s = await fetch(\`\${BSV_BROADCASTER_URL}/tx/\${txid}\`)`)).toEqual([])
+  })
+
+  // Type-only imports name no URL, and only the POST's URL argument decides whether it goes to the broadcaster.
+  it.each([
+    "import type { Outcome } from './broadcaster.js'\nconst r: Outcome = await (await fetch('/api/tx', {\n  method: 'POST',\n  body,\n})).json()",
+    "import type { TipRow } from '../server/broadcaster.js'\nconst r = await post<TipRow>('/api/tx', body)",
+    "import { toEF } from './broadcaster-utils.js'\nawait fetch('/api/tx', { method: 'POST', body: toEF(tx) })",
+    "import { type Outcome, toEF } from './broadcaster.js'\nconst r: Outcome = await (await fetch('/api/tx', { method: 'POST', body: toEF(tx) })).json()",
+  ])('does not flag a POST to the app\'s own relay beside broadcaster imports: %s', text => {
+    expect(runOn(g10, text)).toEqual([])
   })
 })
 
-describe('G-12 Arcade first, WhatsOnChain gated', () => {
+describe('G-12 BSV Broadcaster first, WhatsOnChain gated', () => {
   const WOC = "const WOC = 'https://api.whatsonchain.com/v1/bsv/test'\n"
 
   it('flags a WhatsOnChain call in a module with no gate', () => {
@@ -370,20 +395,28 @@ describe('G-14 no confirmation waits', () => {
   })
 })
 
-describe('G-15 timeouts on Arcade and WhatsOnChain calls', () => {
+describe('G-15 timeouts on BSV Broadcaster and WhatsOnChain calls', () => {
   it.each([
     "await fetch(ARCADE_URL + '/tx/' + txid)",
     "await fetch(`${process.env.ARCADE_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
     "const woc = 'https://api.whatsonchain.com/v1/bsv/test'\nawait fetch(woc + '/chain/info')",
+    "await fetch(BSV_BROADCASTER_URL + '/tx/' + txid)",
+    "await fetch(`${process.env.BSV_BROADCASTER_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n})",
+    "const base = 'https://broadcaster.example.com'\nawait fetch(base + '/policy')",
+    "await fetch(broadcaster.baseUrl + '/health')",
+    "const BASE = 'https://arcade-us-1.bsvblockchain.tech'\nawait fetch(BASE + '/policy')",
+    "import { url as base } from './arcade.js'\nawait fetch(base + '/tx/' + txid)",
   ])('flags %s', text => {
     expect(runOn(g15, text)).toHaveLength(1)
   })
 
   it.each([
     "await fetch(ARCADE_URL + '/tx/' + txid, { signal: AbortSignal.timeout(10000) })",
+    "await fetch(BSV_BROADCASTER_URL + '/tx/' + txid, { signal: AbortSignal.timeout(10000) })",
     "await fetch(`${ARCADE_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n  signal: AbortSignal.timeout(10000),\n})",
     "const signal = AbortSignal.timeout(5000)\nawait fetch(ARCADE_URL + '/policy', init)\nconst init = { signal }",
     "await fetch('https://example.com/api')",
+    "import type { TxView } from './broadcaster.js'\nconst view = await fetch('/api/tips/' + (id as TxView['txid']))",
     "// fetch(ARCADE_URL + '/tx')",
     // Prettier output of the kit's recommended POST: `signal` lands on line 8 (ruling R23)
     "const res = await fetch(`${ARCADE_URL}/tx`, {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'text/plain',\n    'X-CallbackToken': token,\n  },\n  body: efHex,\n  signal: AbortSignal.timeout(10000),\n})",
@@ -392,7 +425,7 @@ describe('G-15 timeouts on Arcade and WhatsOnChain calls', () => {
   })
 })
 
-describe('G-16 Arcade rawTx is Extended Format', () => {
+describe('G-16 BSV Broadcaster rawTx is Extended Format', () => {
   it.each([
     'const tx = Transaction.fromHex(status.rawTx)',
     'const tx = Transaction.fromHex(rawTxHex)',

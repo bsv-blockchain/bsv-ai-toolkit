@@ -24,8 +24,8 @@ Short version: the docs MCP answers questions about the docs, the skill tells an
 What the repository holds today:
 
 - **`content/`, the single source.** Dated facts (`facts/*.md`, each with `verified: YYYY-MM-DD`), the guardrails `G-01` to `G-38` (`guardrails.yaml`), pinned versions (`versions.json`), the docs index (`docs-index.yaml`), custody shapes and the threat model. A build step (`packages/sync`) renders it into the MCP package and the skill, and CI fails when the generated copies drift. The kit never copies docs prose: it links to your pages by id (see [Host move request](#host-move-request)).
-- **`@bsv/mcp` 2.0.0** (`packages/mcp`), testnet by default. Tools: `arcade_submit`, `arcade_status`, `arcade_policy`, `arcade_health`, `check_guardrails` (a read-only static check of a project against the guardrails), `brc_lookup`, `versions_check`, `docs_url`, `code_search`, `find_function_definition`. Resources: `bsv://facts/*`, `bsv://guardrails`, `bsv://custody-shapes`, `bsv://threat-model`, `bsv://docs/index`, `bsv://simple/api`, `bsv://simple/gotchas`, `bsv://brc/{id}`. The `@bsv/simple` prompts from `@bsv/simple-mcp` are folded in and rewritten for `@bsv/simple` 0.7. The deprecation release of `@bsv/simple-mcp` (a 0.0.3 that points at `@bsv/mcp`) is prepared for that repository's owner to publish.
-- **The `bsv-dev` skill 0.1.0** (`packages/skill`). `SKILL.md` plus references on custody shapes, BRC-100 wallets, BRC-29 payments, Arcade and 0-conf, when `@bsv/simple` fits, testnet to mainnet, the threat model and common errors; assets (a `manifest.json` template, `env.example`, project-rule snippets for `CLAUDE.md`, `AGENTS.md` and Cursor); the commands `/bsv-review` and `/bsv-design`. As a Claude Code plugin it bundles both MCP servers: `bsv-mcp` (pinned to `@bsv/mcp@2.0.0`) and `bsv-docs` (your docs MCP). It asks for the network (default `testnet`) and an optional Arcade URL.
+- **`@bsv/mcp` 2.0.0** (`packages/mcp`), testnet by default. Tools: `broadcaster_submit`, `broadcaster_status`, `broadcaster_policy`, `broadcaster_health`, `check_guardrails` (a read-only static check of a project against the guardrails), `brc_lookup`, `versions_check`, `docs_url`, `code_search`, `find_function_definition`. Resources: `bsv://facts/*`, `bsv://guardrails`, `bsv://custody-shapes`, `bsv://threat-model`, `bsv://docs/index`, `bsv://simple/api`, `bsv://simple/gotchas`, `bsv://brc/{id}`. The `@bsv/simple` prompts from `@bsv/simple-mcp` are folded in and rewritten for `@bsv/simple` 0.7. The deprecation release of `@bsv/simple-mcp` (a 0.0.3 that points at `@bsv/mcp`) is prepared for that repository's owner to publish.
+- **The `bsv-dev` skill 0.1.0** (`packages/skill`). `SKILL.md` plus references on custody shapes, BRC-100 wallets, BRC-29 payments, BSV Broadcaster (formerly Arcade) and 0-conf, when `@bsv/simple` fits, testnet to mainnet, the threat model and common errors; assets (a `manifest.json` template, `env.example`, project-rule snippets for `CLAUDE.md`, `AGENTS.md` and Cursor); the commands `/bsv-review` and `/bsv-design`. As a Claude Code plugin it bundles both MCP servers: `bsv-mcp` (pinned to `@bsv/mcp@2.0.0`) and `bsv-docs` (your docs MCP). It asks for the network (default `testnet`) and an optional BSV Broadcaster URL.
 - **Samples** (`samples/`): `tipping-shape-a`, see [Samples for /docs/showcase](#samples-for-docsshowcase).
 
 WriteChoice owns the site, `llms.txt` and the docs MCP. This kit owns the facts, the guardrails, the skill, `@bsv/mcp` and the samples.
@@ -37,7 +37,7 @@ WriteChoice owns the site, `llms.txt` and the docs MCP. This kit owns the facts,
 - Names: the skill is `bsv-dev`; the Claude Code plugin is `bsv-dev` from the marketplace `bsv`. The two MCP servers install as `bsv-docs` and `bsv-mcp`.
 - Where the wallet lives is the app's choice: a user-side BRC-100 wallet (shape A) or an app-side BRC-100 server wallet with `wallet-toolbox` or `go-wallet-toolbox` (shape B). Pages present both, with their trade-offs.
 - Testnet first; mainnet is one switch away (`BSV_NETWORK`). Testnet coins come from `https://bsvfaucet.com`.
-- Arcade for every broadcast and every transaction-status check, on the public endpoints or a self-run instance.
+- BSV Broadcaster for every broadcast and every transaction-status check, on the public endpoints or a self-run instance.
 - Rúnar for all contracts; 1Color for all tokens.
 
 ## The three install commands
@@ -84,7 +84,7 @@ What we ask:
 
 ## Samples for /docs/showcase
 
-**`tipping-shape-a` (bsv-tipping-demo).** A one-page tipping app on custody shape A: the user's BRC-100 wallet holds every key. It connects BSV Desktop, checks the wallet's network, asks for one grouped permission through `manifest.json`, pays a creator with a BRC-29 payment, and the creator's page collects the tip at `SEEN_ON_NETWORK` with no competing transaction, through `internalizeAction`. A small relay passes each tip to Arcade and holds no key.
+**`tipping-shape-a` (bsv-tipping-demo).** A one-page tipping app on custody shape A: the user's BRC-100 wallet holds every key. It connects BSV Desktop, checks the wallet's network, asks for one grouped permission through `manifest.json`, pays a creator with a BRC-29 payment, and the creator's page collects the tip at `SEEN_ON_NETWORK` with no competing transaction, through `internalizeAction`. A small relay passes each tip to BSV Broadcaster and holds no key.
 
 | | |
 | --- | --- |
@@ -108,10 +108,10 @@ The skill and the sample link to these pages. State on `bsv.writedocs.io` on 202
 
 | Page | Today | What the kit needs from it |
 | --- | --- | --- |
-| `get-started/quick-start-server` | Scaffold placeholder | A testnet payment from a server wallet (shape B) with `wallet-toolbox`, Arcade configured explicitly |
+| `get-started/quick-start-server` | Scaffold placeholder | A testnet payment from a server wallet (shape B) with `wallet-toolbox`, BSV Broadcaster configured explicitly |
 | `guides/services/broadcasting` | Drafted | Already close. Two asks: final for an app is `SEEN_ON_NETWORK` with no `competingTxs`, so "follow the status until `SEEN_ON_NETWORK` or `MINED`" should stop at the first; and say which testnet host is official (the draft uses `arcade-v2-testnet-us-1`, the kit defaults to `arcade-testnet-us-1`; both are live) |
 | `guides/go-to-mainnet` | Drafted | The one `BSV_NETWORK` switch, the wallet's network check, fees: configure 100 sat/kB on both networks from the start (testnet's 1 sat/kB minimum is refused on mainnet) |
-| `reference/networks` | Scaffold placeholder | One row per network: Arcade endpoints, WhatsOnChain base, explorer, faucet, what `getNetwork()` returns. `content/facts/networks.md` has the table, dated |
+| `reference/networks` | Scaffold placeholder | One row per network: BSV Broadcaster endpoints, WhatsOnChain base, explorer, faucet, what `getNetwork()` returns. `content/facts/networks.md` has the table, dated |
 | `wallets/bsv-desktop` | Scaffold placeholder | Versions, networks, the local ports (HTTP 3321, HTTPS 2121) and that a local BSV Desktop is often on mainnet. BSVA can draft it |
 | `sdk/defaults` | Scaffold placeholder | Fee, network and storage defaults. Not yet in `docs-index.yaml`; the id is added when the page has content |
 | `build-with-ai/skill` | Scaffold placeholder; its `.md` on `docs.bsvblockchain.org` is a "Page Not Found" body behind HTTP 200 | What the skill covers, install per agent, how it works with the two MCP servers. [`coding-with-agents.md`](coding-with-agents.md) has the install part |
@@ -125,12 +125,12 @@ Each of these teaches a pattern the guardrails forbid, so an agent that learns f
 
 | Page | Problem | Guardrail | Ask |
 | --- | --- | --- | --- |
-| Custom transaction broadcaster example, `https://docs.bsvblockchain.org/guides/sdks/ts/examples/example_building_custom_tx_broadcaster` | Posts raw hex to WhatsOnChain `/tx/raw` and swallows errors in an empty `catch` | G-09 (broadcast only through Arcade), G-12 (WhatsOnChain is never the truth for a known txid) | Rewrite as an Arcade broadcaster: `POST /tx`, then read `GET /tx/{txid}` |
+| Custom transaction broadcaster example, `https://docs.bsvblockchain.org/guides/sdks/ts/examples/example_building_custom_tx_broadcaster` | Posts raw hex to WhatsOnChain `/tx/raw` and swallows errors in an empty `catch` | G-09 (broadcast only through BSV Broadcaster), G-12 (WhatsOnChain is never the truth for a known txid) | Rewrite as a BSV Broadcaster client: `POST /tx`, then read `GET /tx/{txid}` |
 | Event tickets use case, `https://docs.bsvblockchain.org/guides/business-use-cases/event_tickets` | Makes keys with `PrivateKey.fromRandom` in app code; the "tickets" are unfunded, unsigned P2PKH outputs | G-06 (no private keys in client code) | Retire it, or rewrite it on 1Color tokens with the user's wallet holding the keys |
-| The `/reference/arc/*` block (linked from `llms.txt`) | Presents the legacy ARC API and its `/v1/tx` routes as current; apps must not use it | G-09 (broadcast only through Arcade) | Mark it legacy, never for new apps, and link the Arcade pages |
+| The `/reference/arc/*` block (linked from `llms.txt`) | Presents the legacy ARC API and its `/v1/tx` routes as current; apps must not use it | G-09 (broadcast only through BSV Broadcaster) | Mark it legacy, never for new apps, and link the BSV Broadcaster pages |
 | Go and Python broadcasting examples | Not checked; likely the legacy ARC API, which G-09 says never to use | G-09 | Check them against G-09 |
 
-Arcade's own docs have two gaps an agent trips on: no testnet endpoint is listed (`https://arcade-testnet-us-1.bsvblockchain.tech` is live, and `wallet-toolbox` also knows the `arcade-v2-*` hosts; please say which are official), and the `GET /tx/{txid}` fields (the spec says `rawTx` appears only in `PENDING_RETRY`, but it is returned on mined transactions too; an absent or empty `competingTxs` means no competitor).
+BSV Broadcaster's own docs have two gaps an agent trips on: no testnet endpoint is listed (`https://arcade-testnet-us-1.bsvblockchain.tech` is live, and `wallet-toolbox` also knows the `arcade-v2-*` hosts; please say which are official), and the `GET /tx/{txid}` fields (the spec says `rawTx` appears only in `PENDING_RETRY`, but it is returned on mined transactions too; an absent or empty `competingTxs` means no competitor).
 
 ## Replace the six-rule CLAUDE.md block on /llm-resources
 
@@ -144,7 +144,7 @@ Arcade's own docs have two gaps an agent trips on: no testnet endpoint is listed
 4. For the user's wallet, connect with `@bsv/sdk` 3.x `new WalletClient('auto', originator)`, from the browser or a local script.
 5. Never hold, ask for, print or generate for production use a private key, WIF or recovery phrase; the user's wallet (shape A) or an operator-set variable outside the repo (shape B) holds it.
 6. Testnet coins come from https://bsvfaucet.com and wallet approvals come from the user: ask the user for both, and never work around either.
-7. Use Arcade for every broadcast and every txid state read; never the legacy ARC API, and never WhatsOnChain as the truth for a known txid.
+7. Use BSV Broadcaster (formerly Arcade) for every broadcast and every txid state read; never the legacy ARC API, and never WhatsOnChain as the truth for a known txid.
 8. A transaction is final at `SEEN_ON_NETWORK` or later with no competing transaction; never wait for confirmations or `MINED`.
 9. If `bsv-mcp` is connected, run `check_guardrails` with the project's absolute path and fix every error before calling the work done.
 <!-- bsv-dev rules: end -->
@@ -159,13 +159,13 @@ Below the block, point at the skill (`build-with-ai/skill`), and replace the "Co
 | Keys | The wallet holds the keys; the app asks it | Raw keys in app code |
 | Login | `WalletClient('auto', originator)`, then `waitForAuthentication()`, `getPublicKey({ identityKey: true })`, and a `getNetwork()` match | `isAuthenticated()` as a gate (it throws on a locked wallet in `@bsv/sdk` 3.2.1) |
 | Permissions | A BRC-73 `manifest.json` with grouped permissions under both the `metanet` and `babbage` keys | No manifest |
-| Broadcasting | Arcade `POST /tx` with raw or EF hex | The SDK ARC class, the legacy `/v1/tx` routes, posting BEEF to Arcade, or broadcasting via WhatsOnChain: never |
-| Transaction state | Arcade `GET /tx/{txid}` is the source of truth; a 200 on submit is not acceptance | WhatsOnChain as the truth: it lags 6 to 12 s and 404s fresh transactions |
+| Broadcasting | BSV Broadcaster `POST /tx` with raw or EF hex | The SDK ARC class, the legacy `/v1/tx` routes, posting BEEF to BSV Broadcaster, or broadcasting via WhatsOnChain: never |
+| Transaction state | BSV Broadcaster `GET /tx/{txid}` is the source of truth; a 200 on submit is not acceptance | WhatsOnChain as the truth: it lags 6 to 12 s and 404s fresh transactions |
 | Finality | 0-conf is safe at `SEEN_ON_NETWORK` or later with no `competingTxs` | Waiting for `MINED`, "wait for 1 confirmation", machinery against miner collusion |
 | WhatsOnChain | Only UTXO listings, spent-by and tip height, throttled | On the hot path; unthrottled browser calls |
 | Fees | Configure 100 sat/kB on both networks, so testnet sizes and costs carry over; never below what `GET /policy` reports | Paying testnet's 1 sat/kB minimum, which mainnet refuses (code 465, fee too low) |
 | Receiving payments | BRC-29 plus `internalizeAction` with complete AtomicBEEF | Partial BEEF |
-| Networks | Testnet by default, coins from `bsvfaucet.com`, testnet Arcade `https://arcade-testnet-us-1.bsvblockchain.tech` | Mainnet in getting-started code |
+| Networks | Testnet by default, coins from `bsvfaucet.com`, testnet BSV Broadcaster `https://arcade-testnet-us-1.bsvblockchain.tech` | Mainnet in getting-started code |
 | Contracts | Rúnar from upstream main (1.0.0-rc.1), tested with `Spend` | npm 0.4.6 (forgeable `checkPreimage`); `TestContract`, which mocks `checkSig` |
 | Tokens | 1Color: BRC-162 format, BRC-207 wallet module, encoding in `@bsv/templates` 2.0 | "Mandala" (BRC-92 was withdrawn on 2 Oct 2026); claiming wallet support in the official `wallet-toolbox` or BSV Desktop before it ships |
 
@@ -178,10 +178,10 @@ Below the block, point at the skill (`build-with-ai/skill`), and replace the "Co
 | `/docs/build-with-ai/skill` | Empty scaffold | Coverage, install per agent, how it works with the two MCP servers | At launch |
 | `/docs/build-with-ai/llm-resources` | Six `CLAUDE.md` rules | Keep as fallback; [replace the block](#replace-the-six-rule-claudemd-block-on-llm-resources); point at the skill | Now |
 | `/docs/build-with-ai/prompts` | The agent sends a testnet payment | Add receiving: BRC-29 plus `internalizeAction` | Now |
-| `/docs/get-started/quick-start-browser` | `WalletClient('auto')` and a 1,000-sat payment, checked on WhatsOnChain | Add `waitForAuthentication`, the `getNetwork` check and the manifest; check the payment on Arcade | Now |
+| `/docs/get-started/quick-start-browser` | `WalletClient('auto')` and a 1,000-sat payment, checked on WhatsOnChain | Add `waitForAuthentication`, the `getNetwork` check and the manifest; check the payment on BSV Broadcaster | Now |
 | Quick start verify step | "unconfirmed to confirmed" | `SEEN_ON_NETWORK` with no competitor is final | Now |
 | `/docs/get-started/project-starter` | `create-bsv-app` on `@bsv/sdk` 2.x | Flag as pending (a ts-stack request) | Later |
-| `/docs/guides/payments` | 402 payments via `@bsv/402-pay` (BRC-121) with a server wallet | Label it as the app-side wallet shape; add Arcade status handling | Now |
+| `/docs/guides/payments` | 402 payments via `@bsv/402-pay` (BRC-121) with a server wallet | Label it as the app-side wallet shape; add BSV Broadcaster status handling | Now |
 | Stubs | Empty | See [Stubs this kit depends on](#stubs-this-kit-depends-on) | Now |
 | New: choosing where the wallet lives | | Shape A against shape B, with trade-offs | Now |
 | New: Rúnar contracts | | | At launch |

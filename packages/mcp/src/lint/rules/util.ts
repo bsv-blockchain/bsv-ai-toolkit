@@ -214,13 +214,45 @@ export function bracketText(s: Scan, open: number, maxLines: number): { code: st
 
 const DECL = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=(?!=)\s*([^\n;]*)/g
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const IMPORT_FROM = /\bimport\s+(type\s+)?([^'"]*?)\s+from\s*['"]([^'"]+)['"]/g
+
+/** Index of the first top-level comma in masked call arguments, or -1. */
+export function firstArgEnd(masked: string): number {
+  let depth = 0
+  for (let i = 0; i < masked.length; i++) {
+    const c = masked[i]
+    if ('([{'.includes(c)) depth++
+    else if (')]}'.includes(c)) depth--
+    else if (c === ',' && depth === 0) return i
+  }
+  return -1
+}
+
+/**
+ * The local values an `import … from '<path>'` binds when its module path matches `re` (`./arcade.js`).
+ * Types name no URL, so `import type …` and inline `type X` specifiers are skipped.
+ */
+function importedNames(code: string, re: RegExp): string[] {
+  const names: string[] = []
+  for (const m of code.matchAll(IMPORT_FROM)) {
+    if (m[1] !== undefined || !re.test(m[3])) continue
+    for (const part of m[2].replace(/[{}]/g, ',').split(',')) {
+      const spec = part.trim()
+      if (/^type\s/.test(spec)) continue
+      const local = spec.replace(/^\*\s+as\s+/, '').split(/\s+as\s+/).pop()?.trim()
+      if (local && /^[A-Za-z_$][\w$]*$/.test(local)) names.push(local)
+    }
+  }
+  return names
+}
 
 /**
  * A regex matching `re` or any local name bound (directly or through other such names) to an
  * expression matching `re`, e.g. `const base = 'https://api.whatsonchain.com'` makes `base` match.
  */
-export function withAliases(code: string, re: RegExp): RegExp {
-  const names: string[] = []
+export function withAliases(code: string, re: RegExp, opts: { imports?: boolean } = {}): RegExp {
+  // With `imports`, a name imported from a module whose path matches `re` counts too.
+  const names: string[] = opts.imports ? [...new Set(importedNames(code, re))] : []
   // A value read from the service (`const res = await fetch(woc…)`) is a response, not an address.
   const decls = [...code.matchAll(DECL)].map(m => ({ name: m[1], expr: m[2] })).filter(d => !/\bawait\b|\bfetch\s*\(|\baxios\b/.test(d.expr))
   const refers = (expr: string) => re.test(expr) || names.some(n => new RegExp(`(?<![\\w$])${escapeRe(n)}(?![\\w$])`).test(expr))

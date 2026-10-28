@@ -6,7 +6,7 @@ const ARC_NAME = /(?<![\w$])ARC(?![\w$])/
 // `new ARC(`, the legacy ARC API path, the ARC hosts, and WhatsOnChain's broadcast endpoint.
 const LEGACY = /\bnew\s+ARC\s*\(|\/v1\/txs?\b|\barc\.taal\.com\b|\barc\.gorillapool\.io\b|\/tx\/raw\b/i
 
-/** G-09: broadcast only through Arcade; never the SDK `ARC` class, `/v1/tx`, the ARC hosts or WoC `/tx/raw`. */
+/** G-09: broadcast only through BSV Broadcaster; never the SDK `ARC` class, `/v1/tx`, the ARC hosts or WoC `/tx/raw`. */
 export const g09: Rule = {
   id: 'G-09',
   run({ files, meta }) {

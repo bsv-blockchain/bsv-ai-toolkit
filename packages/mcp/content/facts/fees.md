@@ -8,12 +8,12 @@ source: "@bsv/mcp content"
 
 ## Rates
 
-| Network | Minimum Arcade accepts | Rate to configure |
+| Network | Minimum BSV Broadcaster (formerly Arcade) accepts | Rate to configure |
 | --- | --- | --- |
 | testnet | 1 sat/kB | 100 sat/kB, so testnet sizes and costs carry over to mainnet |
-| mainnet | 100 sat/kB on every datahub Arcade reports | 100 sat/kB |
+| mainnet | 100 sat/kB on every datahub BSV Broadcaster reports | 100 sat/kB |
 
-100 sat/kB is also the default rate of BSV Desktop and `@bsv/wallet-toolbox`. Read `GET /policy` on your Arcade before relying on any number here; rates are set by the network and can change.
+100 sat/kB is also the default rate of BSV Desktop and `@bsv/wallet-toolbox`. Read `GET /policy` on your BSV Broadcaster before relying on any number here; rates are set by the network and can change.
 
 ## Measured sizes and costs
 

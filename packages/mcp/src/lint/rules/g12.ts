@@ -67,7 +67,7 @@ function wrapped(s: Scan, at: number, imported: Set<string>): boolean {
 }
 
 /**
- * G-12: Arcade first; WhatsOnChain gated. Flags a WoC `/tx/…/hex` read in browser code, and every WoC
+ * G-12: BSV Broadcaster first; WhatsOnChain gated. Flags a WoC `/tx/…/hex` read in browser code, and every WoC
  * call (including calls in loops) in a module with no rate-limit gate. A module with a gate token passes, and so
  * does a call whose innermost function is a thunk passed to a gate (`gated(() => fetch(…))`).
  */
@@ -84,7 +84,7 @@ export const g12: Rule = {
       s.codeLines.forEach((t, i) => {
         if (!ref.test(t)) return
         const reasons: string[] = []
-        if (f.isClient && TX_HEX.test(t)) reasons.push('WhatsOnChain tx read in browser code; ask Arcade')
+        if (f.isClient && TX_HEX.test(t)) reasons.push('WhatsOnChain tx read in browser code; ask BSV Broadcaster')
         const isCall = HTTP_CALL.test(t) || (i > 0 && HTTP_CALL.test(s.codeLines[i - 1]) && /\(\s*$/.test(s.codeLines[i - 1]))
         if (isCall && !gated && !wrapped(s, s.starts[i] + t.search(ref), imported)) reasons.push(`${inLoop(s, s.starts[i] + t.search(ref)) ? 'inside a loop, ' : ''}no rate-limit gate in this module`)
         if (reasons.length) out.add(f.rel, i + 1, `${s.lines[i].trim()} (${reasons.join('; ')})`)

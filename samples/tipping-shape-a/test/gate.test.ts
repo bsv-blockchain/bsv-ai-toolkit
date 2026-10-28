@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { Beef, Hash, LockingScript, MerklePath, P2PKH, PrivateKey, ProtoWallet, Transaction, UnlockingScript, Utils, type WalletInterface } from '@bsv/sdk'
 import { payeeLockingScript } from '../web/brc29'
 import { afterAll, describe, expect, it } from 'vitest'
-import { Arcade } from '../server/arcade.js'
+import { BroadcasterClient } from '../server/broadcaster.js'
 import {
   checkFunding,
   collectSavedTip,
@@ -21,10 +21,11 @@ import {
 } from '../scripts/gate-coins'
 import { addProvenTx, tscToMerklePath, WhatsOnChain } from '../scripts/gate-woc'
 import { derive, keyFilePath, loadOrCreateRootKey, openGateWallet } from '../scripts/gate-wallet'
+import { broadcasterUrlOf } from '../scripts/gate'
 
 // No test here touches ~/.bsv-gate, the network or a wallet with funds. CLI runs get only PATH, a temp HOME and the
 // variables a test passes (always a temp BSV_GATE_KEY_FILE); in-process calls pass a temp BSV_GATE_KEY_FILE, and a
-// temp HOME where $HOME matters. Keys are fresh random keys; Arcade and WhatsOnChain are fakes behind injected fetch.
+// temp HOME where $HOME matters. Keys are fresh random keys; BSV Broadcaster and WhatsOnChain are fakes behind injected fetch.
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
 const GATE = join(SAMPLE, 'scripts', 'gate.ts')
@@ -162,7 +163,7 @@ describe('gate keys', { timeout: 30_000 }, () => {
     expect(wrong.stderr).toContain('wrong key?')
 
     // A run dir whose run is still alive is refused; once its process is gone, recover finishes it (nothing in it
-    // here: both wallets open empty, no Arcade call is needed) and deletes it.
+    // here: both wallets open empty, no BSV Broadcaster call is needed) and deletes it.
     const mine = tempDir()
     writeFileSync(join(mine, 'run.json'), JSON.stringify({ kind: 'bsv-gate-run', fundingAddress: derive(env.BSV_TESTNET_GATE_KEY).fundingAddress }))
     writeFileSync(join(mine, 'run.lock'), JSON.stringify({ pid: process.pid, startedAt: 'now' }))
@@ -237,22 +238,22 @@ describe('gate keys', { timeout: 30_000 }, () => {
 })
 
 describe('gate wallet', () => {
-  it('opens a toolbox wallet under the data dir with Arcade set and the ARC fallbacks off', async () => {
+  it('opens a toolbox wallet under the data dir with BSV Broadcaster set and the ARC fallbacks off', async () => {
     const dataDir = join(tempDir(), 'data')
     const key = randomKey()
-    const arcadeUrl = 'https://arcade-testnet-us-1.bsvblockchain.tech'
-    const tipper = await openGateWallet(key, 'tipper', 'testnet', arcadeUrl, dataDir)
-    const creator = await openGateWallet(key, 'creator', 'testnet', arcadeUrl, dataDir)
+    const broadcasterUrl = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+    const tipper = await openGateWallet(key, 'tipper', 'testnet', broadcasterUrl, dataDir)
+    const creator = await openGateWallet(key, 'creator', 'testnet', broadcasterUrl, dataDir)
     try {
       expect(tipper.identityKey).toBe(derive(key).tipperIdentityKey)
       expect(creator.identityKey).toBe(derive(key).creatorIdentityKey)
       expect((await tipper.wallet.getPublicKey({ identityKey: true })).publicKey).toBe(tipper.identityKey)
       expect(await tipper.wallet.getNetwork({})).toEqual({ network: 'testnet' })
       const options = (tipper.wallet as unknown as { services: { options: Record<string, unknown> } }).services.options
-      expect(options.arcadeUrl).toBe(arcadeUrl)
+      expect(options.arcadeUrl).toBe(broadcasterUrl)
       expect(options.arcUrl).toBe('')
       expect(options.arcGorillaPoolUrl).toBe('')
-      // Broadcast through Arcade alone: no Bitails or WhatsOnChain fallback for a failed post.
+      // Broadcast through BSV Broadcaster alone: no Bitails or WhatsOnChain fallback for a failed post.
       const services = (tipper.wallet as unknown as { services: { postBeefServices: { services: { name: string }[] } } }).services
       expect(services.postBeefServices.services.map(s => s.name)).toEqual(['ArcadeBeef'])
       expect(readdirSync(dataDir).filter(f => f.endsWith('.sqlite')).sort()).toEqual(
@@ -262,7 +263,7 @@ describe('gate wallet', () => {
       await tipper.close()
       await creator.close()
     }
-    await expect(openGateWallet(key, 'tipper', 'mainnet' as 'testnet', arcadeUrl, dataDir)).rejects.toThrow(/testnet only/)
+    await expect(openGateWallet(key, 'tipper', 'mainnet' as 'testnet', broadcasterUrl, dataDir)).rejects.toThrow(/testnet only/)
   }, 30_000) // each wallet runs the toolbox's SQLite migrations (a few seconds); nothing here reaches the network
 })
 
@@ -294,8 +295,8 @@ describe('TSC proof', () => {
   })
 })
 
-describe('funding coins (offline: Arcade and WhatsOnChain answer from fakes)', () => {
-  const ARCADE = 'https://arcade.test'
+describe('funding coins (offline: BSV Broadcaster and WhatsOnChain answer from fakes)', () => {
+  const BROADCASTER = 'https://broadcaster.test'
   const fundingScript = new P2PKH().lock(PrivateKey.fromRandom().toPublicKey().toAddress('testnet'))
   const txOf = (inputs: { sourceTXID?: string; sourceTransaction?: Transaction }[], satoshis: number) =>
     new Transaction(
@@ -304,7 +305,7 @@ describe('funding coins (offline: Arcade and WhatsOnChain answer from fakes)', (
       [{ lockingScript: fundingScript, satoshis }],
       0,
     )
-  // G: mined, unknown to Arcade (a faucet tx). P: spends G, known to Arcade, not in a block yet (a gate sweep-back).
+  // G: mined, unknown to BSV Broadcaster (a faucet tx). P: spends G, known to BSV Broadcaster, not in a block yet (a gate sweep-back).
   const g = txOf([{ sourceTXID: 'cd'.repeat(32) }], 5000)
   const p = txOf([{ sourceTransaction: g }], 4000)
   const blockHash = 'ef'.repeat(32)
@@ -319,33 +320,33 @@ describe('funding coins (offline: Arcade and WhatsOnChain answer from fakes)', (
       const { status = 200, body } = hit[1]
       return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status })
     }) as typeof fetch
-    return { urls, arcade: new Arcade(ARCADE, fetchImpl), woc: new WhatsOnChain(fetchImpl) }
+    return { urls, broadcasterClient: new BroadcasterClient(BROADCASTER, fetchImpl), woc: new WhatsOnChain(fetchImpl) }
   }
 
-  it('builds a proven BEEF: Arcade first for a tx it knows, WhatsOnChain (hex and TSC proof) for one it never saw', async () => {
+  it('builds a proven BEEF: BSV Broadcaster first for a tx it knows, WhatsOnChain (hex and TSC proof) for one it never saw', async () => {
     const f = fakes({
       [`/tx/${p.id('hex')}`]: { body: { txid: p.id('hex'), txStatus: 'SEEN_ON_NETWORK', rawTx: p.toHexEF() } },
       [`/tx/${g.id('hex')}/hex`]: { body: g.toHex() },
       [`/tx/${g.id('hex')}/proof/tsc`]: { body: [{ index: 0, txOrId: g.id('hex'), target: blockHash, nodes: [] }] },
       [`/block/hash/${blockHash}`]: { body: { hash: blockHash, height: 1234, merkleroot: g.id('hex') } },
     })
-    const beef = await addProvenTx(new Beef(), p.id('hex'), f.arcade, f.woc)
+    const beef = await addProvenTx(new Beef(), p.id('hex'), f.broadcasterClient, f.woc)
     expect(beef.findTxid(p.id('hex'))?.tx?.id('hex')).toBe(p.id('hex'))
     expect(beef.findBump(g.id('hex'))?.blockHeight).toBe(1234)
     expect(beef.isValid(false)).toBe(true)
-    // P came from Arcade: WhatsOnChain was asked only for its proof, never its hex.
+    // P came from BSV Broadcaster: WhatsOnChain was asked only for its proof, never its hex.
     expect(f.urls.some(u => u.endsWith(`/tx/${p.id('hex')}/hex`))).toBe(false)
-    expect(f.urls.filter(u => u.startsWith(ARCADE))).toEqual([`${ARCADE}/tx/${p.id('hex')}`, `${ARCADE}/tx/${g.id('hex')}`])
+    expect(f.urls.filter(u => new URL(u).origin === new URL(BROADCASTER).origin)).toEqual([`${BROADCASTER}/tx/${p.id('hex')}`, `${BROADCASTER}/tx/${g.id('hex')}`])
   }, 20_000)
 
-  it('refuses an unmined tx Arcade never saw, and hex that does not hash to the txid', async () => {
+  it('refuses an unmined tx BSV Broadcaster never saw, and hex that does not hash to the txid', async () => {
     const unmined = fakes({ [`/tx/${p.id('hex')}/hex`]: { body: p.toHex() } })
-    await expect(addProvenTx(new Beef(), p.id('hex'), unmined.arcade, unmined.woc)).rejects.toThrow(/not in a block yet/)
+    await expect(addProvenTx(new Beef(), p.id('hex'), unmined.broadcasterClient, unmined.woc)).rejects.toThrow(/not in a block yet/)
     // No walk up a WhatsOnChain-only ancestry: G was never asked for.
     expect(unmined.urls.some(u => u.includes(g.id('hex')))).toBe(false)
 
     const lying = fakes({ [`/tx/${p.id('hex')}/hex`]: { body: g.toHex() } })
-    await expect(addProvenTx(new Beef(), p.id('hex'), lying.arcade, lying.woc)).rejects.toThrow(/hashes to/)
+    await expect(addProvenTx(new Beef(), p.id('hex'), lying.broadcasterClient, lying.woc)).rejects.toThrow(/hashes to/)
   }, 20_000)
 
   it('lists the funding address coins from WhatsOnChain', async () => {
@@ -366,8 +367,8 @@ describe('funding coins (offline: Arcade and WhatsOnChain answer from fakes)', (
   })
 })
 
-describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
-  const ARCADE = 'https://arcade.test'
+describe('returning coins (offline: a fake wallet and a fake BSV Broadcaster)', () => {
+  const BROADCASTER = 'https://broadcaster.test'
   const funding = PrivateKey.fromRandom().toPublicKey().toAddress('testnet')
   const lock = new P2PKH().lock(funding)
   const spend = (source: Transaction | string, satoshis: number) =>
@@ -389,8 +390,8 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
     return b.toBinary()
   })()
 
-  /** Arcade that has seen a txid only once it was POSTed (or from the start, when `known`). */
-  function fakeArcade(opts: { known?: string[]; neverSees?: boolean; refuses?: string } = {}) {
+  /** BSV Broadcaster that has seen a txid only once it was POSTed (or from the start, when `known`). */
+  function fakeBroadcaster(opts: { known?: string[]; neverSees?: boolean; refuses?: string } = {}) {
     const seen = new Set(opts.known ?? [])
     const posts: string[] = []
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -406,7 +407,7 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
       if (!seen.has(txid)) return new Response('{}', { status: 404 })
       return new Response(JSON.stringify({ txid, txStatus: 'SEEN_ON_NETWORK' }), { status: 200 })
     }) as typeof fetch
-    return { posts, arcade: new Arcade(ARCADE, fetchImpl) }
+    return { posts, broadcasterClient: new BroadcasterClient(BROADCASTER, fetchImpl) }
   }
 
   type Action = { txid: string; status: string; labels: string[] }
@@ -445,12 +446,12 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
     return dir
   }
 
-  it('sweeps everything back in one sendMax output and deletes the run dir once Arcade sees it', async () => {
-    const { arcade } = fakeArcade({ known: [S] })
+  it('sweeps everything back in one sendMax output and deletes the run dir once BSV Broadcaster sees it', async () => {
+    const { broadcasterClient } = fakeBroadcaster({ known: [S] })
     const { state, w } = fakeWallet({ balance: 4800 })
     const dir = runDir()
     const rows: Row[] = []
-    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, rows, io, 0)).toBeUndefined()
+    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, broadcasterClient, rows, io, 0)).toBeUndefined()
     expect(existsSync(dir)).toBe(false)
     expect(state.closed).toBe(true)
     expect(state.created).toEqual([
@@ -463,77 +464,77 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
     expect(rows).toContainEqual(expect.objectContaining({ step: 'sweep-back tipper', txid: S, verdict: 'seen-no-competitor', bytes: sweepTx.toBinary().length }))
   })
 
-  it('a sweep-back the toolbox could not post goes straight to Arcade (ancestors first); the dir goes only once it is seen', async () => {
-    const { arcade, posts } = fakeArcade()
+  it('a sweep-back the toolbox could not post goes straight to BSV Broadcaster (ancestors first); the dir goes only once it is seen', async () => {
+    const { broadcasterClient, posts } = fakeBroadcaster()
     const { w } = fakeWallet({ balance: 4800, postFails: true })
     const dir = runDir()
-    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, broadcasterClient, [], io, 0)).toBeUndefined()
     expect(posts).toEqual([u.id('hex'), S]) // G has a merkle path: not posted
     expect(existsSync(dir)).toBe(false)
   })
 
-  it('keeps the run dir and fails when the balance reads 0 but Arcade never sees the sweep-back', async () => {
-    const { arcade } = fakeArcade({ neverSees: true })
+  it('keeps the run dir and fails when the balance reads 0 but BSV Broadcaster never sees the sweep-back', async () => {
+    const { broadcasterClient } = fakeBroadcaster({ neverSees: true })
     const { w } = fakeWallet({ balance: 4800, postFails: true })
     const dir = runDir()
     const errs: string[] = []
-    const left = await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, [], { out: () => {}, err: l => void errs.push(l) }, 0)
-    expect(left).toMatch(new RegExp(`tipper: ${S} is not seen on Arcade`))
+    const left = await returnCoinsAndClean([['tipper', w]], dir, funding, broadcasterClient, [], { out: () => {}, err: l => void errs.push(l) }, 0)
+    expect(left).toMatch(new RegExp(`tipper: ${S} is not seen on BSV Broadcaster`))
     expect(existsSync(dir)).toBe(true)
     expect(errs.join('\n')).toContain(`pnpm gate recover --dir ${dir}`)
   })
 
   it('re-checks an unfinished action and an earlier sweep-back in an empty wallet (recover)', async () => {
-    const { arcade, posts } = fakeArcade()
+    const { broadcasterClient, posts } = fakeBroadcaster()
     const { w } = fakeWallet({ balance: 0, actions: [{ txid: S, status: 'sending', labels: [SWEEP_LABEL] }] })
     const dir = runDir()
-    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(await returnCoinsAndClean([['tipper', w]], dir, funding, broadcasterClient, [], io, 0)).toBeUndefined()
     expect(posts).toContain(S)
     expect(existsSync(dir)).toBe(false)
   })
 
   it('keeps the run dir while a tip that went out is not in the creator wallet', async () => {
-    const { arcade } = fakeArcade()
+    const { broadcasterClient } = fakeBroadcaster()
     const { w } = fakeWallet({ balance: 0 })
     const dir = runDir()
     writeFileSync(join(dir, 'tip.json'), JSON.stringify({ txid: 'ab'.repeat(32), beef: '00', outputIndex: 0 }))
-    expect(await returnCoinsAndClean([['creator', w]], dir, funding, arcade, [], io, 0)).toMatch(/may have gone out but is not in the creator wallet/)
+    expect(await returnCoinsAndClean([['creator', w]], dir, funding, broadcasterClient, [], io, 0)).toMatch(/may have gone out but is not in the creator wallet/)
     expect(existsSync(dir)).toBe(true)
   })
 
-  it('names the ancestor Arcade refused', async () => {
-    const { arcade, posts } = fakeArcade({ refuses: u.id('hex') })
+  it('names the ancestor BSV Broadcaster refused', async () => {
+    const { broadcasterClient, posts } = fakeBroadcaster({ refuses: u.id('hex') })
     const { w } = fakeWallet({ balance: 4800, postFails: true })
-    const left = await returnCoinsAndClean([['tipper', w]], runDir(), funding, arcade, [], io, 0)
-    expect(left).toContain(`Arcade refused ancestor ${u.id('hex')} (REJECTED: script verification failed)`)
+    const left = await returnCoinsAndClean([['tipper', w]], runDir(), funding, broadcasterClient, [], io, 0)
+    expect(left).toContain(`BSV Broadcaster refused ancestor ${u.id('hex')} (REJECTED: script verification failed)`)
     expect(posts).toEqual([u.id('hex')]) // the sweep-back itself is not posted over a refused parent
   })
 
   it('keeps the run dir when a wallet with storage there could not be opened', async () => {
-    const { arcade } = fakeArcade()
+    const { broadcasterClient } = fakeBroadcaster()
     const dir = runDir()
     writeFileSync(join(dir, 'tipper-02aabbccddeeff00.sqlite'), '')
-    expect(await returnCoinsAndClean([['tipper', undefined]], dir, funding, arcade, [], io, 0)).toMatch(/tipper: its wallet in .* could not be opened/)
+    expect(await returnCoinsAndClean([['tipper', undefined]], dir, funding, broadcasterClient, [], io, 0)).toMatch(/tipper: its wallet in .* could not be opened/)
     expect(existsSync(dir)).toBe(true)
     // No storage, nothing to lose: the dir goes.
     const empty = runDir()
-    expect(await returnCoinsAndClean([['creator', undefined]], empty, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(await returnCoinsAndClean([['creator', undefined]], empty, funding, broadcasterClient, [], io, 0)).toBeUndefined()
     expect(existsSync(empty)).toBe(false)
   })
 
   it('a write-ahead without a txid keeps the dir unless the tipper made nothing but imports and sweep-backs', async () => {
-    const { arcade } = fakeArcade({ known: [S] })
+    const { broadcasterClient } = fakeBroadcaster({ known: [S] })
     const writeAhead = { outputIndex: 0, satoshis: 1000, recipient: '02aa', senderIdentityKey: '03bb', derivationPrefix: 'cA==', derivationSuffix: 'cw==' }
     const quiet = runDir()
     writeFileSync(join(quiet, 'tip.json'), JSON.stringify(writeAhead))
     const imports = fakeWallet({ balance: 0, actions: [{ txid: 'aa'.repeat(32), status: 'completed', labels: ['p2pkh-funding'] }] })
-    expect(await returnCoinsAndClean([['tipper', imports.w]], quiet, funding, arcade, [], io, 0)).toBeUndefined()
+    expect(await returnCoinsAndClean([['tipper', imports.w]], quiet, funding, broadcasterClient, [], io, 0)).toBeUndefined()
     expect(existsSync(quiet)).toBe(false)
 
     const busy = runDir()
     writeFileSync(join(busy, 'tip.json'), JSON.stringify(writeAhead))
     const tipped = fakeWallet({ balance: 0, actions: [{ txid: 'bb'.repeat(32), status: 'unproven', labels: [] }] })
-    expect(await returnCoinsAndClean([['tipper', tipped.w]], busy, funding, arcade, [], io, 0)).toMatch(/txid not recorded/)
+    expect(await returnCoinsAndClean([['tipper', tipped.w]], busy, funding, broadcasterClient, [], io, 0)).toMatch(/txid not recorded/)
     expect(existsSync(busy)).toBe(true)
   })
 
@@ -636,7 +637,7 @@ describe('returning coins (offline: a fake wallet and a fake Arcade)', () => {
 })
 
 // Needs BSV_MCP_NETWORK_TESTS=1, a gate key (BSV_TESTNET_GATE_KEY or the key file) whose funding address holds at
-// least the tip plus fees, and testnet Arcade.
+// least the tip plus fees, and testnet BSV Broadcaster.
 describe('gate run on testnet', () => {
   it.skipIf(process.env.BSV_MCP_NETWORK_TESTS !== '1')(
     'run completes one tip at 0-conf on testnet',
@@ -648,6 +649,18 @@ describe('gate run on testnet', () => {
       expect(r.stdout).toMatch(/^\| sweep-back tipper \| [0-9a-f]{64} \|/m)
       expect(r.stdout).toMatch(/^probeTxid: [0-9a-f]{64}$/m)
     },
-    1_600_000, // listing, imports, the tip, collection and two sweep-backs, each with up to two 20 s Arcade waits
+    1_600_000, // listing, imports, the tip, collection and two sweep-backs, each with up to two 20 s BSV Broadcaster waits
   )
+})
+
+describe('the gate\'s BSV Broadcaster URL', () => {
+  it('reads BSV_BROADCASTER_URL, then the deprecated ARCADE_URL with a warning, and refuses a mainnet host', () => {
+    const warnings: string[] = []
+    expect(broadcasterUrlOf({}, l => warnings.push(l))).toBe('https://arcade-testnet-us-1.bsvblockchain.tech')
+    expect(broadcasterUrlOf({ BSV_BROADCASTER_URL: 'http://localhost:8080', ARCADE_URL: 'http://localhost:9090' }, l => warnings.push(l))).toBe('http://localhost:8080')
+    expect(warnings).toEqual([])
+    expect(broadcasterUrlOf({ ARCADE_URL: 'http://localhost:9090' }, l => warnings.push(l))).toBe('http://localhost:9090')
+    expect(warnings).toEqual(['warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL'])
+    expect(() => broadcasterUrlOf({ ARCADE_URL: 'https://arcade-us-1.bsvblockchain.tech' }, () => {})).toThrow(/network\/host mismatch/)
+  })
 })

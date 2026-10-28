@@ -26,9 +26,9 @@ Pinned versions from `content/versions.json`. Each row carries the date it was l
 
 ## Services
 
-### arcade
+### broadcaster
 
-Version v0.16.0, verified 2026-10-22.
+The hosts report v0.16.0; the latest release of `bsv-blockchain/broadcaster` is v0.19.0. Verified 2026-10-28.
 
 | network | hosts |
 | --- | --- |

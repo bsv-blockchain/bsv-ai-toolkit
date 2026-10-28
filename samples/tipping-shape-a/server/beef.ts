@@ -1,6 +1,6 @@
 import { Transaction, Utils } from '@bsv/sdk'
 
-// The tipper posts the AtomicBEEF its wallet returned from createAction. Arcade takes EF hex, never BEEF, so the
+// The tipper posts the AtomicBEEF its wallet returned from createAction. BSV Broadcaster takes EF hex, never BEEF, so the
 // relay converts; the creator's wallet internalizes the AtomicBEEF itself.
 
 const HEX = /^(?:[0-9a-f]{2})+$/i
@@ -41,16 +41,16 @@ export function outputPaysScript(beefHex: string, outputIndex: number): { lockin
 }
 
 /**
- * Arcade's rawTx (Extended Format, with placeholder parents) re-read as a plain transaction, hex. The hash must be
+ * BSV Broadcaster's rawTx (Extended Format, with placeholder parents) re-read as a plain transaction, hex. The hash must be
  * `txid`. Throws on anything else.
  */
-export function plainHexFromArcadeRawTx(rawTx: string, txid: string): string {
+export function plainHexFromBroadcasterRawTx(rawTx: string, txid: string): string {
   let tx: Transaction
   try {
     tx = Transaction.fromHexEF(rawTx)
   } catch (e) {
-    throw new Error(`Arcade's rawTx for ${txid} is not Extended Format: ${e instanceof Error ? e.message : String(e)}`)
+    throw new Error(`BSV Broadcaster's rawTx for ${txid} is not Extended Format: ${e instanceof Error ? e.message : String(e)}`)
   }
-  if (tx.id('hex') !== txid.toLowerCase()) throw new Error(`Arcade's rawTx for ${txid} hashes to ${tx.id('hex')}`)
+  if (tx.id('hex') !== txid.toLowerCase()) throw new Error(`BSV Broadcaster's rawTx for ${txid} hashes to ${tx.id('hex')}`)
   return tx.toHex()
 }

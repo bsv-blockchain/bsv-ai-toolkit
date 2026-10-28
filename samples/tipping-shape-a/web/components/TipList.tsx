@@ -5,7 +5,7 @@ import type { CollectInfo, CollectState } from '../collect'
 export const short = (hex: string) => (hex.length > 16 ? `${hex.slice(0, 8)}…${hex.slice(-6)}` : hex)
 
 /**
- * The relay's verdict in words: Arcade saw it with no competitor ("seen on network"), Arcade refused it
+ * The relay's verdict in words: BSV Broadcaster saw it with no competitor ("seen on network"), BSV Broadcaster refused it
  * ("failed"), or not yet ("pending"). A verdict never means the creator has the money.
  */
 export function verdictLabel(verdict: string): 'seen on network' | 'failed' | 'pending' {
@@ -51,7 +51,7 @@ export function TipList({ tips, collect = {} }: { tips: TipRow[]; collect?: Reco
         <tr>
           <th>Transaction</th>
           <th>Sats</th>
-          <th>Arcade status</th>
+          <th>BSV Broadcaster status</th>
           <th>Tip</th>
         </tr>
       </thead>

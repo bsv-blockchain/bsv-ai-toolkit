@@ -31,7 +31,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/freshness"
           echo "OUT=$RUNNER_TEMP/freshness" >> "$GITHUB_ENV"
 
-      - name: Versions check (npm, runar head, Arcade hosts)
+      - name: Versions check (npm, runar head, BSV Broadcaster hosts)
         id: versions
         env:
           # Lifts GitHub's unauthenticated API rate limit for the runar head read; never printed.
@@ -145,7 +145,7 @@ jobs:
           echo "::error::versions-check=${{ steps.versions.outputs.code }} check:facts=${{ steps.facts.outputs.code }} check:links=${{ steps.links.outputs.code }}"
           exit 1
 
-  # The testnet gate (samples/tipping-shape-a/scripts/gate.ts): one real tip end to end through Arcade, at 0-conf.
+  # The testnet gate (samples/tipping-shape-a/scripts/gate.ts): one real tip end to end through BSV Broadcaster, at 0-conf.
   # Runs only when the gate key secret exists. The key reaches the gate through the env mapping of the
   # steps that need it, never a file or the log; the gate prints only addresses and identity keys.
   gate:
