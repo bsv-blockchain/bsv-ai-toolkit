@@ -1,23 +1,11 @@
 import type { Rule } from './index.js'
-import { bracketText, findingList, isSource, lineAt, scan, withAliases } from './util.js'
+import { bracketText, findingList, firstArgEnd, isSource, lineAt, scan, withAliases } from './util.js'
 
 // BSV Broadcaster under its new name or its former name Arcade (code in the wild has both), or WhatsOnChain.
 const SERVICE = /arcade|broadcaster|whatsonchain|\bwoc/i
 const FETCH = /\bfetch\s*\(/g
 const SIGNAL = /\bsignal\b/
 const MAX_CALL_LINES = 60
-
-/** Index of the first top-level comma in masked call arguments, or -1. */
-function firstArgEnd(masked: string): number {
-  let depth = 0
-  for (let i = 0; i < masked.length; i++) {
-    const c = masked[i]
-    if ('([{'.includes(c)) depth++
-    else if (')]}'.includes(c)) depth--
-    else if (c === ',' && depth === 0) return i
-  }
-  return -1
-}
 
 /**
  * G-15: a per-request timeout on every BSV Broadcaster/WhatsOnChain call. Flags `fetch(` whose URL names

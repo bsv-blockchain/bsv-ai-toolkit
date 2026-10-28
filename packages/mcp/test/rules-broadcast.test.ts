@@ -287,6 +287,16 @@ describe('G-10 SEEN_ON_NETWORK, never MINED', () => {
     expect(runOn(g10, post)).toHaveLength(1)
     expect(runOn(g10, `${post}\nconst s = await fetch(\`\${BSV_BROADCASTER_URL}/tx/\${txid}\`)`)).toEqual([])
   })
+
+  // Type-only imports name no URL, and only the POST's URL argument decides whether it goes to the broadcaster.
+  it.each([
+    "import type { Outcome } from './broadcaster.js'\nconst r: Outcome = await (await fetch('/api/tx', {\n  method: 'POST',\n  body,\n})).json()",
+    "import type { TipRow } from '../server/broadcaster.js'\nconst r = await post<TipRow>('/api/tx', body)",
+    "import { toEF } from './broadcaster-utils.js'\nawait fetch('/api/tx', { method: 'POST', body: toEF(tx) })",
+    "import { type Outcome, toEF } from './broadcaster.js'\nconst r: Outcome = await (await fetch('/api/tx', { method: 'POST', body: toEF(tx) })).json()",
+  ])('does not flag a POST to the app\'s own relay beside broadcaster imports: %s', text => {
+    expect(runOn(g10, text)).toEqual([])
+  })
 })
 
 describe('G-12 BSV Broadcaster first, WhatsOnChain gated', () => {
@@ -406,6 +416,7 @@ describe('G-15 timeouts on BSV Broadcaster and WhatsOnChain calls', () => {
     "await fetch(`${ARCADE_URL}/tx`, {\n  method: 'POST',\n  body: hex,\n  signal: AbortSignal.timeout(10000),\n})",
     "const signal = AbortSignal.timeout(5000)\nawait fetch(ARCADE_URL + '/policy', init)\nconst init = { signal }",
     "await fetch('https://example.com/api')",
+    "import type { TxView } from './broadcaster.js'\nconst view = await fetch('/api/tips/' + (id as TxView['txid']))",
     "// fetch(ARCADE_URL + '/tx')",
     // Prettier output of the kit's recommended POST: `signal` lands on line 8 (ruling R23)
     "const res = await fetch(`${ARCADE_URL}/tx`, {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'text/plain',\n    'X-CallbackToken': token,\n  },\n  body: efHex,\n  signal: AbortSignal.timeout(10000),\n})",

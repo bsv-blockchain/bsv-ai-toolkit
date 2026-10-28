@@ -1,5 +1,5 @@
 import type { Rule } from './index.js'
-import { closeOf, enclosingOpens, findingList, isDisplayChoice, isLiteralBody, isSource, lineAt, scan, withAliases, type Scan } from './util.js'
+import { bracketText, closeOf, enclosingOpens, findingList, firstArgEnd, isDisplayChoice, isLiteralBody, isSource, lineAt, scan, withAliases, type Scan } from './util.js'
 
 const MINED = /['"`]MINED['"`]/
 const SEEN = /SEEN_ON_NETWORK|SEEN_MULTIPLE_NODES/
@@ -20,6 +20,19 @@ const WOC = /whatsonchain|\bwoc/i
 // A user's broadcaster under either name: BSV Broadcaster (`BSV_BROADCASTER_URL`, `broadcaster`) or its former name
 // Arcade (`ARCADE_URL`, an `arcade` host or import), since code in the wild has both.
 const BROADCASTER = /arcade|broadcaster/i
+
+/**
+ * The URL a `/tx` path at offset `at` is posted to: the first argument of the innermost call around it
+ * (`fetch(…)`, `post(…)`), so a broadcaster name elsewhere in the call (a body helper, a type) does not count.
+ * Outside any call, the line itself.
+ */
+function postTarget(s: Scan, at: number, line: string): string {
+  const open = enclosingOpens(s.masked, at, true).find(o => s.masked[o] === '(')
+  if (open === undefined) return line
+  const args = bracketText(s, open, 60)
+  const comma = firstArgEnd(args.masked)
+  return comma < 0 ? args.code : args.code.slice(0, comma)
+}
 
 /** The next non-blank comment-free line after `i` (0-based), or ''. */
 function nextCodeLine(s: Scan, i: number, skip: RegExp = /^\s*$/): string {
@@ -108,7 +121,8 @@ export const g10: Rule = {
       // Only a POST to BSV Broadcaster: a POST to the app's own relay (`/api/tx`) is not a broadcast.
       const service = withAliases(s.code, BROADCASTER, { imports: true })
       s.codeLines.forEach((t, i) => {
-        if (!TX_POST_PATH.test(t) || !service.test(t)) return
+        const path = TX_POST_PATH.exec(t)
+        if (!path || !service.test(postTarget(s, s.starts[i] + path.index, t))) return
         const window = s.codeLines.slice(Math.max(0, i - 3), i + 6).join('\n')
         if (POST.test(window)) out.add(f.rel, i + 1, `${s.lines[i].trim()} (no GET /tx/{txid} read in this module)`)
       })
