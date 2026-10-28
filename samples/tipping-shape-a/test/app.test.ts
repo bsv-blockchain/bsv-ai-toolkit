@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import request from 'supertest'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createApp } from '../server/app.js'
-import { Arcade } from '../server/arcade.js'
+import { BroadcasterClient } from '../server/broadcaster.js'
 import { bootLine, loadServerConfig } from '../server/config.js'
 import { openDb } from '../server/db.js'
 
@@ -13,8 +13,8 @@ const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
 const MANIFEST_PATH = join(SAMPLE, 'public', 'manifest.json')
 const SKILL_GUARD = fileURLToPath(new URL('../../../packages/skill/skills/bsv-dev/scripts/network-guard.sh', import.meta.url))
 
-const TESTNET_ARCADE = 'https://arcade-testnet-us-1.bsvblockchain.tech'
-const MAINNET_ARCADE = 'https://arcade-us-1.bsvblockchain.tech'
+const TESTNET_BROADCASTER = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const MAINNET_BROADCASTER = 'https://arcade-us-1.bsvblockchain.tech'
 // A curve point; mainnet refuses to boot without a fixed creator key.
 const CREATOR_KEY = `02${'ab'.repeat(32)}`
 
@@ -24,11 +24,11 @@ writeFileSync(join(webDir, 'index.html'), '<!doctype html><title>spa shell</titl
 afterAll(() => rmSync(webDir, { recursive: true, force: true }))
 
 const quiet = () => {}
-// These tests never reach Arcade: a fetch that fails loudly proves it.
+// These tests never reach BSV Broadcaster: a fetch that fails loudly proves it.
 const noFetch = (() => Promise.reject(new Error('unexpected fetch'))) as typeof fetch
 const db = openDb(':memory:')
 afterAll(() => db.close())
-const app = () => createApp(loadServerConfig({}, quiet), { db, arcade: new Arcade(TESTNET_ARCADE, noFetch), webDir })
+const app = () => createApp(loadServerConfig({}, quiet), { db, broadcasterClient: new BroadcasterClient(TESTNET_BROADCASTER, noFetch), webDir })
 
 type Protocol = { protocolID: [number, string]; counterparty?: string }
 type Group = { protocolPermissions: Protocol[]; basketAccess: { basket: string }[] }
@@ -38,20 +38,20 @@ describe('relay app', () => {
   it('GET /health returns ok with the network', async () => {
     const res = await request(app()).get('/health')
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ ok: true, network: 'testnet', arcadeOrigin: TESTNET_ARCADE, version: '0.1.0' })
+    expect(res.body).toEqual({ ok: true, network: 'testnet', broadcasterOrigin: TESTNET_BROADCASTER, version: '0.1.0' })
   })
 
-  it('the boot log line names the Arcade origin only, never its userinfo, path or query', () => {
-    const cfg = loadServerConfig({ ARCADE_URL: 'https://user:s3cret@arcade.example.com:8443/private/v1?token=abc', PORT: '9090' }, quiet)
+  it('the boot log line names the BSV Broadcaster origin only, never its userinfo, path or query', () => {
+    const cfg = loadServerConfig({ BSV_BROADCASTER_URL: 'https://user:s3cret@broadcaster.example.com:8443/private/v1?token=abc', PORT: '9090' }, quiet)
     const line = bootLine(cfg)
-    expect(line).toBe('bsv-tipping-demo relay on :9090 network=testnet arcade=https://arcade.example.com:8443 origin=http://localhost:5173')
+    expect(line).toBe('bsv-tipping-demo relay on :9090 network=testnet broadcaster=https://broadcaster.example.com:8443 origin=http://localhost:5173')
     for (const leak of ['user', 's3cret', 'private', 'token', 'abc']) expect(line).not.toContain(leak)
   })
 
-  it('GET /health names the Arcade origin only, never its userinfo, path or query', async () => {
-    const cfg = loadServerConfig({ ARCADE_URL: 'https://user:s3cret@arcade.example.com:8443/private/v1?token=abc' }, quiet)
-    const res = await request(createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl, noFetch), webDir })).get('/health')
-    expect(res.body.arcadeOrigin).toBe('https://arcade.example.com:8443')
+  it('GET /health names the BSV Broadcaster origin only, never its userinfo, path or query', async () => {
+    const cfg = loadServerConfig({ BSV_BROADCASTER_URL: 'https://user:s3cret@broadcaster.example.com:8443/private/v1?token=abc' }, quiet)
+    const res = await request(createApp(cfg, { db, broadcasterClient: new BroadcasterClient(cfg.broadcasterUrl, noFetch), webDir })).get('/health')
+    expect(res.body.broadcasterOrigin).toBe('https://broadcaster.example.com:8443')
     for (const leak of ['user', 's3cret', 'private', 'token', 'abc']) expect(res.text).not.toContain(leak)
   })
 
@@ -100,17 +100,35 @@ describe('loadServerConfig', () => {
     expect(() => loadServerConfig({ BSV_NETWORK: 'main' }, quiet)).toThrow(/BSV_NETWORK must be "testnet" or "mainnet"/)
   })
 
-  it('defaults ARCADE_URL per network', () => {
-    expect(loadServerConfig({}, quiet).arcadeUrl).toBe(TESTNET_ARCADE)
-    expect(loadServerConfig({ BSV_NETWORK: '', ARCADE_URL: '' }, quiet)).toMatchObject({ network: 'testnet', arcadeUrl: TESTNET_ARCADE })
-    expect(loadServerConfig({ BSV_NETWORK: 'mainnet', CREATOR_IDENTITY_KEY: CREATOR_KEY }, quiet).arcadeUrl).toBe(MAINNET_ARCADE)
-    expect(loadServerConfig({ ARCADE_URL: 'https://arcade.example.com' }, quiet).arcadeUrl).toBe('https://arcade.example.com')
+  it('defaults BSV_BROADCASTER_URL per network', () => {
+    expect(loadServerConfig({}, quiet).broadcasterUrl).toBe(TESTNET_BROADCASTER)
+    expect(loadServerConfig({ BSV_NETWORK: '', BSV_BROADCASTER_URL: '' }, quiet)).toMatchObject({ network: 'testnet', broadcasterUrl: TESTNET_BROADCASTER })
+    expect(loadServerConfig({ BSV_NETWORK: 'mainnet', CREATOR_IDENTITY_KEY: CREATOR_KEY }, quiet).broadcasterUrl).toBe(MAINNET_BROADCASTER)
+    expect(loadServerConfig({ BSV_BROADCASTER_URL: 'https://broadcaster.example.com' }, quiet).broadcasterUrl).toBe('https://broadcaster.example.com')
   })
 
-  it('rejects a known Arcade host of the other network', () => {
-    expect(() => loadServerConfig({ ARCADE_URL: MAINNET_ARCADE }, quiet)).toThrow(/network\/host mismatch/)
-    expect(() => loadServerConfig({ BSV_NETWORK: 'mainnet', ARCADE_URL: `${TESTNET_ARCADE}./` }, quiet)).toThrow(/network\/host mismatch/)
-    expect(() => loadServerConfig({ ARCADE_URL: 'not a url' }, quiet)).toThrow(/invalid ARCADE_URL/)
+  it('reads BSV_BROADCASTER_URL, falls back to the deprecated ARCADE_URL with one warning, and lets the new name win', () => {
+    const local = 'http://localhost:8080'
+    const other = 'http://localhost:9090'
+    const deprecated = 'warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL'
+    let lines: string[] = []
+    expect(loadServerConfig({ BSV_BROADCASTER_URL: local }, l => lines.push(l)).broadcasterUrl).toBe(local)
+    expect(lines).toEqual([])
+    expect(loadServerConfig({ ARCADE_URL: local }, l => lines.push(l)).broadcasterUrl).toBe(local)
+    expect(lines).toEqual([deprecated])
+    lines = []
+    expect(loadServerConfig({ BSV_BROADCASTER_URL: local, ARCADE_URL: other }, l => lines.push(l)).broadcasterUrl).toBe(local)
+    expect(lines).toEqual([])
+    // Empty under either name is unset; the old name still gets the network/host cross-check.
+    expect(loadServerConfig({ BSV_BROADCASTER_URL: '', ARCADE_URL: '' }, l => lines.push(l)).broadcasterUrl).toBe(TESTNET_BROADCASTER)
+    expect(lines).toEqual([])
+    expect(() => loadServerConfig({ ARCADE_URL: MAINNET_BROADCASTER }, quiet)).toThrow(/network\/host mismatch/)
+  })
+
+  it('rejects a known BSV Broadcaster host of the other network', () => {
+    expect(() => loadServerConfig({ BSV_BROADCASTER_URL: MAINNET_BROADCASTER }, quiet)).toThrow(/network\/host mismatch/)
+    expect(() => loadServerConfig({ BSV_NETWORK: 'mainnet', BSV_BROADCASTER_URL: `${TESTNET_BROADCASTER}./` }, quiet)).toThrow(/network\/host mismatch/)
+    expect(() => loadServerConfig({ BSV_BROADCASTER_URL: 'not a url' }, quiet)).toThrow(/invalid BSV_BROADCASTER_URL/)
   })
 
   it('prints the MAINNET banner on mainnet only', () => {
@@ -131,7 +149,7 @@ describe('loadServerConfig', () => {
       ),
     ).toEqual({
       network: 'testnet',
-      arcadeUrl: TESTNET_ARCADE,
+      broadcasterUrl: TESTNET_BROADCASTER,
       publicOrigin: 'https://tipping.example.com',
       port: 9090,
       dataDir: '/data',

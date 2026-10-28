@@ -7,7 +7,7 @@ import { login, networkMismatch, type Session } from '../wallet'
 
 const EXPLORER: Record<Network, string> = { testnet: 'https://test.whatsonchain.com', mainnet: 'https://whatsonchain.com' }
 
-/** A link for people to look at the transaction; the app itself reads status from Arcade only. */
+/** A link for people to look at the transaction; the app itself reads status from BSV Broadcaster only. */
 export const explorerTxUrl = (network: Network, txid: string) => `${EXPLORER[network]}/tx/${txid}`
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -111,7 +111,7 @@ function Outcome({ outcome, network }: { outcome: TipOutcome; network: Network }
     <p>
       Tip <code title={outcome.txid}>{short(outcome.txid)}</code>: <strong>{verdictLabel(outcome.row.verdict)}</strong>. The creator
       collects it automatically. ({link})
-      {outcome.walletError && <> Your wallet reported a problem sending it ({outcome.walletError}); the relay took it to Arcade itself.</>}
+      {outcome.walletError && <> Your wallet reported a problem sending it ({outcome.walletError}); the relay took it to BSV Broadcaster itself.</>}
     </p>
   )
 }

@@ -45,7 +45,7 @@ docker run -d --name tipping -p 8080:8080 -v tipping-data:/data \
   ghcr.io/bsv-blockchain/bsv-tipping-demo:latest
 ```
 
-The image sets `NODE_ENV=production`, so the relay refuses to start without `PUBLIC_ORIGIN`, or with one that is `http:` or a loopback host (`localhost`, `127.0.0.1`, `[::1]`). It also refuses an unknown `BSV_NETWORK`, an `ARCADE_URL` that belongs to the other network, mainnet without `CREATOR_IDENTITY_KEY`, and a `tips.sqlite` of another schema version. In each case it prints the reason and exits.
+The image sets `NODE_ENV=production`, so the relay refuses to start without `PUBLIC_ORIGIN`, or with one that is `http:` or a loopback host (`localhost`, `127.0.0.1`, `[::1]`). It also refuses an unknown `BSV_NETWORK`, a `BSV_BROADCASTER_URL` that belongs to the other network, mainnet without `CREATOR_IDENTITY_KEY`, and a `tips.sqlite` of another schema version. In each case it prints the reason and exits.
 
 To try the image on your own machine over plain http, add `-e NODE_ENV=development -e PUBLIC_ORIGIN=http://localhost:8080` to the `docker run` above (never on a public host), or run the sample with `pnpm start` instead (see [README.md](README.md)).
 
@@ -56,7 +56,8 @@ None of these is a secret. `env.example` lists the same variables.
 | Variable | Value |
 | --- | --- |
 | `BSV_NETWORK` | `testnet` (the image default) or `mainnet`. The one network switch; see [Network switch](#network-switch). |
-| `ARCADE_URL` | Optional. Empty means the public Arcade for the network (testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`). The relay is the only part that talks to Arcade, so a private Arcade URL works. |
+| `BSV_BROADCASTER_URL` | Optional. Empty means the public BSV Broadcaster (formerly Arcade) for the network (testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`). The relay is the only part that talks to BSV Broadcaster, so a private BSV Broadcaster URL works. |
+| `ARCADE_URL` | Deprecated: the old name of `BSV_BROADCASTER_URL`, still read when `BSV_BROADCASTER_URL` is unset, with a warning in the log. Rename it. |
 | `PUBLIC_ORIGIN` | Required: `https://<host>`, the exact origin people open (scheme, host, and port if it is not the default). The manifest is served there, and the creator's signatures name it (`claim:<origin>:…`, `internalized:<origin>:…`), so a signature made for one deployment is refused by another. Set it to the proxy's public origin, never to the container's address. |
 | `CREATOR_IDENTITY_KEY` | The creator's identity public key: 33-byte compressed, 66 hex characters starting `02` or `03`. Required on mainnet. On testnet it is optional: when it is empty, the first wallet that claims `/creator` (signing the claim with its identity key) becomes the creator, and that choice is kept in the database. Set it on any public host, or whoever opens `/creator` first receives the tips. |
 | `TRUST_PROXY` | Which peers may set `X-Forwarded-For`, so the relay sees each client's own address for its rate limits. Empty (the default) trusts loopback, link-local and private-network peers, which covers a proxy on the same host or in the same compose network. Set it to the proxy's address or subnet (comma-separated), a hop count, or `false` when nothing sits in front of the relay. If the proxy reaches the relay from a public address that is not listed, every client shares the proxy's rate-limit bucket. If the relay is reachable from a private network without the proxy, a client there can claim any address. |
@@ -86,7 +87,7 @@ Run one container per volume: SQLite is a single-writer file and the rate limits
 - **HTTPS.** Wallets need a secure originator, and the page needs a secure context. Terminate TLS at the proxy and forward plain HTTP to port 8080.
 - **Do not buffer `/api/events`.** It is a server-sent event stream. The relay sends `X-Accel-Buffering: no`, which nginx honours; with other proxies, turn buffering off for that path (nginx: `proxy_buffering off`). Keep the read timeout above the relay's 15-second keepalive (60 s or more), and allow HTTP/1.1 keep-alive upstream.
 - **Pass `/manifest.json` through untouched.** No rewrite to the app shell, no caching, no header changes: wallets fetch it cross-origin and read the permissions from it. The relay already answers with `Content-Type: application/manifest+json`, `Access-Control-Allow-Origin: *` and `Cache-Control: no-store`.
-- **Allow slow tip posts.** `POST /api/tips` waits up to 15 s for Arcade to see the transaction before it answers. A 60-second upstream timeout covers it.
+- **Allow slow tip posts.** `POST /api/tips` waits up to 15 s for BSV Broadcaster to see the transaction before it answers. A 60-second upstream timeout covers it.
 - **Forward the client address** in `X-Forwarded-For`, and set `TRUST_PROXY` to match how the proxy reaches the relay (see [Environment](#environment)).
 - Serve everything from the one origin in `PUBLIC_ORIGIN`. No path prefix: the app, `/api` and `/manifest.json` sit at the root.
 
@@ -105,9 +106,9 @@ location /api/events {
 
 ## Health
 
-`GET /health` answers `{"ok":true,"network":"testnet","arcadeOrigin":"…","version":"…"}`. The image's `HEALTHCHECK` calls it every 30 s. It shows the process is serving and which network it runs on. It does not check Arcade.
+`GET /health` answers `{"ok":true,"network":"testnet","broadcasterOrigin":"…","version":"…"}`. The image's `HEALTHCHECK` calls it every 30 s. It shows the process is serving and which network it runs on. It does not check BSV Broadcaster.
 
-Anyone who can reach `/health` sees the Arcade origin (scheme, host and port of `ARCADE_URL`); its path, query and any credentials are never shown.
+Anyone who can reach `/health` sees the BSV Broadcaster origin (scheme, host and port of `BSV_BROADCASTER_URL`); its path, query and any credentials are never shown.
 
 ## Secrets
 
@@ -115,7 +116,7 @@ None. No private key, seed or coin lives on the server, in the image or in `.env
 
 ## Network switch
 
-`BSV_NETWORK=mainnet` is the only switch. Mainnet also requires `CREATOR_IDENTITY_KEY`, and `ARCADE_URL` must be empty or a mainnet Arcade. At boot, both the network guard and the relay print the banner:
+`BSV_NETWORK=mainnet` is the only switch. Mainnet also requires `CREATOR_IDENTITY_KEY`, and `BSV_BROADCASTER_URL` must be empty or a mainnet BSV Broadcaster. At boot, both the network guard and the relay print the banner:
 
 ```text
 **************************************************

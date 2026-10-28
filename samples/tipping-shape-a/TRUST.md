@@ -1,6 +1,6 @@
 # Trust model
 
-bsv-tipping-demo is custody shape A: every key stays in the user's own BRC-100 wallet. The tipper's wallet builds, signs and broadcasts each tip. The creator's wallet derives the key a tip pays, and it alone decides whether a tip is its own. The relay (`server/`) stores tips, passes them to Arcade and reads their status. It holds no key and signs nothing.
+bsv-tipping-demo is custody shape A: every key stays in the user's own BRC-100 wallet. The tipper's wallet builds, signs and broadcasts each tip. The creator's wallet derives the key a tip pays, and it alone decides whether a tip is its own. The relay (`server/`) stores tips, passes them to BSV Broadcaster (formerly Arcade) and reads their status. It holds no key and signs nothing.
 
 ## Served-code trust
 
@@ -15,9 +15,9 @@ The allowance is small on purpose. It is the most a hostile or compromised copy 
 
 ## 0-conf stance
 
-A tip is received when Arcade reports its transaction at `SEEN_ON_NETWORK` or later with no `competingTxs`, and the creator's wallet has internalized it. The app does not wait for confirmation in a block, and nothing in it counts blocks. That is the finality point the kit uses for payments of this size (guardrails G-10 and G-14). The remaining failures are drops and evictions, and the app handles them as follows:
+A tip is received when BSV Broadcaster reports its transaction at `SEEN_ON_NETWORK` or later with no `competingTxs`, and the creator's wallet has internalized it. The app does not wait for confirmation in a block, and nothing in it counts blocks. That is the finality point the kit uses for payments of this size (guardrails G-10 and G-14). The remaining failures are drops and evictions, and the app handles them as follows:
 
-- The relay re-posts a transaction Arcade has no record of.
+- The relay re-posts a transaction BSV Broadcaster has no record of.
 - A tip counts as failed only after `REJECTED` on two reads at least 20 seconds apart, with a re-post between them (the two-read dead rule).
 - A `REJECTED` that blames a parent or the inputs is flagged as possibly not final, and is read again.
 
@@ -37,7 +37,7 @@ The relay **cannot**:
 
 - spend a tip: the output is locked to a key only the creator's wallet can derive
 - redirect a tip: the tipper's wallet chose the output and signed the transaction before the relay saw it
-- forge a tip: a posted transaction is checked against its own BEEF, a remittance that does not derive the output's key is refused by the creator's wallet, and the creator collects only what Arcade reports as seen with no competitor
+- forge a tip: a posted transaction is checked against its own BEEF, a remittance that does not derive the output's key is refused by the creator's wallet, and the creator collects only what BSV Broadcaster reports as seen with no competitor
 - make the creator sign anything: creator signatures (`claim:…`, `internalized:…`) are made in the creator's wallet, over messages that name the deployment's origin
 
 The tip stands without the relay. The tipper's wallet broadcast it, and the AtomicBEEF the wallet returned holds everything needed to collect it. If the relay refuses it or is gone, the tipper's browser keeps the record (the derivation, the transaction and the amount) and posts it again on every visit. A tip the relay refuses as too large (HTTP 413) is never posted again, since that cannot change: it is listed as an unfinished tip with **Copy details**. A tip whose transaction the wallet never returned is listed as an unfinished tip with **Copy details**. With the details and the transaction (on the network under its txid), the creator can collect a tip in any BRC-100 wallet.
@@ -49,6 +49,6 @@ The tip stands without the relay. The tipper's wallet broadcast it, and the Atom
 - **Lookalike-origin phishing of creator signatures.** Creator signatures name the relay's `PUBLIC_ORIGIN` and come from the page the creator has open. A lookalike site can proxy the real relay's `/api/config` and ask the creator's wallet to sign messages that name the real origin. It needs a grant from the creator's wallet for its own origin, or a prompt the creator accepts. With a claim signature it can only make the creator's own key the creator, which matters only in testnet's first-claim mode. With an `internalized:` signature it can make the relay's list show a tip as received. Neither moves money. Creators should check the address bar before approving a prompt, and set `CREATOR_IDENTITY_KEY`.
 - **`internalizedAt` is a label, not evidence.** The relay records a creator-signed "internalized" report and shows the tip as received. The creator page never decides from it whether to collect. It collects from its own wallet's results: what `internalizeAction` accepted, remembered in this browser per identity key. Anyone building on this sample must keep it that way.
 - **Wallets other than wallet-toolbox.** The creator page relies on `internalizeAction` (`protocol: 'wallet payment'`) refusing a remittance that does not derive the output's key. That behaviour is verified against `@bsv/wallet-toolbox` 2.14.9 only (BSV Desktop's engine). A wallet that does not check might internalize a front-run candidate's wrong derivation, and so hold an output it cannot spend, before it reaches the tipper's real candidate. The page checks first that each candidate's output exists, is P2PKH and has the claimed amount. A wallet that rejects with a different error leaves the tip uncollected ("gave up"), never wrongly received.
-- **`/api/tx` is an open, rate-limited read proxy.** `GET /api/tx/:txid` reads any txid from the relay's Arcade (not only a stored tip's ancestors), so the creator page can complete a BEEF without talking to Arcade itself. Each client address gets a burst of 30, then 120 a minute. Scoping it to stored ancestors is left for later.
+- **`/api/tx` is an open, rate-limited read proxy.** `GET /api/tx/:txid` reads any txid from the relay's BSV Broadcaster (not only a stored tip's ancestors), so the creator page can complete a BEEF without talking to BSV Broadcaster itself. Each client address gets a burst of 30, then 120 a minute. Scoping it to stored ancestors is left for later.
 - **The client address comes from `TRUST_PROXY`.** Rate limits and event-stream caps are per client address, as the relay sees it. If `TRUST_PROXY` does not match the actual proxy setup, clients either share one bucket or can claim any address (see [HOSTING.md](HOSTING.md#environment)).
 - **First-claim creator mode is for testnet only.** With `CREATOR_IDENTITY_KEY` unset, whoever claims `/creator` first collects every tip. The relay refuses to start on mainnet without the variable. On a public testnet host, set it anyway.

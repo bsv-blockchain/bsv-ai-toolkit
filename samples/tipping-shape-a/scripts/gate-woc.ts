@@ -1,10 +1,10 @@
 import { Beef, MerklePath, Transaction } from '@bsv/sdk'
-import type { Arcade } from '../server/arcade.js'
-import { plainHexFromArcadeRawTx } from '../server/beef.js'
+import type { BroadcasterClient } from '../server/broadcaster.js'
+import { plainHexFromBroadcasterRawTx } from '../server/beef.js'
 
-// Where the gate's funding coins come from. Arcade first for every txid; WhatsOnChain (testnet) only for what
-// Arcade cannot answer: the funding address's coin listing (an address listing, an allowed use), a faucet tx
-// Arcade never saw, and merkle proofs Arcade does not hold. Every WhatsOnChain call goes through one process-wide
+// Where the gate's funding coins come from. BSV Broadcaster first for every txid; WhatsOnChain (testnet) only for what
+// BSV Broadcaster cannot answer: the funding address's coin listing (an address listing, an allowed use), a faucet tx
+// BSV Broadcaster never saw, and merkle proofs BSV Broadcaster does not hold. Every WhatsOnChain call goes through one process-wide
 // gate (≥ 350 ms apart), has a timeout, and backs off on 429. Every transaction must hash to its txid.
 
 export const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv/test'
@@ -131,31 +131,31 @@ export class WhatsOnChain {
 export interface SourceTx {
   /** With its merkle path when it is in a block. */
   tx: Transaction
-  source: 'Arcade' | 'WhatsOnChain'
+  source: 'BSV Broadcaster' | 'WhatsOnChain'
 }
 
 /**
- * A transaction by txid: Arcade's rawTx (Extended Format, re-read as plain) when Arcade knows it, else WhatsOnChain's
- * hex. The hex must hash to `txid`. The merkle path is Arcade's when it has one, else the WhatsOnChain TSC proof.
+ * A transaction by txid: BSV Broadcaster's rawTx (Extended Format, re-read as plain) when BSV Broadcaster knows it, else WhatsOnChain's
+ * hex. The hex must hash to `txid`. The merkle path is BSV Broadcaster's when it has one, else the WhatsOnChain TSC proof.
  */
-export async function fetchSourceTx(txid: string, arcade: Arcade, woc: WhatsOnChain): Promise<SourceTx> {
-  let s: Awaited<ReturnType<Arcade['status']>>
+export async function fetchSourceTx(txid: string, broadcasterClient: BroadcasterClient, woc: WhatsOnChain): Promise<SourceTx> {
+  let s: Awaited<ReturnType<BroadcasterClient['status']>>
   try {
-    s = await arcade.status(txid)
+    s = await broadcasterClient.status(txid)
   } catch (e) {
-    throw new Error(`Arcade could not be read for ${txid}: ${message(e)}`)
+    throw new Error(`BSV Broadcaster could not be read for ${txid}: ${message(e)}`)
   }
   let hex: string
   let source: SourceTx['source']
   let proof: MerklePath | undefined
   if (!('notFound' in s) && typeof s.rawTx === 'string' && s.rawTx !== '') {
-    hex = plainHexFromArcadeRawTx(s.rawTx, txid)
-    source = 'Arcade'
+    hex = plainHexFromBroadcasterRawTx(s.rawTx, txid)
+    source = 'BSV Broadcaster'
     if (typeof s.merklePath === 'string' && s.merklePath !== '') proof = MerklePath.fromHex(s.merklePath)
   } else {
-    // The documented exception: a transaction Arcade never saw (a faucet payment).
+    // The documented exception: a transaction BSV Broadcaster never saw (a faucet payment).
     const fetched = await woc.txHex(txid)
-    if (fetched === undefined) throw new Error(`neither Arcade nor WhatsOnChain knows ${txid} yet; try again in a minute`)
+    if (fetched === undefined) throw new Error(`neither BSV Broadcaster nor WhatsOnChain knows ${txid} yet; try again in a minute`)
     hex = fetched
     source = 'WhatsOnChain'
   }
@@ -173,20 +173,20 @@ const MAX_TXS = 64
 
 /**
  * Merges `txid` into `beef` with everything a wallet needs to verify it: a merkle path, or, for a transaction not
- * in a block yet that Arcade knows (an earlier gate run's sweep-back), its inputs' transactions, recursively.
+ * in a block yet that BSV Broadcaster knows (an earlier gate run's sweep-back), its inputs' transactions, recursively.
  * A transaction in no block that only WhatsOnChain knows is refused: the gate never walks a WhatsOnChain ancestry.
  */
-export async function addProvenTx(beef: Beef, txid: string, arcade: Arcade, woc: WhatsOnChain, depth = 0, seen = new Set<string>()): Promise<Beef> {
+export async function addProvenTx(beef: Beef, txid: string, broadcasterClient: BroadcasterClient, woc: WhatsOnChain, depth = 0, seen = new Set<string>()): Promise<Beef> {
   if (seen.has(txid) || beef.findTxid(txid)?.tx !== undefined) return beef
   seen.add(txid)
   if (seen.size > MAX_TXS) throw new Error(`more than ${MAX_TXS} unconfirmed ancestors; wait for a block`)
-  const { tx, source } = await fetchSourceTx(txid, arcade, woc)
+  const { tx, source } = await fetchSourceTx(txid, broadcasterClient, woc)
   if (tx.merklePath === undefined) {
-    if (source !== 'Arcade') throw new Error(`${txid} is not in a block yet and Arcade never saw it; try again after the next block`)
+    if (source !== 'BSV Broadcaster') throw new Error(`${txid} is not in a block yet and BSV Broadcaster never saw it; try again after the next block`)
     if (depth >= MAX_DEPTH) throw new Error(`${txid} has more than ${MAX_DEPTH} unconfirmed generations; wait for a block`)
     for (const input of tx.inputs) {
       if (input.sourceTXID === undefined) throw new Error(`an input of ${txid} names no source txid`)
-      await addProvenTx(beef, input.sourceTXID, arcade, woc, depth + 1, seen)
+      await addProvenTx(beef, input.sourceTXID, broadcasterClient, woc, depth + 1, seen)
     }
   }
   beef.mergeTransaction(tx)

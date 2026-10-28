@@ -1,11 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createApp } from './app.js'
-import { Arcade } from './arcade.js'
+import { BroadcasterClient } from './broadcaster.js'
 import { bootLine, loadServerConfig, type ServerConfig } from './config.js'
 import { openDb, type Db } from './db.js'
 
-// Refuses to start on a bad BSV_NETWORK, a mismatched ARCADE_URL, or in production a missing, http: or loopback
+// Refuses to start on a bad BSV_NETWORK, a mismatched BSV_BROADCASTER_URL, or in production a missing, http: or loopback
 // PUBLIC_ORIGIN.
 let cfg: ServerConfig
 try {
@@ -24,7 +24,7 @@ try {
   console.error(`bsv-tipping-demo: ${e instanceof Error ? e.message : String(e)}`)
   process.exit(1)
 }
-const server = createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl) }).listen(cfg.port, () => {
+const server = createApp(cfg, { db, broadcasterClient: new BroadcasterClient(cfg.broadcasterUrl) }).listen(cfg.port, () => {
   console.log(bootLine(cfg))
 })
 

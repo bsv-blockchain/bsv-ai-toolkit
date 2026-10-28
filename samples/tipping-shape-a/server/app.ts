@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
-import type { Arcade } from './arcade.js'
+import type { BroadcasterClient } from './broadcaster.js'
 import type { ServerConfig } from './config.js'
 import type { Db } from './db.js'
 import { mountApi, type Limits } from './routes.js'
@@ -10,7 +10,7 @@ import { Broadcaster } from './sse.js'
 
 export interface AppDeps {
   db: Db
-  arcade: Arcade
+  broadcasterClient: BroadcasterClient
   /** SSE fan-out for /api/events. Default: a new Broadcaster. */
   broadcaster?: Broadcaster
   /** The built web app. Default: dist/web under the sample root. */
@@ -41,10 +41,10 @@ export function createApp(cfg: ServerConfig, deps: AppDeps): express.Express {
   // says whose X-Forwarded-For to believe; see DEFAULT_TRUST_PROXY in config.ts.
   app.set('trust proxy', cfg.trustProxy)
 
-  // The Arcade origin only: an ARCADE_URL may carry credentials or a private path, and /health is public.
-  const arcadeOrigin = new URL(cfg.arcadeUrl).origin
+  // The BSV Broadcaster origin only: a BSV_BROADCASTER_URL may carry credentials or a private path, and /health is public.
+  const broadcasterOrigin = new URL(cfg.broadcasterUrl).origin
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, network: cfg.network, arcadeOrigin, version: VERSION })
+    res.json({ ok: true, network: cfg.network, broadcasterOrigin, version: VERSION })
   })
 
   // Before express.static and the SPA fallback, so these headers always apply. Wallets fetch the manifest
@@ -59,7 +59,7 @@ export function createApp(cfg: ServerConfig, deps: AppDeps): express.Express {
   })
 
   // /api answers JSON only (unknown paths are a JSON 404), so it never reaches the SPA fallback.
-  mountApi(app, cfg, { db: deps.db, arcade: deps.arcade, broadcaster: deps.broadcaster ?? new Broadcaster(), limits: deps.limits, now: deps.now })
+  mountApi(app, cfg, { db: deps.db, broadcasterClient: deps.broadcasterClient, broadcaster: deps.broadcaster ?? new Broadcaster(), limits: deps.limits, now: deps.now })
 
   const webDir = deps.webDir ?? join(SAMPLE_ROOT, 'dist', 'web')
   const indexHtml = join(webDir, 'index.html')

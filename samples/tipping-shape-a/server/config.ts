@@ -9,7 +9,7 @@ export type Network = 'testnet' | 'mainnet'
 
 export interface ServerConfig {
   network: Network
-  arcadeUrl: string
+  broadcasterUrl: string
   /** The wallet originator: the one origin serving the app, /manifest.json and /api. */
   publicOrigin: string
   port: number
@@ -30,13 +30,14 @@ export interface ServerConfig {
  */
 export const DEFAULT_TRUST_PROXY = 'loopback, linklocal, uniquelocal'
 
-export const DEFAULT_ARCADE: Record<Network, string> = {
+// Public BSV Broadcaster (formerly Arcade) instances; the hostnames keep the old name.
+export const DEFAULT_BROADCASTER: Record<Network, string> = {
   testnet: 'https://arcade-testnet-us-1.bsvblockchain.tech',
   mainnet: 'https://arcade-us-1.bsvblockchain.tech',
 }
 
-// Known public Arcade hosts per network, so an ARCADE_URL that belongs to the other network fails at boot.
-// Mirrors content/versions.json services.arcade.hosts in the kit repo (a test keeps them in step), plus
+// Known public BSV Broadcaster hosts per network, so a BSV_BROADCASTER_URL that belongs to the other network fails at boot.
+// Mirrors content/versions.json services.broadcaster.hosts in the kit repo (a test keeps them in step), plus
 // arcade.gorillapool.io on mainnet. ttn (the Teranode test network) is neither network: it boots with a warning.
 export const KNOWN_HOSTS: Record<Network | 'ttn', string[]> = {
   mainnet: [
@@ -70,12 +71,14 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
     throw new Error(`BSV_NETWORK must be "testnet" or "mainnet", got "${raw}"`)
   }
   const network: Network = raw
-  const arcadeUrl = nonEmpty(env.ARCADE_URL) ?? DEFAULT_ARCADE[network]
-  const warning = checkArcadeHost(network, arcadeUrl)
+  // BSV_BROADCASTER_URL, else the deprecated ARCADE_URL (BSV Broadcaster's former name); an explicit new name wins.
+  const legacyUrl = nonEmpty(env.BSV_BROADCASTER_URL) === undefined ? nonEmpty(env.ARCADE_URL) : undefined
+  const broadcasterUrl = nonEmpty(env.BSV_BROADCASTER_URL) ?? legacyUrl ?? DEFAULT_BROADCASTER[network]
+  const warning = checkBroadcasterHost(network, broadcasterUrl)
 
   const cfg: ServerConfig = {
     network,
-    arcadeUrl,
+    broadcasterUrl,
     publicOrigin: readOrigin(env),
     port: readPort(env.PORT),
     dataDir: nonEmpty(env.DATA_DIR) ?? './data',
@@ -93,6 +96,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
   }
 
   if (network === 'mainnet') MAINNET_BANNER.forEach(line => log(line))
+  if (legacyUrl !== undefined) log('warning: ARCADE_URL is deprecated; use BSV_BROADCASTER_URL')
   if (warning !== undefined) log(`warning: ${warning}`)
   if (creator === undefined && env.NODE_ENV === 'production') {
     log('warning: CREATOR_IDENTITY_KEY is unset: the first wallet to claim /creator becomes the creator')
@@ -101,25 +105,25 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, log: (lin
 }
 
 /**
- * The line the relay logs once it listens. It names the Arcade origin only: an ARCADE_URL may carry credentials or a
+ * The line the relay logs once it listens. It names the BSV Broadcaster origin only: a BSV_BROADCASTER_URL may carry credentials or a
  * private path, and logs travel further than the environment.
  */
 export function bootLine(cfg: ServerConfig): string {
-  return `bsv-tipping-demo relay on :${cfg.port} network=${cfg.network} arcade=${new URL(cfg.arcadeUrl).origin} origin=${cfg.publicOrigin}`
+  return `bsv-tipping-demo relay on :${cfg.port} network=${cfg.network} broadcaster=${new URL(cfg.broadcasterUrl).origin} origin=${cfg.publicOrigin}`
 }
 
 // Throws on an unparseable URL or a host known to belong to the other network; returns a warning for a ttn host.
-function checkArcadeHost(network: Network, arcadeUrl: string): string | undefined {
+function checkBroadcasterHost(network: Network, broadcasterUrl: string): string | undefined {
   let host: string
   try {
     // Lowercase and drop trailing dots so a fully-qualified 'host.' cannot dodge the lists.
-    host = new URL(arcadeUrl).hostname.toLowerCase().replace(/\.+$/, '')
+    host = new URL(broadcasterUrl).hostname.toLowerCase().replace(/\.+$/, '')
   } catch {
-    throw new Error(`invalid ARCADE_URL: ${arcadeUrl}`)
+    throw new Error(`invalid BSV_BROADCASTER_URL: ${broadcasterUrl}`)
   }
   const other: Network = network === 'mainnet' ? 'testnet' : 'mainnet'
   if (KNOWN_HOSTS[other].includes(host)) {
-    throw new Error(`network/host mismatch: ${host} is a known ${other} Arcade host, but BSV_NETWORK is ${network}`)
+    throw new Error(`network/host mismatch: ${host} is a known ${other} BSV Broadcaster host, but BSV_NETWORK is ${network}`)
   }
   if (KNOWN_HOSTS.ttn.includes(host)) return `ttn host: neither testnet nor mainnet (${host} is the Teranode test network)`
   return undefined

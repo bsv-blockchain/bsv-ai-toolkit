@@ -214,9 +214,9 @@ export function derive(rootKeyHex: string): Derived {
  * the gate uses a fresh temp dir per command).
  * Built the way Setup.createWallet + Setup.createWalletSQLite build one (wallet-toolbox 2.14.9,
  * out/src/Setup.js), with these divergences, each marked below:
- * - Services: Arcade (`arcadeUrl`) is the only broadcaster: the ARC URLs are blanked (C4) and the Bitails and
+ * - Services: BSV Broadcaster (formerly Arcade; the toolbox's `arcadeUrl` option) is the only broadcaster: the ARC URLs are blanked (C4) and the Bitails and
  *   WhatsOnChain post fallbacks removed after construction (C20). Reads keep the toolbox's providers; the gate's
- *   pass/fail comes from the relay's Arcade verdict, not from the toolbox.
+ *   pass/fail comes from the relay's BSV Broadcaster verdict, not from the toolbox.
  * - No .env: the root key is passed in; SetupEnv (identity keys, devKeys, taalApiKey) is not used.
  * - No throwaway wallet: Setup.createStorageKnex builds and destroys a second wallet only to resolve options.
  * The Monitor is created as Setup creates it and, as there, never started: every gate action broadcasts at once
@@ -226,7 +226,7 @@ export async function openGateWallet(
   rootKeyHex: string,
   name: 'tipper' | 'creator',
   network: GateNetwork,
-  arcadeUrl: string,
+  broadcasterUrl: string,
   dataDir: string,
 ): Promise<GateWallet> {
   if (network !== 'testnet') throw new GateUsageError('gate runs on testnet only')
@@ -243,23 +243,23 @@ export async function openGateWallet(
   const keyDeriver = new cjsSdk.CachedKeyDeriver(rootKey) as unknown as ConstructorParameters<typeof Wallet>[0]['keyDeriver']
   const storage = new WalletStorageManager(identityKey)
 
-  // Divergence (C4): Setup uses Services.createDefaultOptions(chain) with its taalApiKey; the gate sets Arcade and
+  // Divergence (C4): Setup uses Services.createDefaultOptions(chain) with its taalApiKey; the gate sets BSV Broadcaster and
   // blanks both ARC URLs so no legacy ARC endpoint is ever posted to.
   const defaults = Services.createDefaultOptions(chain)
   const services = new Services({
     ...defaults,
-    arcadeUrl,
+    arcadeUrl: broadcasterUrl,
     arcadeConfig: { deploymentId: defaults.arcConfig.deploymentId },
     arcUrl: '',
     arcGorillaPoolUrl: '',
   })
   // Divergence (C20): the toolbox still adds Bitails and WhatsOnChain as broadcast fallbacks (they cannot be
-  // configured away), so the post collection is cut down to Arcade alone: a post Arcade refuses fails the action
+  // configured away), so the post collection is cut down to BSV Broadcaster alone: a post BSV Broadcaster refuses fails the action
   // instead of going out elsewhere. Reads (rawTx, merkle path, status, UTXO checks) keep the toolbox's providers.
   for (const { name: provider } of [...services.postBeefServices.services]) {
     if (provider !== 'ArcadeBeef') services.postBeefServices.remove(provider)
   }
-  if (services.postBeefServices.count !== 1) throw new Error('the gate wallet must broadcast through Arcade alone')
+  if (services.postBeefServices.count !== 1) throw new Error('the gate wallet must broadcast through BSV Broadcaster alone')
   const monitor = new Monitor(Monitor.createDefaultWalletMonitorOptions(chain, storage, services))
   const wallet = new Wallet({ chain, keyDeriver, storage, services, monitor })
 

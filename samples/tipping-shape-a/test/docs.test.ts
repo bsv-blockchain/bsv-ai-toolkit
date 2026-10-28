@@ -22,6 +22,8 @@ const IMAGE = 'ghcr.io/bsv-blockchain/bsv-tipping-demo'
 function configEnvVars(): string[] {
   const names = new Set([...read('server', 'config.ts').matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)].map(m => m[1]))
   names.delete('NODE_ENV')
+  // The deprecated alias of BSV_BROADCASTER_URL: still read, never documented as a setting to use.
+  names.delete('ARCADE_URL')
   return [...names].sort()
 }
 
@@ -119,8 +121,13 @@ describe('HOSTING.md', () => {
 
   it('documents every variable server/config.ts reads', () => {
     const vars = configEnvVars()
-    expect(vars).toEqual(['ARCADE_URL', 'BSV_NETWORK', 'CREATOR_IDENTITY_KEY', 'DATA_DIR', 'PORT', 'PUBLIC_ORIGIN', 'TRUST_PROXY'])
+    expect(vars).toEqual(['BSV_BROADCASTER_URL', 'BSV_NETWORK', 'CREATOR_IDENTITY_KEY', 'DATA_DIR', 'PORT', 'PUBLIC_ORIGIN', 'TRUST_PROXY'])
     for (const v of vars) expect(md, v).toContain(`\`${v}`)
+  })
+
+  it('reads ARCADE_URL only as the deprecated fallback, and says so', () => {
+    expect(read('server', 'config.ts')).toMatch(/env\.ARCADE_URL/)
+    expect(md).toMatch(/`ARCADE_URL`[^\n]*deprecated/i)
   })
 })
 

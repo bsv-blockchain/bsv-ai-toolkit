@@ -12,7 +12,7 @@ import Database from 'better-sqlite3'
 import request from 'supertest'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../server/app.js'
-import { Arcade, verdictOf } from '../server/arcade.js'
+import { BroadcasterClient, verdictOf } from '../server/broadcaster.js'
 import { claimMessage, internalizedMessage, isIdentityKey, SIGNATURE_KEY_ID, TIPS_PROTOCOL, verifyCreatorSignature } from '../server/auth.js'
 import { efHexFromAtomicBeef, outputPaysScript } from '../server/beef.js'
 import { DEFAULT_TRUST_PROXY, KNOWN_HOSTS, loadServerConfig } from '../server/config.js'
@@ -23,7 +23,7 @@ import { Broadcaster } from '../server/sse.js'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
 const VERSIONS = fileURLToPath(new URL('../../../content/versions.json', import.meta.url))
-const ARCADE = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const BROADCASTER = 'https://arcade-testnet-us-1.bsvblockchain.tech'
 const PLACEHOLDER = 'a'.repeat(64)
 const COMPETITOR = 'b'.repeat(64)
 const HOUR = 60 * 60 * 1000
@@ -91,10 +91,10 @@ type Reply = { status: number; json?: unknown; text?: string } | Error
 type Call = { url: string; method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }
 
 /**
- * A fake fetch for Arcade: POST /tx answers `post`; GET /tx/{txid} answers `gets` in order (the last one repeats).
+ * A fake fetch for BSV Broadcaster: POST /tx answers `post`; GET /tx/{txid} answers `gets` in order (the last one repeats).
  * With `hold`, every answer waits for it, so concurrent requests overlap in flight.
  */
-function fakeArcade(post: Reply, gets: Reply[] = [], hold?: Promise<void>) {
+function fakeBroadcaster(post: Reply, gets: Reply[] = [], hold?: Promise<void>) {
   const calls: Call[] = []
   let g = 0
   const answer = (r: Reply): Response => {
@@ -122,23 +122,23 @@ afterEach(() => {
 })
 
 // Tests run from one address, so the rate limit is off unless a test sets it.
-function relay(arc: ReturnType<typeof fakeArcade>, env: NodeJS.ProcessEnv = {}, limits: Partial<Limits> = { tipBurst: 1000 }) {
+function relay(arc: ReturnType<typeof fakeBroadcaster>, env: NodeJS.ProcessEnv = {}, limits: Partial<Limits> = { tipBurst: 1000 }) {
   const cfg = loadServerConfig(env, quiet)
   const db = openDb(':memory:')
   opened.push(db)
   const broadcaster = new Broadcaster()
   const emit = vi.spyOn(broadcaster, 'emit')
-  const arcade = new Arcade(cfg.arcadeUrl, arc.fetchImpl)
+  const broadcasterClient = new BroadcasterClient(cfg.broadcasterUrl, arc.fetchImpl)
   const clock = { now: Date.now() }
-  const app = createApp(cfg, { db, arcade, broadcaster, limits, now: () => clock.now })
+  const app = createApp(cfg, { db, broadcasterClient, broadcaster, limits, now: () => clock.now })
   const events = (name: string) => emit.mock.calls.filter(([e]) => e === name).map(([, d]) => d as any)
   return { app, db, events, cfg, clock }
 }
 
 const seen = (txid: string, hold?: Promise<void>) =>
-  fakeArcade({ status: 202, json: fixture('submit-202', txid) }, [{ status: 200, json: fixture('status-seen', txid) }], hold)
+  fakeBroadcaster({ status: 202, json: fixture('submit-202', txid) }, [{ status: 200, json: fixture('status-seen', txid) }], hold)
 
-/** A promise to hold the fake Arcade with, and its release. */
+/** A promise to hold the fake BSV Broadcaster with, and its release. */
 function gate() {
   let release!: () => void
   const held = new Promise<void>(resolve => (release = resolve))
@@ -152,7 +152,7 @@ async function calledTimes(spy: { mock: { calls: unknown[] } }, n: number) {
 }
 
 describe('POST /api/tips', () => {
-  it('POST /api/tips submits EF (not BEEF) to {arcade}/tx as text/plain', async () => {
+  it('POST /api/tips submits EF (not BEEF) to {broadcaster}/tx as text/plain', async () => {
     const t = await tip()
     const arc = seen(t.txid)
     const { app, db } = relay(arc)
@@ -161,13 +161,13 @@ describe('POST /api/tips', () => {
     expect(res.body).toMatchObject({ txid: t.txid, txStatus: 'SEEN_ON_NETWORK', verdict: 'seen-no-competitor', competingTxs: [] })
 
     const post = arc.calls.find(c => c.method === 'POST')!
-    expect(post.url).toBe(`${ARCADE}/tx`)
+    expect(post.url).toBe(`${BROADCASTER}/tx`)
     expect(post.headers['Content-Type']).toBe('text/plain')
     expect(post.body).toMatch(/^[0-9a-f]{8}0000000000ef/)
     expect(post.body).toBe(t.child.toHexEF())
     expect(post.body).not.toMatch(/^(0100beef|0200beef|01010101)/)
     // POST is provisional: the verdict comes from GET /tx/{txid}.
-    expect(arc.calls.map(c => `${c.method} ${c.url}`)).toEqual([`POST ${ARCADE}/tx`, `GET ${ARCADE}/tx/${t.txid}`])
+    expect(arc.calls.map(c => `${c.method} ${c.url}`)).toEqual([`POST ${BROADCASTER}/tx`, `GET ${BROADCASTER}/tx/${t.txid}`])
     for (const c of arc.calls) expect(c.signal).toBeInstanceOf(AbortSignal)
     const beefId = createHash('sha256').update(Buffer.from(t.beef, 'hex')).digest('hex')
     expect(db.getTip(t.txid)).toMatchObject({
@@ -200,7 +200,7 @@ describe('POST /api/tips', () => {
     const { app, db, events } = relay(arc)
     const adds = vi.spyOn(db, 'addRemittance')
     const both = Promise.all([request(app).post('/api/tips').send(body(t)), request(app).post('/api/tips').send(body(t))])
-    await calledTimes(adds, 2) // both requests are in flight while Arcade holds its answer
+    await calledTimes(adds, 2) // both requests are in flight while BSV Broadcaster holds its answer
     release()
     const [a, b] = await both
     expect(b.body).toEqual(a.body)
@@ -229,12 +229,12 @@ describe('POST /api/tips', () => {
     expect(a.body.remittances).toHaveLength(2)
     expect(b.body).toEqual(a.body)
     expect(db.getTip(t.txid)!.remittances.map(r => r.derivationPrefix).sort()).toEqual(['YXR0YWNrZXI=', 'aG9uZXN0'].sort())
-    // Each new candidate is announced; Arcade is asked once.
+    // Each new candidate is announced; BSV Broadcaster is asked once.
     expect(events('tip')).toHaveLength(2)
     expect(arc.calls.filter(c => c.method === 'POST')).toHaveLength(1)
   })
 
-  it('a new candidate for a settled tip is stored and announced without asking Arcade again', async () => {
+  it('a new candidate for a settled tip is stored and announced without asking BSV Broadcaster again', async () => {
     const t = await tip()
     const arc = seen(t.txid)
     const { app, db, events } = relay(arc)
@@ -261,7 +261,7 @@ describe('POST /api/tips', () => {
 
   it('2xx then REJECTED is stored as terminal', async () => {
     const t = await tip()
-    const arc = fakeArcade({ status: 202, json: fixture('submit-202', t.txid) }, [{ status: 200, json: fixture('status-rejected', t.txid) }])
+    const arc = fakeBroadcaster({ status: 202, json: fixture('submit-202', t.txid) }, [{ status: 200, json: fixture('status-rejected', t.txid) }])
     const { app, db, events } = relay(arc)
     const res = await request(app).post('/api/tips').send(body(t))
     expect(res.status).toBe(200)
@@ -274,7 +274,7 @@ describe('POST /api/tips', () => {
 
   it('a repeat POST re-reads a terminal tip whose REJECTED may not be final', async () => {
     const t = await tip()
-    const arc = fakeArcade(
+    const arc = fakeBroadcaster(
       { status: 202, json: fixture('submit-202', t.txid) },
       [{ status: 200, json: fixture('status-rejected', t.txid) }, { status: 200, json: fixture('status-seen', t.txid) }],
     )
@@ -288,7 +288,7 @@ describe('POST /api/tips', () => {
 
   it('an HTTP 400 with an ARC code is terminal without a status read, and final', async () => {
     const t = await tip()
-    const arc = fakeArcade({ status: 400, json: { error: 'malformed transaction or invalid unlocking script', status: 461, title: 'malformed', txid: t.txid } })
+    const arc = fakeBroadcaster({ status: 400, json: { error: 'malformed transaction or invalid unlocking script', status: 461, title: 'malformed', txid: t.txid } })
     const { app } = relay(arc)
     const res = await request(app).post('/api/tips').send(body(t))
     expect(res.status).toBe(200)
@@ -300,7 +300,7 @@ describe('POST /api/tips', () => {
 
   it('already known re-reads status before deciding', async () => {
     const t = await tip()
-    const arc = fakeArcade(
+    const arc = fakeBroadcaster(
       { status: 400, json: { error: 'transaction already known', reason: 'txn-already-known', txid: t.txid } },
       [{ status: 200, json: fixture('status-seen', t.txid) }],
     )
@@ -312,7 +312,7 @@ describe('POST /api/tips', () => {
 
   it('a non-validation 4xx is not a verdict (R18)', async () => {
     const t = await tip()
-    const arc = fakeArcade({ status: 401, json: { title: 'unauthorized' } })
+    const arc = fakeBroadcaster({ status: 401, json: { title: 'unauthorized' } })
     const { app, db } = relay(arc)
     const res = await request(app).post('/api/tips').send(body(t))
     expect(res.status).toBe(200)
@@ -323,9 +323,9 @@ describe('POST /api/tips', () => {
     expect(arc.calls.map(c => c.method)).toEqual(['POST'])
   })
 
-  it('Arcade unreachable keeps the row as pending and answers 502 transient', async () => {
+  it('BSV Broadcaster unreachable keeps the row as pending and answers 502 transient', async () => {
     const t = await tip()
-    const down = fakeArcade(new TypeError('fetch failed'))
+    const down = fakeBroadcaster(new TypeError('fetch failed'))
     const { app, db, events, cfg } = relay(down)
     const res = await request(app).post('/api/tips').send(body(t))
     expect(res.status).toBe(502)
@@ -336,11 +336,11 @@ describe('POST /api/tips', () => {
     expect(events('tip')).toHaveLength(1)
     expect(events('status')).toHaveLength(0)
 
-    // The browser's retry submits again once Arcade is back; the tip is still announced once.
+    // The browser's retry submits again once BSV Broadcaster is back; the tip is still announced once.
     const up = seen(t.txid)
     const events2 = new Broadcaster()
     const emit2 = vi.spyOn(events2, 'emit')
-    const again = await request(createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl, up.fetchImpl), broadcaster: events2 }))
+    const again = await request(createApp(cfg, { db, broadcasterClient: new BroadcasterClient(cfg.broadcasterUrl, up.fetchImpl), broadcaster: events2 }))
       .post('/api/tips')
       .send(body(t))
     expect(again.status).toBe(200)
@@ -351,7 +351,7 @@ describe('POST /api/tips', () => {
 
   it('txid that does not match the BEEF is 400', async () => {
     const t = await tip()
-    const arc = fakeArcade({ status: 202, json: {} })
+    const arc = fakeBroadcaster({ status: 202, json: {} })
     const { app, db } = relay(arc)
     const res = await request(app).post('/api/tips').send(body(t, { txid: 'c'.repeat(64) }))
     expect(res.status).toBe(400)
@@ -360,7 +360,7 @@ describe('POST /api/tips', () => {
     expect(db.listTips()).toHaveLength(0)
   })
 
-  it('rejects malformed tips with 400 and never calls Arcade', async () => {
+  it('rejects malformed tips with 400 and never calls BSV Broadcaster', async () => {
     const t = await tip()
     const plainBeef = Utils.toHex(t.child.toBEEF())
     const remit = (r: Record<string, unknown>) => ({ remittance: { senderIdentityKey: SENDER, derivationPrefix: 'cHJlZml4MDE=', derivationSuffix: 'c3VmZml4MDE=', ...r } })
@@ -381,7 +381,7 @@ describe('POST /api/tips', () => {
       ['derivationPrefix empty', remit({ derivationPrefix: '' })],
       ['derivationSuffix not base64', remit({ derivationSuffix: 'not base64!' })],
     ]
-    const arc = fakeArcade({ status: 202, json: {} })
+    const arc = fakeBroadcaster({ status: 202, json: {} })
     const { app, db } = relay(arc)
     for (const [why, over] of bad) {
       const res = await request(app).post('/api/tips').send(body(t, over))
@@ -396,7 +396,7 @@ describe('POST /api/tips', () => {
 
   it('caps the request body size', async () => {
     const t = await tip()
-    const arc = fakeArcade({ status: 202, json: {} })
+    const arc = fakeBroadcaster({ status: 202, json: {} })
     const { app } = relay(arc)
     const res = await request(app).post('/api/tips').send(body(t, { beef: 'ab'.repeat(140 * 1024) })) // ~280 KB > 256 KB
     expect(res.status).toBe(413)
@@ -405,7 +405,7 @@ describe('POST /api/tips', () => {
   })
 
   it('rate-limits POST /api/tips per client address', async () => {
-    const { app, clock } = relay(fakeArcade({ status: 202, json: {} }), {}, {})
+    const { app, clock } = relay(fakeBroadcaster({ status: 202, json: {} }), {}, {})
     const post = (ip = '203.0.113.7') => request(app).post('/api/tips').set('X-Forwarded-For', ip).send({})
     for (let i = 0; i < 5; i++) expect((await post()).status).toBe(400) // the burst: through to validation
     const limited = await post()
@@ -418,7 +418,7 @@ describe('POST /api/tips', () => {
   })
 
   it('rate-limits IPv6 clients by their /64, and IPv4-mapped clients by their IPv4 address', async () => {
-    const { app } = relay(fakeArcade({ status: 202, json: {} }), {}, {})
+    const { app } = relay(fakeBroadcaster({ status: 202, json: {} }), {}, {})
     const post = (ip: string) => request(app).post('/api/tips').set('X-Forwarded-For', ip).send({})
     for (let i = 1; i <= 5; i++) expect((await post(`2001:db8:1:2::${i}`)).status).toBe(400)
     expect((await post('2001:db8:1:2:ffff:ffff:ffff:ffff')).status).toBe(429) // same /64, new address
@@ -428,7 +428,7 @@ describe('POST /api/tips', () => {
   })
 
   it('TRUST_PROXY=false ignores X-Forwarded-For', async () => {
-    const { app } = relay(fakeArcade({ status: 202, json: {} }), { TRUST_PROXY: 'false' }, {})
+    const { app } = relay(fakeBroadcaster({ status: 202, json: {} }), { TRUST_PROXY: 'false' }, {})
     for (let i = 0; i < 5; i++) expect((await request(app).post('/api/tips').set('X-Forwarded-For', `203.0.113.${i}`).send({})).status).toBe(400)
     expect((await request(app).post('/api/tips').set('X-Forwarded-For', '203.0.113.99').send({})).status).toBe(429)
   })
@@ -483,11 +483,11 @@ describe('BEEF per candidate', () => {
 })
 
 describe('fabricated tips', () => {
-  // Any well-formed AtomicBEEF can be posted, funded or not; Arcade rejects it. It must cost the relay little:
+  // Any well-formed AtomicBEEF can be posted, funded or not; BSV Broadcaster rejects it. It must cost the relay little:
   // no BEEF in lists or events, and it is pruned after a day.
   it('a fabricated tip is stored terminal, its BEEF served only on demand, and pruned after a day', async () => {
     const fake = await buildTip(700)
-    const arc = fakeArcade({ status: 400, json: { error: 'invalid unlocking script', status: 461 } })
+    const arc = fakeBroadcaster({ status: 400, json: { error: 'invalid unlocking script', status: 461 } })
     const { app, db, events, clock } = relay(arc)
     const res = await request(app).post('/api/tips').send(body(fake, { satoshis: 700 }))
     expect(res.body).toMatchObject({ verdict: 'terminal' })
@@ -505,7 +505,7 @@ describe('fabricated tips', () => {
     clock.now += 25 * HOUR
     const t = await tip()
     const arc2 = seen(t.txid)
-    const later = createApp(loadServerConfig({}, quiet), { db, arcade: new Arcade(ARCADE, arc2.fetchImpl), now: () => clock.now, limits: { tipBurst: 1000 } })
+    const later = createApp(loadServerConfig({}, quiet), { db, broadcasterClient: new BroadcasterClient(BROADCASTER, arc2.fetchImpl), now: () => clock.now, limits: { tipBurst: 1000 } })
     expect((await request(later).post('/api/tips').send(body(t))).status).toBe(200)
     expect(db.getTip(fake.txid)).toBeUndefined()
     expect(db.getTip(t.txid)).toBeDefined()
@@ -518,9 +518,9 @@ describe('tips: list, detail, status, internalized', () => {
     db.addRemittance(txid, { outputIndex: 0, satoshis: 1000, senderIdentityKey: SENDER, derivationPrefix: 'cA==', derivationSuffix: 'cw==' }, beefHex, 16)
   }
 
-  it('GET /api/tips/:txid/status re-reads Arcade and emits status on change', async () => {
+  it('GET /api/tips/:txid/status re-reads BSV Broadcaster and emits status on change', async () => {
     const txid = 'd'.repeat(64)
-    const arc = fakeArcade({ status: 202, json: {} }, [{ status: 200, json: fixture('status-seen', txid) }])
+    const arc = fakeBroadcaster({ status: 202, json: {} }, [{ status: 200, json: fixture('status-seen', txid) }])
     const { app, db, events, clock } = relay(arc)
     seed(db, txid)
     const first = await request(app).get(`/api/tips/${txid}/status`)
@@ -529,19 +529,19 @@ describe('tips: list, detail, status, internalized', () => {
     expect(db.getTip(txid)).toMatchObject({ txStatus: 'SEEN_ON_NETWORK', verdict: 'seen-no-competitor' })
     expect(events('status')).toEqual([expect.objectContaining({ txid, verdict: 'seen-no-competitor' })])
 
-    // Within 2 s of a live read the stored status answers; after that Arcade is read again.
+    // Within 2 s of a live read the stored status answers; after that BSV Broadcaster is read again.
     expect((await request(app).get(`/api/tips/${txid}/status`)).body).toEqual(first.body)
     expect(arc.calls).toHaveLength(1)
     clock.now += 2_000
     expect((await request(app).get(`/api/tips/${txid}/status`)).body).toMatchObject({ verdict: 'seen-no-competitor' })
     expect(events('status')).toHaveLength(1) // unchanged: no new event
-    expect(arc.calls.map(c => `${c.method} ${c.url}`)).toEqual([`GET ${ARCADE}/tx/${txid}`, `GET ${ARCADE}/tx/${txid}`])
+    expect(arc.calls.map(c => `${c.method} ${c.url}`)).toEqual([`GET ${BROADCASTER}/tx/${txid}`, `GET ${BROADCASTER}/tx/${txid}`])
   })
 
-  it('concurrent status reads of one txid share one Arcade read', async () => {
+  it('concurrent status reads of one txid share one BSV Broadcaster read', async () => {
     const txid = 'd'.repeat(64)
     const { held, release } = gate()
-    const arc = fakeArcade({ status: 202, json: {} }, [{ status: 200, json: fixture('status-seen', txid) }], held)
+    const arc = fakeBroadcaster({ status: 202, json: {} }, [{ status: 200, json: fixture('status-seen', txid) }], held)
     const { app, db } = relay(arc)
     seed(db, txid)
     const lookups = vi.spyOn(db, 'getTip') // once per request, when the :txid is checked
@@ -556,7 +556,7 @@ describe('tips: list, detail, status, internalized', () => {
   it('a competing tx keeps the verdict pending; REJECTED blaming inputs carries the re-read note', async () => {
     const txid = 'd'.repeat(64)
     const competing = { ...fixture('status-seen', txid), competingTxs: [COMPETITOR] }
-    const arc = fakeArcade({ status: 202, json: {} }, [{ status: 200, json: competing }, { status: 200, json: fixture('status-rejected', txid) }])
+    const arc = fakeBroadcaster({ status: 202, json: {} }, [{ status: 200, json: competing }, { status: 200, json: fixture('status-rejected', txid) }])
     const { app, db, clock } = relay(arc)
     seed(db, txid)
     expect((await request(app).get(`/api/tips/${txid}/status`)).body).toMatchObject({ verdict: 'pending', competingTxs: [COMPETITOR] })
@@ -565,9 +565,9 @@ describe('tips: list, detail, status, internalized', () => {
     expect(rejected.body).toMatchObject({ verdict: 'terminal', note: expect.stringMatching(/may not be final/) })
   })
 
-  it('a status read Arcade has never seen resubmits the stored EF', async () => {
+  it('a status read BSV Broadcaster has never seen resubmits the stored EF', async () => {
     const t = await tip()
-    const arc = fakeArcade({ status: 202, json: fixture('submit-202', t.txid) }, [{ status: 404, json: {} }, { status: 200, json: fixture('status-seen', t.txid) }])
+    const arc = fakeBroadcaster({ status: 202, json: fixture('submit-202', t.txid) }, [{ status: 404, json: {} }, { status: 200, json: fixture('status-seen', t.txid) }])
     const { app, db } = relay(arc)
     seed(db, t.txid, t.beef)
     const res = await request(app).get(`/api/tips/${t.txid}/status`)
@@ -576,14 +576,14 @@ describe('tips: list, detail, status, internalized', () => {
     expect(post.body).toBe(t.child.toHexEF())
   })
 
-  it('GET /api/tips/:txid/status is rate limited like the other Arcade reads', async () => {
+  it('GET /api/tips/:txid/status is rate limited like the other BSV Broadcaster reads', async () => {
     const txid = 'd'.repeat(64)
-    const arc = fakeArcade({ status: 202, json: {} }, [{ status: 200, json: fixture('status-seen', txid) }])
+    const arc = fakeBroadcaster({ status: 202, json: {} }, [{ status: 200, json: fixture('status-seen', txid) }])
     const { app, db, clock } = relay(arc, {}, { tipBurst: 1000, readBurst: 2, readsPerMinute: 1 })
     seed(db, txid)
     for (let i = 0; i < 2; i++) {
       expect((await request(app).get(`/api/tips/${txid}/status`)).status).toBe(200)
-      clock.now += 2_000 // past the fresh window: each read would reach Arcade
+      clock.now += 2_000 // past the fresh window: each read would reach BSV Broadcaster
     }
     const limited = await request(app).get(`/api/tips/${txid}/status`)
     expect(limited.status).toBe(429)
@@ -591,9 +591,9 @@ describe('tips: list, detail, status, internalized', () => {
     expect(arc.calls).toHaveLength(2)
   })
 
-  it('status of an unknown tip is 404 and an Arcade failure is 502 transient', async () => {
+  it('status of an unknown tip is 404 and a BSV Broadcaster failure is 502 transient', async () => {
     const txid = 'd'.repeat(64)
-    const arc = fakeArcade(new TypeError('fetch failed'), [new TypeError('fetch failed')])
+    const arc = fakeBroadcaster(new TypeError('fetch failed'), [new TypeError('fetch failed')])
     const { app, db } = relay(arc)
     expect((await request(app).get(`/api/tips/${'e'.repeat(64)}/status`)).status).toBe(404)
     expect((await request(app).get('/api/tips/nothex/status')).status).toBe(400)
@@ -608,7 +608,7 @@ describe('tips: list, detail, status, internalized', () => {
   })
 
   it('GET /api/tips lists stored tips newest first with their candidates', async () => {
-    const { app, db } = relay(fakeArcade({ status: 202, json: {} }))
+    const { app, db } = relay(fakeBroadcaster({ status: 202, json: {} }))
     seed(db, '1'.repeat(64))
     seed(db, '2'.repeat(64))
     const list = await request(app).get('/api/tips')
@@ -618,7 +618,7 @@ describe('tips: list, detail, status, internalized', () => {
   })
 
   it('POST internalized needs the creator signature over internalized:<origin>:<txid>', async () => {
-    const { app, db } = relay(fakeArcade({ status: 202, json: {} }))
+    const { app, db } = relay(fakeBroadcaster({ status: 202, json: {} }))
     const txid = '1'.repeat(64)
     seed(db, txid)
     const mark = (signature?: string, id = txid) => request(app).post(`/api/tips/${id}/internalized`).send(signature === undefined ? {} : { signature })
@@ -642,19 +642,19 @@ describe('tips: list, detail, status, internalized', () => {
 
   it('POST rebroadcast submits the stored EF again, then reads the status', async () => {
     const t = await tip()
-    const arc = fakeArcade({ status: 202, json: fixture('submit-202', t.txid) }, [{ status: 200, json: fixture('status-rejected', t.txid) }])
+    const arc = fakeBroadcaster({ status: 202, json: fixture('submit-202', t.txid) }, [{ status: 200, json: fixture('status-rejected', t.txid) }])
     const { app } = relay(arc)
     await request(app).post('/api/tips').send(body(t))
     arc.calls.length = 0
     const res = await request(app).post(`/api/tips/${t.txid}/rebroadcast`)
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({ txid: t.txid, txStatus: 'REJECTED', verdict: 'terminal' })
-    expect(arc.calls.map(c => `${c.method} ${c.url.replace(ARCADE, '')}`)).toEqual(['POST /tx', `GET /tx/${t.txid}`])
+    expect(arc.calls.map(c => `${c.method} ${c.url.replace(BROADCASTER, '')}`)).toEqual(['POST /tx', `GET /tx/${t.txid}`])
     expect(arc.calls[0].body).toBe(t.child.toHexEF())
     expect((await request(app).post(`/api/tips/${'9'.repeat(64)}/rebroadcast`)).status).toBe(404)
   })
 
-  it('GET /api/tx/:id serves an ancestor from Arcade as plain hex with its merkle path', async () => {
+  it('GET /api/tx/:id serves an ancestor from BSV Broadcaster as plain hex with its merkle path', async () => {
     const t = await tip()
     const parent = t.child.inputs[0].sourceTransaction!
     const parentId = parent.id('hex')
@@ -663,7 +663,7 @@ describe('tips: list, detail, status, internalized', () => {
     efParent.addOutput({ lockingScript: new P2PKH().lock(PrivateKey.fromRandom().toAddress('testnet')), satoshis: 4000 })
     const ancestorId = efParent.id('hex')
     const path = new MerklePath(900001, [[{ offset: 0, hash: ancestorId, txid: true }]]).toHex()
-    const arc = fakeArcade({ status: 500 }, [
+    const arc = fakeBroadcaster({ status: 500 }, [
       { status: 200, json: { txid: ancestorId, txStatus: 'MINED', rawTx: efParent.toHexEF(), merklePath: path } },
       { status: 404, json: { title: 'not found' } },
       { status: 200, json: { txid: ancestorId, txStatus: 'SEEN_ON_NETWORK' } },
@@ -674,8 +674,8 @@ describe('tips: list, detail, status, internalized', () => {
     const ok = await request(app).get(`/api/tx/${ancestorId.toUpperCase()}`)
     expect(ok.status).toBe(200)
     expect(ok.body).toEqual({ txid: ancestorId, rawTx: efParent.toHex(), merklePath: path }) // EF re-read as plain
-    expect(arc.calls[0]).toMatchObject({ method: 'GET', url: `${ARCADE}/tx/${ancestorId}`, signal: expect.any(AbortSignal) })
-    expect((await request(app).get(`/api/tx/${ancestorId}`)).status).toBe(404) // Arcade never saw it
+    expect(arc.calls[0]).toMatchObject({ method: 'GET', url: `${BROADCASTER}/tx/${ancestorId}`, signal: expect.any(AbortSignal) })
+    expect((await request(app).get(`/api/tx/${ancestorId}`)).status).toBe(404) // BSV Broadcaster never saw it
     expect((await request(app).get(`/api/tx/${ancestorId}`)).body.error).toMatch(/no rawTx/)
     expect((await request(app).get(`/api/tx/${parentId}`)).body.error).toMatch(new RegExp(`hashes to ${ancestorId}`))
     expect((await request(app).get(`/api/tx/${ancestorId}`)).body).toMatchObject({ transient: true })
@@ -685,9 +685,9 @@ describe('tips: list, detail, status, internalized', () => {
     expect(limited.headers['retry-after']).toMatch(/^\d+$/)
   })
 
-  it('a transient Arcade answer never overwrites a stored status', async () => {
+  it('a transient BSV Broadcaster answer never overwrites a stored status', async () => {
     const t = await tip()
-    const { app, db, events } = relay(fakeArcade(new TypeError('fetch failed')))
+    const { app, db, events } = relay(fakeBroadcaster(new TypeError('fetch failed')))
     seed(db, t.txid, t.beef) // on-network-not-seen: a repeat POST submits again
     const res = await request(app).post('/api/tips').send(body(t))
     expect(res.status).toBe(502)
@@ -697,19 +697,19 @@ describe('tips: list, detail, status, internalized', () => {
 })
 
 describe('config and creator', () => {
-  it('GET /api/config answers network, originator and the claim nonce, never ARCADE_URL', async () => {
-    const { app } = relay(fakeArcade({ status: 202, json: {} }), { PUBLIC_ORIGIN: 'https://tipping.example.com' })
+  it('GET /api/config answers network, originator and the claim nonce, never BSV_BROADCASTER_URL', async () => {
+    const { app } = relay(fakeBroadcaster({ status: 202, json: {} }), { PUBLIC_ORIGIN: 'https://tipping.example.com' })
     const res = await request(app).get('/api/config')
     expect(res.body).toEqual({ network: 'testnet', originator: 'https://tipping.example.com', claimNonce: expect.stringMatching(/^[0-9a-f]{32}$/) })
     expect((await request(app).get('/api/config')).body.claimNonce).toBe(res.body.claimNonce)
 
-    const secret = relay(fakeArcade({ status: 202, json: {} }), { ARCADE_URL: 'https://user:s3cret@arcade.example.com/private/v1?token=abc' })
+    const secret = relay(fakeBroadcaster({ status: 202, json: {} }), { BSV_BROADCASTER_URL: 'https://user:s3cret@broadcaster.example.com/private/v1?token=abc' })
     const text = (await request(secret.app).get('/api/config')).text
-    for (const leak of ['arcade.example.com', 'user', 's3cret', 'private', 'token', 'abc']) expect(text).not.toContain(leak)
+    for (const leak of ['broadcaster.example.com', 'user', 's3cret', 'private', 'token', 'abc']) expect(text).not.toContain(leak)
   })
 
   it('creator claim: first claim wins, second different key is 409', async () => {
-    const { app, db } = relay(fakeArcade({ status: 202, json: {} }))
+    const { app, db } = relay(fakeBroadcaster({ status: 202, json: {} }))
     const creator = await identityOf(creatorWallet)
     const other = await identityOf(otherWallet)
     const post = (b: object) => request(app).post('/api/creator').send(b)
@@ -740,7 +740,7 @@ describe('config and creator', () => {
 
   it('CREATOR_IDENTITY_KEY fixes the creator; a claim by another key is 409', async () => {
     const creator = await identityOf(creatorWallet)
-    const { app } = relay(fakeArcade({ status: 202, json: {} }), { CREATOR_IDENTITY_KEY: creator })
+    const { app } = relay(fakeBroadcaster({ status: 202, json: {} }), { CREATOR_IDENTITY_KEY: creator })
     expect((await request(app).get('/api/config')).body.creatorIdentityKey).toBe(creator)
     expect((await request(app).post('/api/creator').send(await claimBody(app, otherWallet))).status).toBe(409)
     expect((await request(app).post('/api/creator').send(await claimBody(app, creatorWallet))).status).toBe(200)
@@ -753,7 +753,7 @@ describe('SSE', () => {
     const broadcaster = new Broadcaster()
     const db = openDb(':memory:')
     opened.push(db)
-    const server = createApp(loadServerConfig({}, quiet), { db, arcade: new Arcade(ARCADE, fakeArcade({ status: 202 }).fetchImpl), broadcaster }).listen(0)
+    const server = createApp(loadServerConfig({}, quiet), { db, broadcasterClient: new BroadcasterClient(BROADCASTER, fakeBroadcaster({ status: 202 }).fetchImpl), broadcaster }).listen(0)
     try {
       await new Promise<void>(resolve => server.once('listening', resolve))
       const { port } = server.address() as AddressInfo
@@ -848,7 +848,7 @@ describe('SSE', () => {
   })
 })
 
-describe('arcade.ts', () => {
+describe('broadcaster.ts', () => {
   it('verdictOf: final at SEEN with no competitor; terminal for REJECTED and DOUBLE_SPEND_ATTEMPTED', () => {
     expect(verdictOf({ txStatus: 'SEEN_ON_NETWORK' })).toBe('seen-no-competitor')
     expect(verdictOf({ txStatus: 'SEEN_MULTIPLE_NODES', competingTxs: [] })).toBe('seen-no-competitor')
@@ -861,25 +861,25 @@ describe('arcade.ts', () => {
   })
 
   it('submit trims the hex, refuses BEEF and classifies transient answers', async () => {
-    const arc = fakeArcade({ status: 503, json: {} })
-    const a = new Arcade(`${ARCADE}/`, arc.fetchImpl, 1234)
+    const arc = fakeBroadcaster({ status: 503, json: {} })
+    const a = new BroadcasterClient(`${BROADCASTER}/`, arc.fetchImpl, 1234)
     expect(await a.submit(' 0100000000\n')).toMatchObject({ postStatus: 503, transient: true })
-    expect(arc.calls[0]).toMatchObject({ url: `${ARCADE}/tx`, body: '0100000000' })
+    expect(arc.calls[0]).toMatchObject({ url: `${BROADCASTER}/tx`, body: '0100000000' })
     await expect(a.submit('01010101abcd')).rejects.toThrow(/BEEF/)
-    const locktime = new Arcade(ARCADE, fakeArcade({ status: 400, json: { status: 476 } }).fetchImpl)
+    const locktime = new BroadcasterClient(BROADCASTER, fakeBroadcaster({ status: 400, json: { status: 476 } }).fetchImpl)
     expect(await locktime.submit('0100000000')).toMatchObject({ postStatus: 400, transient: true })
-    const terminal = new Arcade(ARCADE, fakeArcade({ status: 422, json: { status: 461 } }).fetchImpl)
+    const terminal = new BroadcasterClient(BROADCASTER, fakeBroadcaster({ status: 422, json: { status: 461 } }).fetchImpl)
     expect(await terminal.submit('0100000000')).toMatchObject({ postStatus: 422, transient: false })
   })
 
   it('waitForSeen polls until seen and stops at the deadline', async () => {
     const txid = 'd'.repeat(64)
-    const arc = fakeArcade({ status: 202 }, [{ status: 200, json: { txid, txStatus: 'RECEIVED' } }, { status: 200, json: fixture('status-seen', txid) }])
-    const a = new Arcade(ARCADE, arc.fetchImpl)
+    const arc = fakeBroadcaster({ status: 202 }, [{ status: 200, json: { txid, txStatus: 'RECEIVED' } }, { status: 200, json: fixture('status-seen', txid) }])
+    const a = new BroadcasterClient(BROADCASTER, arc.fetchImpl)
     expect(await a.waitForSeen(txid, 5000, 1)).toMatchObject({ txStatus: 'SEEN_ON_NETWORK' })
-    const slow = fakeArcade({ status: 202 }, [{ status: 200, json: { txid, txStatus: 'RECEIVED' } }])
+    const slow = fakeBroadcaster({ status: 202 }, [{ status: 200, json: { txid, txStatus: 'RECEIVED' } }])
     const started = Date.now()
-    expect(await new Arcade(ARCADE, slow.fetchImpl).waitForSeen(txid, 30, 10)).toMatchObject({ txStatus: 'RECEIVED' })
+    expect(await new BroadcasterClient(BROADCASTER, slow.fetchImpl).waitForSeen(txid, 30, 10)).toMatchObject({ txStatus: 'RECEIVED' })
     expect(Date.now() - started).toBeLessThan(1000)
   })
 })
@@ -1060,15 +1060,15 @@ describe('db.ts', () => {
 })
 
 describe('config.ts', () => {
-  it('KNOWN_HOSTS match content/versions.json services.arcade.hosts plus arcade.gorillapool.io on mainnet', () => {
-    const h = JSON.parse(readFileSync(VERSIONS, 'utf8')).services.arcade.hosts
+  it('KNOWN_HOSTS match content/versions.json services.broadcaster.hosts plus arcade.gorillapool.io on mainnet', () => {
+    const h = JSON.parse(readFileSync(VERSIONS, 'utf8')).services.broadcaster.hosts
     const names = (urls: string[]) => urls.map(u => new URL(u).hostname)
     expect(KNOWN_HOSTS).toEqual({ testnet: names(h.testnet), mainnet: [...names(h.mainnet), 'arcade.gorillapool.io'], ttn: names(h.ttn) })
   })
 
-  it('warns at boot on a ttn Arcade host', () => {
+  it('warns at boot on a ttn BSV Broadcaster host', () => {
     const lines: string[] = []
-    expect(loadServerConfig({ ARCADE_URL: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech' }, l => lines.push(l)).arcadeUrl).toMatch(/ttn/)
+    expect(loadServerConfig({ BSV_BROADCASTER_URL: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech' }, l => lines.push(l)).broadcasterUrl).toMatch(/ttn/)
     expect(lines.join('\n')).toMatch(/neither testnet nor mainnet/)
     const quietLines: string[] = []
     loadServerConfig({}, l => quietLines.push(l))

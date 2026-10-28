@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Beef, P2PKH, Transaction, Utils } from '@bsv/sdk'
 import { SAMPLE_ROOT, createApp } from '../server/app.js'
-import { Arcade } from '../server/arcade.js'
+import { BroadcasterClient } from '../server/broadcaster.js'
 import { loadServerConfig } from '../server/config.js'
 import { openDb } from '../server/db.js'
 import { relayApi, type RelayApi, type TipPost, type TipRow, type TipStatusView } from '../web/api'
@@ -36,7 +36,7 @@ import { addProvenTx, WhatsOnChain } from './gate-woc'
 //   init     create the root key if absent; print the funding address and the two identity keys
 //   address  print the same, never creating a key
 //   run [--relay <url>] [--sats n]          import the funding address's coins into fresh wallets in a run dir,
-//                                           one tip (tipper → relay → Arcade verdict → creator internalizes it),
+//                                           one tip (tipper → relay → BSV Broadcaster verdict → creator internalizes it),
 //                                           then everything goes back to the funding address
 //   sweep --txid <faucet txid> [--vout n]   optional: prove a faucet payment is spendable (import it, return it
 //                                           at once to the funding address, consolidated)
@@ -59,10 +59,10 @@ function testnetOnly(env: Env): 'testnet' {
   return raw
 }
 
-/** ARCADE_URL or the public testnet Arcade; a known mainnet Arcade host is refused (the relay's own check). */
-function arcadeUrlOf(env: Env): string {
+/** BSV_BROADCASTER_URL or the public testnet BSV Broadcaster; a known mainnet BSV Broadcaster host is refused (the relay's own check). */
+function broadcasterUrlOf(env: Env): string {
   try {
-    return loadServerConfig({ BSV_NETWORK: 'testnet', ARCADE_URL: env.ARCADE_URL }, () => {}).arcadeUrl
+    return loadServerConfig({ BSV_NETWORK: 'testnet', BSV_BROADCASTER_URL: env.BSV_BROADCASTER_URL }, () => {}).broadcasterUrl
   } catch (e) {
     throw new GateUsageError(message(e))
   }
@@ -113,21 +113,21 @@ async function sweep(argv: string[], env: Env, io: Io): Promise<number> {
   const txid = flag(argv, '--txid')?.toLowerCase()
   if (txid === undefined || !/^[0-9a-f]{64}$/.test(txid)) throw new GateUsageError('sweep needs --txid <the faucet txid, 64 hex characters>')
   const vout = wholeNumber(flag(argv, '--vout'), '--vout', 0)
-  const arcadeUrl = arcadeUrlOf(env)
-  const arcade = new Arcade(arcadeUrl)
+  const broadcasterUrl = broadcasterUrlOf(env)
+  const broadcasterClient = new BroadcasterClient(broadcasterUrl)
   const woc = new WhatsOnChain()
   const { fundingAddress } = derive(rootKeyHex)
   const fundingScript = new P2PKH().lock(fundingAddress).toHex()
 
   // Which outputs of the faucet tx pay the funding address (all of them unless --vout).
-  const probe = await addProvenTx(new Beef(), txid, arcade, woc)
+  const probe = await addProvenTx(new Beef(), txid, broadcasterClient, woc)
   const outputs = probe.findTxid(txid)?.tx?.outputs ?? []
   const vouts = vout !== undefined ? [vout] : outputs.flatMap((o, i) => (o.lockingScript.toHex() === fundingScript ? [i] : []))
   if (vouts.length === 0) throw new GateUsageError(`no output of ${txid} pays the funding address ${fundingAddress}`)
   const coins = await gatherCoins(
     vouts.map(v => ({ txid, vout: v })),
     fundingScript,
-    arcade,
+    broadcasterClient,
     woc,
     probe,
   )
@@ -139,13 +139,13 @@ async function sweep(argv: string[], env: Env, io: Io): Promise<number> {
   let tipper: GateWallet | undefined
   let failure: string | undefined
   try {
-    tipper = await openGateWallet(rootKeyHex, 'tipper', 'testnet', arcadeUrl, dir)
+    tipper = await openGateWallet(rootKeyHex, 'tipper', 'testnet', broadcasterUrl, dir)
     await importCoins(tipper, rootKeyHex, coins, rows)
     if (rows.some(r => r.verdict?.startsWith('failed'))) failure = 'an import failed'
   } catch (e) {
     failure = message(e)
   }
-  const left = await returnCoinsAndClean([['tipper', tipper]], dir, fundingAddress, arcade, rows, io)
+  const left = await returnCoinsAndClean([['tipper', tipper]], dir, fundingAddress, broadcasterClient, rows, io)
   if (left !== undefined) failure = failure === undefined ? left : `${failure}; ${left}`
   tableLines(rows).forEach(line => io.out(line))
   if (failure !== undefined) {
@@ -170,8 +170,8 @@ async function recover(argv: string[], env: Env, io: Io): Promise<number> {
   } catch (e) {
     throw new GateUsageError(message(e))
   }
-  const arcadeUrl = arcadeUrlOf(env)
-  const arcade = new Arcade(arcadeUrl)
+  const broadcasterUrl = broadcasterUrlOf(env)
+  const broadcasterClient = new BroadcasterClient(broadcasterUrl)
   const rows: Row[] = []
   let failure: string | undefined
   let tipper: GateWallet | undefined
@@ -179,18 +179,18 @@ async function recover(argv: string[], env: Env, io: Io): Promise<number> {
   const problems: string[] = []
   // Each opened on its own: one that cannot be opened must not stop the other (its storage keeps the dir).
   try {
-    tipper = await openGateWallet(rootKeyHex, 'tipper', 'testnet', arcadeUrl, dir)
+    tipper = await openGateWallet(rootKeyHex, 'tipper', 'testnet', broadcasterUrl, dir)
   } catch (e) {
     problems.push(`opening the tipper wallet: ${message(e)}`)
   }
   try {
-    creator = await openGateWallet(rootKeyHex, 'creator', 'testnet', arcadeUrl, dir)
+    creator = await openGateWallet(rootKeyHex, 'creator', 'testnet', broadcasterUrl, dir)
     await collectSavedTip(creator, dir, rows, tipper)
   } catch (e) {
     problems.push(`the creator wallet: ${message(e)}`)
   }
   if (problems.length > 0) failure = problems.join('; ')
-  const left = await returnCoinsAndClean([['creator', creator], ['tipper', tipper]], dir, fundingAddress, arcade, rows, io)
+  const left = await returnCoinsAndClean([['creator', creator], ['tipper', tipper]], dir, fundingAddress, broadcasterClient, rows, io)
   if (left !== undefined) failure = failure === undefined ? left : `${failure}; ${left}`
   tableLines(rows).forEach(line => io.out(line))
   if (failure !== undefined) {
@@ -211,7 +211,7 @@ interface Relay {
 }
 
 /** The real relay (server/app.ts) on a free loopback port, its creator fixed to the gate's creator identity. */
-async function startRelay(arcadeUrl: string, creatorIdentityKey: string, dir: string, io: Io): Promise<Relay> {
+async function startRelay(broadcasterUrl: string, creatorIdentityKey: string, dir: string, io: Io): Promise<Relay> {
   const server = http.createServer()
   await new Promise<void>((ok, fail) => {
     server.once('error', fail)
@@ -220,12 +220,12 @@ async function startRelay(arcadeUrl: string, creatorIdentityKey: string, dir: st
   const { port } = server.address() as AddressInfo
   const base = `http://127.0.0.1:${port}`
   const cfg = loadServerConfig(
-    { BSV_NETWORK: 'testnet', ARCADE_URL: arcadeUrl, PUBLIC_ORIGIN: base, CREATOR_IDENTITY_KEY: creatorIdentityKey, TRUST_PROXY: 'false', PORT: String(port), DATA_DIR: dir },
+    { BSV_NETWORK: 'testnet', BSV_BROADCASTER_URL: broadcasterUrl, PUBLIC_ORIGIN: base, CREATOR_IDENTITY_KEY: creatorIdentityKey, TRUST_PROXY: 'false', PORT: String(port), DATA_DIR: dir },
     line => io.err(line),
   )
   // In the run dir, so the relay's record of the tip (remittance, BEEF) outlives a failed run.
   const db = openDb(join(dir, 'tips.sqlite'))
-  server.on('request', createApp(cfg, { db, arcade: new Arcade(cfg.arcadeUrl) }))
+  server.on('request', createApp(cfg, { db, broadcasterClient: new BroadcasterClient(cfg.broadcasterUrl) }))
   return {
     base,
     inProcess: true,
@@ -249,13 +249,13 @@ function evalsDir(): string {
 async function run(argv: string[], env: Env, io: Io): Promise<number> {
   const { rootKeyHex } = loadOrCreateRootKey({ create: false, env })
   if (env.BSV_MCP_NETWORK_TESTS !== '1') {
-    throw new GateUsageError('gate run spends testnet coins through Arcade: set BSV_MCP_NETWORK_TESTS=1 to run it')
+    throw new GateUsageError('gate run spends testnet coins through BSV Broadcaster: set BSV_MCP_NETWORK_TESTS=1 to run it')
   }
   const sats = wholeNumber(flag(argv, '--sats'), '--sats', MIN_TIP_SATS) ?? DEFAULT_SATS
   const relayUrl = flag(argv, '--relay')
   if (relayUrl !== undefined && !/^https?:\/\/[^/]+\/?$/.test(relayUrl)) throw new GateUsageError('--relay must be an origin such as http://127.0.0.1:8080')
-  const arcadeUrl = arcadeUrlOf(env)
-  const arcade = new Arcade(arcadeUrl)
+  const broadcasterUrl = broadcasterUrlOf(env)
+  const broadcasterClient = new BroadcasterClient(broadcasterUrl)
   const woc = new WhatsOnChain()
   const { fundingAddress } = derive(rootKeyHex)
   const started = new Date()
@@ -268,21 +268,21 @@ async function run(argv: string[], env: Env, io: Io): Promise<number> {
   let creator: GateWallet | undefined
   let relay: Relay | undefined
   try {
-    // 1. The coins at the funding address (WhatsOnChain's address listing; each tx from Arcade first, hash-checked).
+    // 1. The coins at the funding address (WhatsOnChain's address listing; each tx from BSV Broadcaster first, hash-checked).
     const listed = (await woc.unspent(fundingAddress)).sort((a, b) => b.satoshis - a.satoshis).slice(0, MAX_COINS)
-    const coins = await gatherCoins(listed, new P2PKH().lock(fundingAddress).toHex(), arcade, woc)
+    const coins = await gatherCoins(listed, new P2PKH().lock(fundingAddress).toHex(), broadcasterClient, woc)
     coins.skipped.forEach(line => io.err(`skipped ${line}`))
     checkFunding({ address: fundingAddress, usable: coins.total, unusable: coins.unusable, sats })
 
     // 2. Into a fresh tipper wallet in the run dir.
-    tipper = await openGateWallet(rootKeyHex, 'tipper', 'testnet', arcadeUrl, dir)
-    creator = await openGateWallet(rootKeyHex, 'creator', 'testnet', arcadeUrl, dir)
+    tipper = await openGateWallet(rootKeyHex, 'tipper', 'testnet', broadcasterUrl, dir)
+    creator = await openGateWallet(rootKeyHex, 'creator', 'testnet', broadcasterUrl, dir)
     await importCoins(tipper, rootKeyHex, coins, rows)
     const balance = await tipper.wallet.balance()
     if (balance < sats + FEE_RESERVE_SATS) throw new GateFailure(`the tipper wallet holds ${balance} sats after the import (needs ${sats + FEE_RESERVE_SATS})`)
 
     // 3. The tip and its collection.
-    relay = relayUrl === undefined ? await startRelay(arcadeUrl, creator.identityKey, dir, io) : { base: relayUrl.replace(/\/$/, ''), inProcess: false, close: async () => {} }
+    relay = relayUrl === undefined ? await startRelay(broadcasterUrl, creator.identityKey, dir, io) : { base: relayUrl.replace(/\/$/, ''), inProcess: false, close: async () => {} }
     probeTxid = await tipAndCollect(tipper, creator, relay, sats, dir, rows, io)
   } catch (e) {
     failure = message(e)
@@ -301,7 +301,7 @@ async function run(argv: string[], env: Env, io: Io): Promise<number> {
   }
 
   // Everything back to the funding address, also after a failure; the run dir goes only once nothing can be lost.
-  const left = await returnCoinsAndClean([['creator', creator], ['tipper', tipper]], dir, fundingAddress, arcade, rows, io)
+  const left = await returnCoinsAndClean([['creator', creator], ['tipper', tipper]], dir, fundingAddress, broadcasterClient, rows, io)
   if (left !== undefined) failure = failure === undefined ? left : `${failure}; ${left}`
 
   const table = tableLines(rows)
@@ -315,7 +315,7 @@ async function run(argv: string[], env: Env, io: Io): Promise<number> {
       `# Gate run ${started.toISOString()}`,
       '',
       `- network: testnet`,
-      `- arcade: ${arcadeUrl}`,
+      `- broadcaster: ${broadcasterUrl}`,
       `- relay: ${relay === undefined ? 'not started' : relay.inProcess ? 'in-process' : relay.base}`,
       `- funding address: ${fundingAddress}`,
       `- tip: ${sats} sats`,
@@ -337,7 +337,7 @@ async function run(argv: string[], env: Env, io: Io): Promise<number> {
 /**
  * One tip through the web app's own modules against `relay`: web/tip.ts's sendTip (derivation saved first, BRC-29
  * output to the creator, createAction with randomizeOutputs:false and acceptDelayedBroadcast:false, POST /api/tips),
- * the relay's Arcade verdict within 20 s, then web/collect.ts's collectTip (the candidate's own BEEF,
+ * the relay's BSV Broadcaster verdict within 20 s, then web/collect.ts's collectTip (the candidate's own BEEF,
  * internalizeAction, the signed internalized report). The tip's record goes to <dir>/tip.json before the broadcast.
  * Returns the tip's txid; throws GateFailure on a failed step.
  */
@@ -386,7 +386,7 @@ async function tipAndCollect(tipper: GateWallet, creator: GateWallet, relay: Rel
     }
   }
   rows.push({ step: 'relay status', txid, txStatus: view.txStatus, verdict: view.verdict, ms: Math.round(performance.now() - postStartedAt) })
-  if (view.verdict !== 'seen-no-competitor') throw new GateFailure(`Arcade did not report seen-no-competitor within ${SEEN_WITHIN_MS / 1000} s (${view.txStatus})`)
+  if (view.verdict !== 'seen-no-competitor') throw new GateFailure(`BSV Broadcaster did not report seen-no-competitor within ${SEEN_WITHIN_MS / 1000} s (${view.txStatus})`)
 
   const c0 = performance.now()
   const row: TipRow = await api.getTip(txid)

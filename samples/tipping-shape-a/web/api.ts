@@ -1,7 +1,7 @@
 import { fetchConfig, type AppConfig } from './config'
 
 // The relay's API as the browser sees it (server/routes.ts). The relay holds no key: it stores tips, broadcasts
-// them to Arcade and reports Arcade's verdict. Whether a tip was received is the creator's wallet's call.
+// them to BSV Broadcaster and reports BSV Broadcaster's verdict. Whether a tip was received is the creator's wallet's call.
 
 export interface Remittance {
   /** sha256 of the BEEF this candidate arrived with: GET /api/tips/:txid/beef?id=<beefId>. */
@@ -17,7 +17,7 @@ export interface Remittance {
 export interface TipStatusView {
   txid: string
   txStatus: string
-  /** Arcade's verdict as the relay read it: seen-no-competitor | on-network-not-seen | pending | terminal | no-verdict. */
+  /** BSV Broadcaster's verdict as the relay read it: seen-no-competitor | on-network-not-seen | pending | terminal | no-verdict. */
   verdict: string
   competingTxs: string[]
   extraInfo?: string
@@ -43,12 +43,12 @@ export interface TipPost {
   remittance: { senderIdentityKey: string; derivationPrefix: string; derivationSuffix: string }
 }
 
-/** GET /api/tx/:txid: an ancestor transaction from the relay's Arcade, already re-read as a plain transaction. */
+/** GET /api/tx/:txid: an ancestor transaction from the relay's BSV Broadcaster, already re-read as a plain transaction. */
 export interface AncestorTx {
   txid: string
   /** Plain (not Extended Format) transaction hex. */
   rawTx: string
-  /** BUMP hex, when Arcade has the transaction's merkle path. */
+  /** BUMP hex, when BSV Broadcaster has the transaction's merkle path. */
   merklePath?: string
 }
 
@@ -65,7 +65,7 @@ export class RelayError extends Error {
     this.name = 'RelayError'
   }
 
-  /** Unreachable, rate-limited, or Arcade did not take it yet: the same request may succeed later. */
+  /** Unreachable, rate-limited, or BSV Broadcaster did not take it yet: the same request may succeed later. */
   get transient(): boolean {
     return this.status === 0 || this.status === 429 || this.status === 502 || this.status === 503 || this.status === 504
   }
@@ -79,17 +79,17 @@ export interface RelayApi {
   getTip(txid: string): Promise<TipRow>
   /** The AtomicBEEF hex one candidate arrived with. */
   beef(txid: string, beefId: string): Promise<string>
-  /** The relay's live Arcade read for a stored tip. */
+  /** The relay's live BSV Broadcaster read for a stored tip. */
   status(txid: string): Promise<TipStatusView>
-  /** The relay submits the stored tip to Arcade again, then reads its status (the two-read rule's re-post). */
+  /** The relay submits the stored tip to BSV Broadcaster again, then reads its status (the two-read rule's re-post). */
   rebroadcast(txid: string): Promise<TipStatusView>
-  /** An ancestor transaction, from the relay's Arcade; undefined when Arcade has no rawTx for it. */
+  /** An ancestor transaction, from the relay's BSV Broadcaster; undefined when BSV Broadcaster has no rawTx for it. */
   ancestor(txid: string): Promise<AncestorTx | undefined>
   claimCreator(identityKey: string, signature: string): Promise<{ creatorIdentityKey: string }>
   markInternalized(txid: string, signature: string): Promise<TipRow>
 }
 
-// POST /api/tips waits up to 15 s for Arcade to see the transaction.
+// POST /api/tips waits up to 15 s for BSV Broadcaster to see the transaction.
 const TIMEOUT_MS = 30_000
 
 function retryAfterMs(value: string | null): number | undefined {

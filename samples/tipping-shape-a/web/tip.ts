@@ -129,7 +129,7 @@ export async function sendTip(
     })
   } catch (e) {
     // WERR_REVIEW_ACTIONS: the wallet built and signed the transaction but its own broadcast did not fully succeed
-    // (it may still retry). It carries the txid and the AtomicBEEF, so the relay can take it to Arcade.
+    // (it may still retry). It carries the txid and the AtomicBEEF, so the relay can take it to BSV Broadcaster.
     const { txid, tx, reviewActionResults } = e as { txid?: unknown; tx?: unknown; reviewActionResults?: Array<{ status?: unknown }> }
     const status = reviewActionResults?.[0]?.status
     walletError = `${message(e)}${typeof status === 'string' ? ` (${status})` : ''}`

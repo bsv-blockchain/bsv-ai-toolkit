@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Beef, P2PKH, Transaction, Utils, type CreateActionArgs, type WalletInterface } from '@bsv/sdk'
 import type { Wallet } from '@bsv/wallet-toolbox'
-import type { Arcade, Outcome } from '../server/arcade.js'
+import type { BroadcasterClient, Outcome } from '../server/broadcaster.js'
 import { payeeLockingScript } from '../web/brc29'
 import type { KeyValueStore, PendingTip } from '../web/tip'
 import { homeOf, type GateWallet } from './gate-wallet'
@@ -13,7 +13,7 @@ import { addProvenTx, type WhatsOnChain } from './gate-woc'
 // is enough on any machine. A command works in a run dir under ~/.bsv-gate/runs/: it imports the coins into fresh
 // wallets there, and at the end returns everything to the funding address. The run dir is deleted only once
 // nothing can be lost with it: every sweep-back (and anything the toolbox left unfinished) reads
-// seen-no-competitor on our Arcade, both wallets are empty, and a tip that went out has been collected. Otherwise
+// seen-no-competitor on our BSV Broadcaster, both wallets are empty, and a tip that went out has been collected. Otherwise
 // it stays, with `gate recover --dir <path>` to finish the job: its wallet storage is the only record of the
 // derivations that spend those coins.
 
@@ -37,7 +37,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** Room for the import, tip and sweep-back fees at the toolbox's 100 sat/kB. */
 export const FEE_RESERVE_SATS = 500
-/** How long to wait for Arcade's seen-no-competitor on each read. */
+/** How long to wait for BSV Broadcaster's seen-no-competitor on each read. */
 export const SEEN_WITHIN_MS = 20_000
 /** The label on every sweep-back action, so a later `recover` finds and re-checks them. */
 export const SWEEP_LABEL = 'gate sweep back'
@@ -287,11 +287,11 @@ export async function collectSavedTip(creator: Pick<GateWallet, 'wallet'>, dir: 
 // In: the funding address's coins into a wallet
 
 interface Coins {
-  /** Every coin's transaction with a merkle path or the Arcade-known ancestry down to one. */
+  /** Every coin's transaction with a merkle path or the BSV Broadcaster-known ancestry down to one. */
   beef: Beef
   outpoints: string[]
   total: number
-  /** Sats in coins that cannot be imported yet (in no block and unknown to Arcade), with the reasons. */
+  /** Sats in coins that cannot be imported yet (in no block and unknown to BSV Broadcaster), with the reasons. */
   unusable: number
   skipped: string[]
 }
@@ -300,7 +300,7 @@ interface Coins {
 export async function gatherCoins(
   candidates: Array<{ txid: string; vout: number; satoshis?: number }>,
   fundingScript: string,
-  arcade: Arcade,
+  broadcasterClient: BroadcasterClient,
   woc: WhatsOnChain,
   beef = new Beef(),
 ): Promise<Coins> {
@@ -309,7 +309,7 @@ export async function gatherCoins(
   for (const c of candidates) byTxid.set(c.txid, [...(byTxid.get(c.txid) ?? []), c])
   for (const [txid, outs] of byTxid) {
     try {
-      await addProvenTx(coins.beef, txid, arcade, woc)
+      await addProvenTx(coins.beef, txid, broadcasterClient, woc)
     } catch (e) {
       coins.unusable += outs.reduce((sum, o) => sum + (o.satoshis ?? 0), 0)
       coins.skipped.push(`${txid}: ${message(e)}`)
@@ -352,7 +352,7 @@ export async function importCoins(wallet: GateWallet, rootKeyHex: string, coins:
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Out: everything back to the funding address, checked on Arcade
+// Out: everything back to the funding address, checked on BSV Broadcaster
 
 // An output of this amount takes everything the wallet can fund (wallet-toolbox's sendMax sentinel; the module is
 // CommonJS-only, so it is required rather than imported).
@@ -360,41 +360,41 @@ const maxPossibleSatoshis = (): number =>
   (createRequire(import.meta.url)('@bsv/wallet-toolbox/out/src/storage/methods/maxPossibleSatoshis') as { maxPossibleSatoshis: number }).maxPossibleSatoshis
 
 /**
- * Posts a wallet transaction straight to Arcade as EF, after each of its unproven ancestors in the BEEF (parents
+ * Posts a wallet transaction straight to BSV Broadcaster as EF, after each of its unproven ancestors in the BEEF (parents
  * first; "already known" is fine), then reads its status (up to `waitMs`).
  */
-export async function postChain(arcade: Arcade, beefBin: number[], txid: string, waitMs: number): Promise<Outcome> {
+export async function postChain(broadcasterClient: BroadcasterClient, beefBin: number[], txid: string, waitMs: number): Promise<Outcome> {
   const beef = Beef.fromBinary(beefBin)
   beef.sortTxs()
   for (const btx of beef.txs) {
     if (btx.txid === txid || btx.isTxidOnly || btx.bumpIndex !== undefined) continue
-    const ancestor = await arcade.broadcast(beef.findAtomicTransaction(btx.txid)!.toHexEF(), btx.txid, 0)
+    const ancestor = await broadcasterClient.broadcast(beef.findAtomicTransaction(btx.txid)!.toHexEF(), btx.txid, 0)
     if (ancestor.verdict === 'terminal') {
-      throw new Error(`Arcade refused ancestor ${btx.txid} (${ancestor.txStatus}${ancestor.extraInfo ? `: ${ancestor.extraInfo}` : ''})`)
+      throw new Error(`BSV Broadcaster refused ancestor ${btx.txid} (${ancestor.txStatus}${ancestor.extraInfo ? `: ${ancestor.extraInfo}` : ''})`)
     }
   }
   const subject = beef.findAtomicTransaction(txid)
   if (subject === undefined) throw new Error(`the wallet's BEEF for ${txid} does not hold it`)
-  return arcade.broadcast(subject.toHexEF(), txid, waitMs)
+  return broadcasterClient.broadcast(subject.toHexEF(), txid, waitMs)
 }
 
 /** The wallet surface the sweep-back needs (a toolbox Wallet, or a fake in tests). */
 export type SettleWallet = Pick<GateWallet, 'beef'> & { wallet: Pick<Wallet, 'balance' | 'createAction' | 'listActions'> }
 
-/** Arcade's read of a wallet transaction; when it is not seen-no-competitor, one direct re-post of its chain. */
-async function confirmOnArcade(w: SettleWallet, txid: string, arcade: Arcade, waitMs: number): Promise<{ outcome?: Outcome; tx?: Transaction; error?: string }> {
+/** BSV Broadcaster's read of a wallet transaction; when it is not seen-no-competitor, one direct re-post of its chain. */
+async function confirmOnBroadcaster(w: SettleWallet, txid: string, broadcasterClient: BroadcasterClient, waitMs: number): Promise<{ outcome?: Outcome; tx?: Transaction; error?: string }> {
   let tx: Transaction | undefined
   let beefBin: number[] | undefined
   try {
     beefBin = await w.beef(txid)
     tx = Beef.fromBinary(beefBin).findAtomicTransaction(txid)
   } catch {
-    // no BEEF in storage: only Arcade's read can tell
+    // no BEEF in storage: only BSV Broadcaster's read can tell
   }
-  let outcome = await arcade.read(txid, waitMs).catch(() => undefined)
+  let outcome = await broadcasterClient.read(txid, waitMs).catch(() => undefined)
   if (outcome?.verdict === 'seen-no-competitor' || beefBin === undefined) return { outcome, tx }
   try {
-    outcome = await postChain(arcade, beefBin, txid, waitMs)
+    outcome = await postChain(broadcasterClient, beefBin, txid, waitMs)
   } catch (e) {
     return { outcome, tx, error: message(e) }
   }
@@ -404,14 +404,14 @@ async function confirmOnArcade(w: SettleWallet, txid: string, arcade: Arcade, wa
 /**
  * Returns everything in `w` to the funding address and checks it: re-posts what the toolbox left unfinished, sends
  * the balance in one output (sendMax, no change), then every sweep-back this wallet ever made, and every unfinished
- * action, must read seen-no-competitor on Arcade (after one direct re-post) and the balance must be 0. Returns the
+ * action, must read seen-no-competitor on BSV Broadcaster (after one direct re-post) and the balance must be 0. Returns the
  * problems; none means the wallet is settled.
  */
 export async function settleWallet(
   w: SettleWallet,
   name: string,
   fundingAddress: string,
-  arcade: Arcade,
+  broadcasterClient: BroadcasterClient,
   rows: Row[],
   waitMs = SEEN_WITHIN_MS,
 ): Promise<string[]> {
@@ -434,26 +434,26 @@ export async function settleWallet(
   const problems: string[] = []
   const sweeps = (await w.wallet.listActions({ labels: [SWEEP_LABEL], limit: 1000 })).actions.filter(a => a.status !== 'failed').map(a => a.txid)
   for (const txid of new Set([...unfinished, ...sweeps])) {
-    const { outcome, tx, error } = await confirmOnArcade(w, txid, arcade, waitMs)
+    const { outcome, tx, error } = await confirmOnBroadcaster(w, txid, broadcasterClient, waitMs)
     if (sweeps.includes(txid)) {
       rows.push({
         step: `sweep-back ${name}`,
         txid,
         bytes: tx?.toBinary().length,
         fee: tx?.getFee(),
-        txStatus: outcome?.txStatus ?? 'unknown to Arcade',
+        txStatus: outcome?.txStatus ?? 'unknown to BSV Broadcaster',
         verdict: outcome?.verdict ?? 'no-verdict',
         ms: Math.round(performance.now() - t0),
       })
     }
     if (outcome?.verdict !== 'seen-no-competitor') {
-      problems.push(`${name}: ${txid} is not seen on Arcade (${outcome?.txStatus ?? 'unknown to Arcade'}${error ? `; ${error}` : ''})`)
+      problems.push(`${name}: ${txid} is not seen on BSV Broadcaster (${outcome?.txStatus ?? 'unknown to BSV Broadcaster'}${error ? `; ${error}` : ''})`)
     }
   }
   if (sweeps.length === 0) rows.push({ step: `sweep-back ${name}`, verdict: 'empty' })
   const left = await w.wallet.balance()
   if (left > 0) problems.push(`${name}: ${left} sats are still in the wallet`)
-  // A toolbox error on a sweep-back that Arcade then saw (after the direct re-post) is no longer a problem.
+  // A toolbox error on a sweep-back that BSV Broadcaster then saw (after the direct re-post) is no longer a problem.
   return problems.length > 0 && createError !== undefined ? [createError, ...problems] : problems
 }
 
@@ -468,7 +468,7 @@ export async function returnCoinsAndClean(
   wallets: Array<[string, GateCoinWallet | undefined]>,
   dir: string,
   fundingAddress: string,
-  arcade: Arcade,
+  broadcasterClient: BroadcasterClient,
   rows: Row[],
   io: Io,
   waitMs = SEEN_WITHIN_MS,
@@ -481,7 +481,7 @@ export async function returnCoinsAndClean(
       continue
     }
     try {
-      problems.push(...(await settleWallet(w, name, fundingAddress, arcade, rows, waitMs)))
+      problems.push(...(await settleWallet(w, name, fundingAddress, broadcasterClient, rows, waitMs)))
     } catch (e) {
       problems.push(`${name}: ${message(e)}`)
       rows.push({ step: `sweep-back ${name}`, verdict: 'failed' })

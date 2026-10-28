@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import express from 'express'
-import { REJECTED_MAY_NOT_BE_FINAL, type Arcade, type Outcome } from './arcade.js'
+import { REJECTED_MAY_NOT_BE_FINAL, type BroadcasterClient, type Outcome } from './broadcaster.js'
 import { claimMessage, internalizedMessage, isIdentityKey, verifyCreatorSignature } from './auth.js'
-import { efHexFromAtomicBeef, outputPaysScript, plainHexFromArcadeRawTx } from './beef.js'
+import { efHexFromAtomicBeef, outputPaysScript, plainHexFromBroadcasterRawTx } from './beef.js'
 import type { ServerConfig } from './config.js'
 import type { Db, Remittance, TipRow } from './db.js'
 import { addressKey, RateLimiter } from './rate-limit.js'
@@ -42,7 +42,7 @@ export const DEFAULT_LIMITS: Limits = {
 
 export interface ApiDeps {
   db: Db
-  arcade: Arcade
+  broadcasterClient: BroadcasterClient
   broadcaster: Broadcaster
   limits?: Partial<Limits>
   /** The clock (ms) for rate limits, pruning and status freshness. Default Date.now. */
@@ -110,7 +110,7 @@ function parseTip(body: any): PostedTip {
   }
 }
 
-/** No repeat POST needs to talk to Arcade: seen with no competitor, or a REJECTED that is final. */
+/** No repeat POST needs to talk to BSV Broadcaster: seen with no competitor, or a REJECTED that is final. */
 const settled = (row: TipRow) =>
   row.verdict === 'seen-no-competitor' || (row.verdict === 'terminal' && row.note !== REJECTED_MAY_NOT_BE_FINAL)
 
@@ -125,17 +125,17 @@ type Reply = { code: number; body: object }
 const txidOf = (req: express.Request) => String(req.params.txid).toLowerCase()
 
 /**
- * The relay API. It holds no key and decides nothing about money: Arcade's verdict says a transaction was seen on
+ * The relay API. It holds no key and decides nothing about money: BSV Broadcaster's verdict says a transaction was seen on
  * the network; only the creator's wallet (a forSelf match on a remittance, then internalizeAction) says a tip
  * was received.
  */
 export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps): void {
-  const { db, arcade, broadcaster } = deps
+  const { db, broadcasterClient, broadcaster } = deps
   const limits: Limits = { ...DEFAULT_LIMITS, ...deps.limits }
   const now = deps.now ?? Date.now
   const tipLimiter = new RateLimiter(limits.tipBurst, limits.tipsPerMinute)
   const readLimiter = new RateLimiter(limits.readBurst, limits.readsPerMinute)
-  // One Arcade submission per txid at a time, and one status read per txid at a time.
+  // One BSV Broadcaster submission per txid at a time, and one status read per txid at a time.
   const broadcasts = new Map<string, Promise<Outcome>>()
   const statusReads = new Map<string, Promise<Reply>>()
   const ancestorReads = new Map<string, Promise<Reply>>()
@@ -149,7 +149,7 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   }
   const claimNonce = () => db.getSetting(CLAIM_NONCE_SETTING) ?? newClaimNonce()
 
-  /** Stores an Arcade outcome and emits 'status' when it changed the row. Undefined if the tip was pruned meanwhile. */
+  /** Stores a BSV Broadcaster outcome and emits 'status' when it changed the row. Undefined if the tip was pruned meanwhile. */
   function store(txid: string, o: Outcome): TipRow | undefined {
     const before = db.getTip(txid)
     if (before === undefined) return undefined
@@ -169,8 +169,8 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
   function submitOnce(txid: string, efHex: string): Promise<Outcome> {
     let pending = broadcasts.get(txid)
     if (pending === undefined) {
-      // A transient outcome (Arcade unreachable, 5xx, 429) says nothing about the transaction: keep what is stored.
-      pending = arcade
+      // A transient outcome (BSV Broadcaster unreachable, 5xx, 429) says nothing about the transaction: keep what is stored.
+      pending = broadcasterClient
         .broadcast(efHex, txid, SEEN_WAIT_MS)
         .then(o => (o.transient || store(txid, o), o))
         .finally(() => broadcasts.delete(txid))
@@ -179,25 +179,25 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     return pending
   }
 
-  /** Arcade's view of a stored tip. `repost`: submit the stored EF again first (the second read of the two-read rule). */
+  /** BSV Broadcaster's view of a stored tip. `repost`: submit the stored EF again first (the second read of the two-read rule). */
   async function readStatus(txid: string, repost = false): Promise<Reply> {
     let o: Outcome | undefined
     try {
       if (repost) {
         const beef = db.getBeef(txid)
         if (beef === undefined) return { code: 404, body: { error: 'no tip with this txid' } }
-        o = await arcade.broadcast(efHexFromAtomicBeef(beef, txid), txid, 0)
-      } else o = await arcade.read(txid)
-      // Arcade has no record (its first submit never got through): submit the stored EF again, then read once.
+        o = await broadcasterClient.broadcast(efHexFromAtomicBeef(beef, txid), txid, 0)
+      } else o = await broadcasterClient.read(txid)
+      // BSV Broadcaster has no record (its first submit never got through): submit the stored EF again, then read once.
       if (o === undefined) {
         const beef = db.getBeef(txid)
         if (beef === undefined) return { code: 404, body: { error: 'no tip with this txid' } }
-        o = await arcade.broadcast(efHexFromAtomicBeef(beef, txid), txid, 0)
+        o = await broadcasterClient.broadcast(efHexFromAtomicBeef(beef, txid), txid, 0)
       }
     } catch (e) {
-      return { code: 502, body: { transient: true, error: `Arcade status read failed: ${e instanceof Error ? e.message : String(e)}` } }
+      return { code: 502, body: { transient: true, error: `BSV Broadcaster status read failed: ${e instanceof Error ? e.message : String(e)}` } }
     }
-    if (o.transient) return { code: 502, body: { transient: true, error: o.note ?? 'Arcade did not take the transaction; retry' } }
+    if (o.transient) return { code: 502, body: { transient: true, error: o.note ?? 'BSV Broadcaster did not take the transaction; retry' } }
     const at = now()
     if (lastRead.size > 1000) for (const [k, t] of lastRead) if (at - t >= limits.statusFreshMs) lastRead.delete(k)
     lastRead.set(txid, at)
@@ -205,19 +205,19 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     return row === undefined ? { code: 404, body: { error: 'no tip with this txid' } } : { code: 200, body: statusView(row) }
   }
 
-  /** An ancestor transaction from Arcade, re-read as plain hex, with its merkle path when Arcade has one. */
+  /** An ancestor transaction from BSV Broadcaster, re-read as plain hex, with its merkle path when BSV Broadcaster has one. */
   async function readAncestor(txid: string): Promise<Reply> {
-    let s: Awaited<ReturnType<Arcade['status']>>
+    let s: Awaited<ReturnType<BroadcasterClient['status']>>
     try {
-      s = await arcade.status(txid)
+      s = await broadcasterClient.status(txid)
     } catch (e) {
-      return { code: 502, body: { transient: true, error: `Arcade status read failed: ${e instanceof Error ? e.message : String(e)}` } }
+      return { code: 502, body: { transient: true, error: `BSV Broadcaster status read failed: ${e instanceof Error ? e.message : String(e)}` } }
     }
-    if ('notFound' in s) return { code: 404, body: { error: 'Arcade has no record of this txid' } }
-    if (typeof s.rawTx !== 'string' || s.rawTx === '') return { code: 404, body: { error: 'Arcade holds no rawTx for this txid' } }
+    if ('notFound' in s) return { code: 404, body: { error: 'BSV Broadcaster has no record of this txid' } }
+    if (typeof s.rawTx !== 'string' || s.rawTx === '') return { code: 404, body: { error: 'BSV Broadcaster holds no rawTx for this txid' } }
     let rawTx: string
     try {
-      rawTx = plainHexFromArcadeRawTx(s.rawTx, txid)
+      rawTx = plainHexFromBroadcasterRawTx(s.rawTx, txid)
     } catch (e) {
       return { code: 502, body: { error: e instanceof Error ? e.message : String(e) } }
     }
@@ -324,7 +324,7 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     if (isNew || added === 'inserted') broadcaster.emit('tip', row)
     // The stored row is unchanged (verdict pending for a new tip); the browser retries the POST, which submits again.
     if (outcome?.transient) {
-      res.status(502).json({ ...row, transient: true, error: `Arcade did not take the transaction (${outcome.txStatus}): ${outcome.note ?? 'retry'}` })
+      res.status(502).json({ ...row, transient: true, error: `BSV Broadcaster did not take the transaction (${outcome.txStatus}): ${outcome.note ?? 'retry'}` })
     }
     else res.json(row)
   })
@@ -379,7 +379,7 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     res.status(code).json(body)
   })
 
-  // The two-read dead rule's re-post: submit the stored EF to Arcade again, then read its status.
+  // The two-read dead rule's re-post: submit the stored EF to BSV Broadcaster again, then read its status.
   api.post('/tips/:txid/rebroadcast', async (req, res) => {
     if (!readAllowed(req, res)) return
     const txid = txidOf(req)
@@ -387,8 +387,8 @@ export function mountApi(app: express.Express, cfg: ServerConfig, deps: ApiDeps)
     res.status(code).json(body)
   })
 
-  // An ancestor a tip's BEEF names by txid only, for the creator page to complete the BEEF: Arcade is the source
-  // for a known txid, and the browser asks this origin rather than Arcade (no CORS, no private ARCADE_URL).
+  // An ancestor a tip's BEEF names by txid only, for the creator page to complete the BEEF: BSV Broadcaster is the source
+  // for a known txid, and the browser asks this origin rather than BSV Broadcaster (no CORS, no private BSV_BROADCASTER_URL).
   // `:id`, not `:txid`: the transaction need not be a stored tip.
   api.get('/tx/:id', async (req, res) => {
     const txid = String(req.params.id).toLowerCase()
