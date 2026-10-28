@@ -6,11 +6,11 @@ import { accessSync, constants, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { verdictOf } from '../../mcp/src/arcade/classify.ts'
+import { verdictOf } from '../../mcp/src/broadcaster/classify.ts'
 
 const scripts = fileURLToPath(new URL('../skills/bsv-dev/scripts/', import.meta.url))
 const guard = join(scripts, 'network-guard.sh')
-const check = join(scripts, 'arcade-check.sh')
+const check = join(scripts, 'broadcaster-check.sh')
 
 // Resolves a command on the caller's PATH, so the tests can run bash with a reduced PATH.
 function which(cmd: string): string | undefined {
@@ -59,7 +59,7 @@ describe('network-guard.sh', () => {
   })
 })
 
-// A local stand-in for Arcade: GET /tx/{txid} answers from `statuses` (404 when absent), GET /policy from `policy`.
+// A local stand-in for BSV Broadcaster: GET /tx/{txid} answers from `statuses` (404 when absent), GET /policy from `policy`.
 const statuses = new Map<string, string>()
 let policy = ''
 let server: Server
@@ -68,9 +68,9 @@ let closedBase = ''
 let noJqDir = ''
 
 const txid = (c: string) => c.repeat(64)
-// The status-seen.json fixture from packages/mcp/test/fixtures/arcade.
+// The status-seen.json fixture from packages/mcp/test/fixtures/broadcaster.
 const SEEN = '{"txid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","txStatus":"SEEN_ON_NETWORK","timestamp":"2026-10-22T16:14:40.000000Z"}'
-// The policy.json fixture from packages/mcp/test/fixtures/arcade.
+// The policy.json fixture from packages/mcp/test/fixtures/broadcaster.
 const POLICY = '{"policy":{"miningFee":{"satoshis":1,"bytes":1000},"maxtxsizepolicy":100000000,"maxscriptsizepolicy":100000000,"maxtxsigopscountspolicy":4294967295,"standardFormatSupported":true},"timestamp":"2026-10-22T17:06:31.333912669Z"}'
 
 beforeAll(async () => {
@@ -89,7 +89,7 @@ beforeAll(async () => {
   await new Promise((r) => closed.close(r))
 
   // A PATH holding everything the script may call except jq, to exercise the grep/sed fallback.
-  noJqDir = mkdtempSync(join(tmpdir(), 'arcade-check-nojq-'))
+  noJqDir = mkdtempSync(join(tmpdir(), 'broadcaster-check-nojq-'))
   for (const cmd of ['curl', 'grep', 'sed', 'awk', 'tr']) symlinkSync(which(cmd)!, join(noJqDir, cmd))
 })
 
@@ -104,8 +104,8 @@ const paths = [
   { name: 'without jq', env: () => ({ PATH: noJqDir, ...noProxy }), skip: false },
 ]
 
-describe('arcade-check.sh', () => {
-  it('arcade-check usage error exits 2', async () => {
+describe('broadcaster-check.sh', () => {
+  it('broadcaster-check usage error exits 2', async () => {
     const r = await run(check, [], { PATH: process.env.PATH })
     expect(r.code).toBe(2)
     expect(r.stderr).toContain('usage:')
@@ -122,7 +122,7 @@ describe('arcade-check.sh', () => {
     expect(r.stderr).toContain('BSV_NETWORK must be testnet or mainnet (got: main)')
   })
 
-  it('exits 3 when Arcade cannot be reached', async () => {
+  it('exits 3 when BSV Broadcaster cannot be reached', async () => {
     const r = await run(check, [txid('a'), closedBase], { PATH: process.env.PATH, ...noProxy })
     expect(r.code).toBe(3)
   })
@@ -143,11 +143,22 @@ describe('arcade-check.sh', () => {
         expect(r.stdout.trimEnd().endsWith('verdict: seen-no-competitor')).toBe(true)
       })
 
-      it.skipIf(p.skip)('takes the URL from ARCADE_URL when no argument is given', async () => {
+      it.skipIf(p.skip)('takes the URL from BSV_BROADCASTER_URL when no argument is given', async () => {
         statuses.set(txid('a'), SEEN)
-        const r = await run(check, [txid('a')], { ...p.env(), ARCADE_URL: base })
+        const r = await run(check, [txid('a')], { ...p.env(), BSV_BROADCASTER_URL: base })
         expect(r.code).toBe(0)
         expect(r.stdout.trimEnd().endsWith('verdict: seen-no-competitor')).toBe(true)
+      })
+
+      it.skipIf(p.skip)('falls back to the deprecated ARCADE_URL with a warning; BSV_BROADCASTER_URL wins over it', async () => {
+        statuses.set(txid('a'), SEEN)
+        const old = await run(check, [txid('a')], { ...p.env(), ARCADE_URL: base })
+        expect(old.code).toBe(0)
+        expect(old.stderr).toContain('ARCADE_URL is deprecated; use BSV_BROADCASTER_URL')
+        expect(old.stdout.trimEnd().endsWith('verdict: seen-no-competitor')).toBe(true)
+        const both = await run(check, [txid('a')], { ...p.env(), BSV_BROADCASTER_URL: base, ARCADE_URL: closedBase })
+        expect(both.code).toBe(0)
+        expect(both.stderr).not.toContain('deprecated')
       })
 
       it.skipIf(p.skip)('matches verdictOf for every status, with and without competitors', async () => {
@@ -181,11 +192,11 @@ describe('arcade-check.sh', () => {
   }
 })
 
-describe('arcade-check.sh curl options', () => {
+describe('broadcaster-check.sh curl options', () => {
   it('ignores ~/.curlrc and URL globbing', async () => {
     const src = readFileSync(check, 'utf8')
     expect(src).toMatch(/curl -q -g /)
-    const home = mkdtempSync(join(tmpdir(), 'arcade-check-home-'))
+    const home = mkdtempSync(join(tmpdir(), 'broadcaster-check-home-'))
     try {
       writeFileSync(join(home, '.curlrc'), 'fail\n')
       const r = await run(check, [txid('d'), base], { PATH: process.env.PATH, HOME: home, ...noProxy })

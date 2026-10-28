@@ -104,7 +104,7 @@ describe('assets', () => {
   it('env.example has no key variables', () => {
     const lines = read('env.example').split('\n')
     for (const l of lines) if (l !== 'WOC_API_KEY=') expect(l).not.toMatch(/KEY=|WIF|MNEMONIC|SECRET/)
-    for (const v of ['BSV_NETWORK=testnet', 'ARCADE_URL=', 'WOC_API_KEY=', 'PUBLIC_ORIGIN=http://localhost:5173', 'FEE_SAT_PER_KB=100']) {
+    for (const v of ['BSV_NETWORK=testnet', 'BSV_BROADCASTER_URL=', 'WOC_API_KEY=', 'PUBLIC_ORIGIN=http://localhost:5173', 'FEE_SAT_PER_KB=100']) {
       expect(lines).toContain(v)
     }
   })

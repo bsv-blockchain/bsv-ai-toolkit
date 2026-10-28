@@ -9,7 +9,7 @@ const read = (file: string) => readFileSync(refs + file, 'utf8')
 const must: Record<string, string[]> = {
   'wallet-brc100.md': ['waitForAuthentication', "WalletClient('auto'", 'babbage.groupPermissions', 'hashToDirectlySign', 'G-01', 'letters, digits and single spaces'],
   'payments-brc29.md': ["'3241645161d8'", 'paymentRemittance', 'forSelf', 'fromHexEF', 'toBinaryAtomic', '10 s'],
-  'arcade-0conf.md': ['SEEN_ON_NETWORK', 'competingTxs', '476', 'txn-already-known', 'text/plain', '350 ms'],
+  'broadcaster-0conf.md': ['SEEN_ON_NETWORK', 'competingTxs', '476', 'txn-already-known', 'text/plain', '350 ms'],
   'simple-routing.md': ['0.7', 'network', 'arcadeUrl', 'integrate_simple'],
   'testnet-to-mainnet.md': ['BSV_NETWORK', 'bsvfaucet.com', '24 h', 'network-guard.sh', '476'],
   'common-errors.md': ['Atomic BEEF', 'isAuthenticated', 'FEE_TOO_HIGH', '429', 'fileURLToPath', 'require review'],
@@ -38,7 +38,7 @@ describe('authored references', () => {
 
 describe('fund-safety wording', () => {
   it('calls a double spend a failed payment only once the two-read rule confirms it', () => {
-    for (const file of ['arcade-0conf.md', 'threat-model.md']) {
+    for (const file of ['broadcaster-0conf.md', 'threat-model.md']) {
       const lines = read(file).split('\n').filter((l) => l.includes('failed payment'))
       expect(lines.length, file).toBeGreaterThan(0)
       for (const l of lines) expect(l, file).toMatch(/two-read/)
@@ -52,16 +52,16 @@ describe('fund-safety wording', () => {
   })
 
   it('WhatsOnChain backoff never moves the gate earlier than queued reservations', () => {
-    expect(read('arcade-0conf.md')).toContain('next = Math.max(next, Date.now() + 2_000 * 2 ** attempt)')
+    expect(read('broadcaster-0conf.md')).toContain('next = Math.max(next, Date.now() + 2_000 * 2 ** attempt)')
   })
 })
 
 describe('SKILL.md links the authored references', () => {
   const skill = readFileSync(skillDir + 'SKILL.md', 'utf8')
 
-  it('points default decision 4 (finality) at arcade-0conf.md', () => {
+  it('points default decision 4 (finality) at broadcaster-0conf.md', () => {
     const d4 = skill.split('\n').find((l) => l.startsWith('4. '))!
-    expect(d4).toContain('references/arcade-0conf.md')
+    expect(d4).toContain('references/broadcaster-0conf.md')
   })
 
   it('keeps testnet keys out of the repository and gives a gate script one approval', () => {
@@ -74,7 +74,7 @@ describe('routing and operations references', () => {
   const sections: Record<string, string[]> = {
     'simple-routing.md': ['What @bsv/simple 0.7 covers', 'What it does not', 'Traps', 'When to drop to @bsv/sdk', 'Shape B recommendation', 'Prompts in @bsv/mcp'],
     'testnet-to-mainnet.md': ['One variable', 'Faucet', 'Fee reality', 'Mainnet checklist', 'On 429 / 476 / FEE_TOO_HIGH'],
-    'payment-channels.md': ['When a channel is worth it', 'What works today', 'Three constructions', 'Open', 'Update', 'Close, cooperative', 'Close without the counterparty', 'Stale states and disputes', 'Backups', 'Rúnar for the covenant', 'Arcade for the open and the close', 'Review checklist'],
+    'payment-channels.md': ['When a channel is worth it', 'What works today', 'Three constructions', 'Open', 'Update', 'Close, cooperative', 'Close without the counterparty', 'Stale states and disputes', 'Backups', 'Rúnar for the covenant', 'BSV Broadcaster for the open and the close', 'Review checklist'],
   }
   for (const [file, heads] of Object.entries(sections)) {
     it(`${file} has its sections`, () => {
@@ -88,7 +88,7 @@ describe('routing and operations references', () => {
     for (const l of lines) expect(l).toMatch(/no |never|not |cannot|without/i)
   })
 
-  it('simple-routing.md states the wallet-toolbox Arcade caveat and the network spellings', () => {
+  it('simple-routing.md states the wallet-toolbox BSV Broadcaster caveat and the network spellings', () => {
     const t = read('simple-routing.md')
     for (const n of ['GorillaPool', 'Taal', 'arcUrl', 'arcGorillaPoolUrl', 'Bitails', 'WhatsOnChain first', 'GET /tx/{txid}', 'Setup.createWalletSQLite', 'go-wallet-toolbox']) expect(t, n).toContain(n)
     expect(t).toMatch(/'testnet' \| 'main'/)
@@ -100,7 +100,7 @@ describe('routing and operations references', () => {
     const t = read('testnet-to-mainnet.md')
     const flagLines = t.split('\n').filter((l) => l.includes('BSV_MCP_ALLOW_MAINNET_BROADCAST'))
     expect(flagLines.length).toBeGreaterThan(0)
-    for (const l of flagLines) expect(l).toMatch(/agent|arcade_submit/)
+    for (const l of flagLines) expect(l).toMatch(/agent|broadcaster_submit/)
     expect(t).toContain('10M sats')
   })
 
@@ -136,7 +136,8 @@ describe('fix round 1: network evidence, wallet review errors, fee wording', () 
     }
   })
 
-  it('the wallet-toolbox snippet falls back to the public Arcade when ARCADE_URL is empty', () => {
-    expect(read('simple-routing.md')).toMatch(/options\.arcadeUrl = ARCADE_URL \|\|/)
+  it('the wallet-toolbox snippet falls back to the public BSV Broadcaster when BSV_BROADCASTER_URL is empty', () => {
+    // `arcadeUrl` is wallet-toolbox's own option name, which the rename does not change.
+    expect(read('simple-routing.md')).toMatch(/options\.arcadeUrl = BSV_BROADCASTER_URL \|\|/)
   })
 })

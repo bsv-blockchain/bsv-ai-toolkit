@@ -1,6 +1,6 @@
 // Prompts the bsv-dev skill should and should not activate on, judged against its SKILL.md description.
 // `activate` rows are BSV development tasks; `ignore` rows are other chains, generic web work, near-misses
-// on shared words (arcade, desktop, faucet, 429) and "what is" questions the docs MCP answers.
+// on shared words (arcade, broadcaster, desktop, faucet, 429) and "what is" questions the docs MCP answers.
 
 export const corpus: Array<{ prompt: string; expect: 'activate' | 'ignore' }> = [
   // activate: required rows
@@ -24,6 +24,11 @@ export const corpus: Array<{ prompt: string; expect: 'activate' | 'ignore' }> = 
   { prompt: 'how do BRC-29 payments work with derivation prefixes', expect: 'activate' },
   { prompt: 'the server should call internalizeAction on the incoming payment', expect: 'activate' },
   { prompt: 'broadcast with Arcade instead of WhatsOnChain', expect: 'activate' },
+  { prompt: 'broadcast with BSV Broadcaster instead of WhatsOnChain', expect: 'activate' },
+  { prompt: 'my BSV Broadcaster POST returned 476', expect: 'activate' },
+  { prompt: 'point my app at a self-hosted BSV Broadcaster', expect: 'activate' },
+  { prompt: 'move my app from Arcade to BSV Broadcaster', expect: 'activate' },
+  { prompt: 'which BSV Broadcaster status means the payment is final', expect: 'activate' },
   { prompt: 'is 0-conf safe enough to release the goods', expect: 'activate' },
   { prompt: 'write a Rúnar contract for a two-player wager', expect: 'activate' },
   { prompt: 'write a Runar contract that locks coins until a date', expect: 'activate' },
@@ -69,6 +74,8 @@ export const corpus: Array<{ prompt: string; expect: 'activate' | 'ignore' }> = 
   { prompt: 'add a tip button to my React app with PayPal', expect: 'ignore' },
   { prompt: 'build a desktop app in Electron', expect: 'ignore' },
   { prompt: 'build an arcade game in pygame', expect: 'ignore' },
+  { prompt: 'write a Socket.IO broadcaster for my chat rooms', expect: 'ignore' },
+  { prompt: 'find the nearest video arcade open late', expect: 'ignore' },
   { prompt: 'add OAuth login with Google to my app', expect: 'ignore' },
   { prompt: 'write unit tests for my reducer', expect: 'ignore' },
   { prompt: 'fix the CSS grid on the mobile layout', expect: 'ignore' },

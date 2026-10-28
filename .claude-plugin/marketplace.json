@@ -6,7 +6,7 @@
     {
       "name": "bsv-dev",
       "source": "./packages/skill",
-      "description": "Official BSV Association skill, commands and MCP bundle for building BSV apps on BRC-100 wallets, Arcade and Rúnar",
+      "description": "Official BSV Association skill, commands and MCP bundle for building BSV apps on BRC-100 wallets, BSV Broadcaster (formerly Arcade) and Rúnar",
       "category": "development"
     }
   ]

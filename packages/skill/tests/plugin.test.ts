@@ -15,14 +15,15 @@ describe('plugin.json', () => {
     expect(JSON.stringify(plugin)).not.toContain('CLAUDE_PLUGIN_ROOT')
   })
 
-  it('exposes only bsv_network and arcade_url', () => {
-    expect(Object.keys(plugin.userConfig).sort()).toEqual(['arcade_url', 'bsv_network'])
+  it('exposes only bsv_network and broadcaster_url', () => {
+    expect(Object.keys(plugin.userConfig).sort()).toEqual(['broadcaster_url', 'bsv_network'])
+    expect(plugin.userConfig.broadcaster_url).toMatchObject({ type: 'string', title: 'BSV Broadcaster URL', default: '' })
     expect(plugin.userConfig.bsv_network.default).toBe('testnet')
     expect(plugin.userConfig.bsv_network.options).toEqual(['testnet', 'mainnet'])
     // The mainnet-broadcast opt-in stays a shell variable: never an option, never passed to the MCP.
     // (bsv_network's description names it so users know where it lives.)
     expect(Object.keys(plugin.userConfig).join()).not.toMatch(/allow/i)
-    expect(Object.keys(plugin.mcpServers['bsv-mcp'].env).sort()).toEqual(['ARCADE_URL', 'BSV_NETWORK'])
+    expect(plugin.mcpServers['bsv-mcp'].env).toEqual({ BSV_NETWORK: '${user_config.bsv_network}', BSV_BROADCASTER_URL: '${user_config.broadcaster_url}' })
     expect(JSON.stringify(plugin.mcpServers)).not.toContain('ALLOW_MAINNET')
   })
 

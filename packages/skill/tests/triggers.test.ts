@@ -41,8 +41,15 @@ describe('trigger corpus', () => {
       expect(matches(p, triggers), p).toBe(false)
   })
 
+  it('names both BSV Broadcaster and its former name Arcade, and reads "arcade" as BSV only beside a BSV term', () => {
+    expect(triggers).toEqual(expect.arrayContaining(['broadcast with BSV Broadcaster', 'Arcade']))
+    expect(matches('broadcast with Arcade instead of WhatsOnChain', triggers)).toBe(true)
+    expect(matches('build an arcade game in pygame', triggers)).toBe(false)
+  })
+
   it('numeric error codes need a BSV service beside them', () => {
     expect(matches('Arcade answered 476', triggers)).toBe(true)
+    expect(matches('BSV Broadcaster answered 476', triggers)).toBe(true)
     expect(matches('explain HTTP 429 in nginx', triggers)).toBe(false)
     expect(matches('order 4760 shipped from Arcade Street', triggers)).toBe(false)
   })
