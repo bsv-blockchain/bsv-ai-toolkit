@@ -1,6 +1,6 @@
 ---
 title: Networks and endpoints
-verified: 2026-10-22
+verified: 2026-10-29
 source: "@bsv/mcp content"
 ---
 
@@ -10,8 +10,8 @@ Build and test on testnet. Mainnet is real money: switch to it only by explicit 
 
 | | testnet | mainnet |
 | --- | --- | --- |
-| BSV Broadcaster (formerly Arcade) default | `https://arcade-testnet-us-1.bsvblockchain.tech` (live and used for testnet work, though not listed on the public BSV Broadcaster docs page) | `https://arcade-us-1.bsvblockchain.tech` |
-| BSV Broadcaster alternates | `https://arcade-v2-testnet-us-1.bsvblockchain.tech` | `https://arcade-eu-1.bsvblockchain.tech`, `https://arcade-ap-1.bsvblockchain.tech`, `https://arcade-v2-us-1.bsvblockchain.tech`; also `https://arcade.gorillapool.io` (listed in the BSV Broadcaster docs, not in `versions.json`) |
+| BSV Broadcaster (formerly Arcade) default | `https://arcade-v2-testnet-us-1.bsvblockchain.tech` (the testnet host in the BSV docs broadcasting guide; not listed on the public BSV Broadcaster docs page) | `https://arcade-us-1.bsvblockchain.tech` |
+| BSV Broadcaster alternates | `https://arcade-testnet-us-1.bsvblockchain.tech` (the default in `@bsv/mcp` 2.0.0; on 2026-10-29 it reported the same version, block height and policy) | `https://arcade-eu-1.bsvblockchain.tech`, `https://arcade-ap-1.bsvblockchain.tech`, `https://arcade-v2-us-1.bsvblockchain.tech`; also `https://arcade.gorillapool.io` (listed in the BSV Broadcaster docs, not in `versions.json`) |
 | WhatsOnChain API base | `https://api.whatsonchain.com/v1/bsv/test` | `https://api.whatsonchain.com/v1/bsv/main` |
 | Explorer | `https://test.whatsonchain.com` | `https://whatsonchain.com` |
 | Getting coins | Faucet `https://bsvfaucet.com`: sign in with a BSV wallet, up to 10M sats per request, 24 h cooldown | Buy BSV; there is no faucet |

@@ -140,7 +140,7 @@ BSV Broadcaster's own docs have two gaps an agent trips on: no testnet endpoint 
 <!-- bsv-dev rules: begin -->
 1. Read https://bsv.writedocs.io/llms.txt first, then fetch only the pages the task needs. Its page links point at docs.bsvblockchain.org; open the same path on bsv.writedocs.io instead.
 2. When the `bsv-docs` and `bsv-mcp` MCP servers are connected, use their tools before relying on memory for BSV APIs, versions, limits or fees.
-3. Work on testnet unless `BSV_NETWORK=mainnet` is set on purpose by the operator. Before a payment, check that `wallet.getNetwork()` returns `testnet`.
+3. Work on testnet unless `BSV_NETWORK=mainnet` is set on purpose by the operator. Before a payment, check that the `network` field returned by `wallet.getNetwork()` is `testnet`.
 4. For the user's wallet, connect with `@bsv/sdk` 3.x `new WalletClient('auto', originator)`, from the browser or a local script.
 5. Never hold, ask for, print or generate for production use a private key, WIF or recovery phrase; the user's wallet (shape A) or an operator-set variable outside the repo (shape B) holds it.
 6. Testnet coins come from https://bsvfaucet.com and wallet approvals come from the user: ask the user for both, and never work around either.
@@ -165,7 +165,7 @@ Below the block, point at the skill (`build-with-ai/skill`), and replace the "Co
 | WhatsOnChain | Only UTXO listings, spent-by and tip height, throttled | On the hot path; unthrottled browser calls |
 | Fees | Configure 100 sat/kB on both networks, so testnet sizes and costs carry over; never below what `GET /policy` reports | Paying testnet's 1 sat/kB minimum, which mainnet refuses (code 465, fee too low) |
 | Receiving payments | BRC-29 plus `internalizeAction` with complete AtomicBEEF | Partial BEEF |
-| Networks | Testnet by default, coins from `bsvfaucet.com`, testnet BSV Broadcaster `https://arcade-testnet-us-1.bsvblockchain.tech` | Mainnet in getting-started code |
+| Networks | Testnet by default, coins from `bsvfaucet.com`, testnet BSV Broadcaster `https://arcade-v2-testnet-us-1.bsvblockchain.tech` | Mainnet in getting-started code |
 | Contracts | Rúnar from upstream main (1.0.0-rc.1), tested with `Spend` | npm 0.4.6 (forgeable `checkPreimage`); `TestContract`, which mocks `checkSig` |
 | Tokens | 1Color: BRC-162 format, BRC-207 wallet module, encoding in `@bsv/templates` 2.0 | "Mandala" (BRC-92 was withdrawn on 2 Oct 2026); claiming wallet support in the official `wallet-toolbox` or BSV Desktop before it ships |
 

@@ -75,7 +75,7 @@ Each Markdown resource starts with `verified: YYYY-MM-DD` and `source: @bsv/mcp 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BSV_NETWORK` | `testnet` | `testnet` or `mainnet`. Picks the default BSV Broadcaster and gates mainnet broadcast. Any other value stops the server at startup. |
-| `BSV_BROADCASTER_URL` | per network | BSV Broadcaster base URL. Defaults: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
+| `BSV_BROADCASTER_URL` | per network | BSV Broadcaster base URL. Defaults: testnet `https://arcade-v2-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
 | `ARCADE_URL` | unset | Deprecated: the old name of `BSV_BROADCASTER_URL`. Read only when `BSV_BROADCASTER_URL` is unset, and then the server logs `ARCADE_URL is deprecated; use BSV_BROADCASTER_URL` on stderr. |
 | `BSV_MCP_ALLOW_MAINNET_BROADCAST` | unset | `1` lets `broadcaster_submit` broadcast on mainnet. |
 | `BSV_REPOS_DIR` | unset | Directory filled by `setup.sh`. Needed by `code_search` and `find_function_definition`; `brc_lookup` reads the `BRCs` clone there first. |

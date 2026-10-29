@@ -5,7 +5,7 @@ license: MIT
 compatibility: Node.js 22+; optional @bsv/mcp (stdio) and the BSV docs MCP (http); pnpm for Rúnar projects
 metadata:
   author: BSV Association
-  version: "0.1.0"
+  version: "0.1.1"
   facts-from: "@bsv/mcp 2.0.0"
 ---
 

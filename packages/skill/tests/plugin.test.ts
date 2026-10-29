@@ -10,7 +10,7 @@ const frontmatter = (md: string) => md.match(/^---\n([\s\S]*?)\n---/)![1]
 
 describe('plugin.json', () => {
   it('bundles both MCPs with the pinned @bsv/mcp version', () => {
-    expect(plugin.mcpServers['bsv-mcp'].args).toEqual(['-y', '@bsv/mcp@2.0.0'])
+    expect(plugin.mcpServers['bsv-mcp'].args).toEqual(['-y', '@bsv/mcp@2.0.1'])
     expect(plugin.mcpServers['bsv-docs']).toEqual({ type: 'http', url: 'https://bsv.writedocs.io/mcp' })
     expect(JSON.stringify(plugin)).not.toContain('CLAUDE_PLUGIN_ROOT')
   })
@@ -28,8 +28,8 @@ describe('plugin.json', () => {
   })
 
   it('version matches the skill metadata and @bsv/mcp pin', () => {
-    expect(read('packages/skill/skills/bsv-dev/SKILL.md')).toMatch(/version: "0\.1\.0"/)
-    expect(plugin.version).toBe('0.1.0')
+    expect(read('packages/skill/skills/bsv-dev/SKILL.md')).toMatch(/version: "0\.1\.1"/)
+    expect(plugin.version).toBe('0.1.1')
     const mcp = JSON.parse(read('packages/mcp/package.json'))
     expect(plugin.mcpServers['bsv-mcp'].args[1]).toBe(`@bsv/mcp@${mcp.version}`)
   })

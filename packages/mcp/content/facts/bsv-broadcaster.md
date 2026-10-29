@@ -104,7 +104,7 @@ A `REJECTED` reason that starts `parent rejected` names a rejected ancestor and 
 
 | Network | `miningFee` | `maxtxsizepolicy` | `maxscriptsizepolicy` |
 | --- | --- | --- | --- |
-| testnet (`arcade-testnet-us-1`) | 1 sat / 1000 bytes | 100000000 | 100000000 |
+| testnet (`arcade-v2-testnet-us-1`) | 1 sat / 1000 bytes | 100000000 | 100000000 |
 | mainnet (`arcade-us-1`) | 100 sat / 1000 bytes | 100000000 | 100000000 |
 
 On mainnet every datahub BSV Broadcaster reported in `/health` advertised 100 sat/kB. BSV Broadcaster's size limits track the largest limit any peer advertises, and some individual peers advertised a `maxscriptsizepolicy` of 500000 or 10000000. A script larger than 500 KB may pass BSV Broadcaster yet reach fewer nodes; test it on testnet first. `maxtxsigopscountspolicy` 4294967295 means unlimited.

@@ -27,7 +27,7 @@ const STATIC_URIS = [
 ]
 const PROMPTS = ['review_against_guardrails', 'tokenize_with_1color', 'integrate_simple', 'add_simple_feature', 'debug_simple']
 const BROKEN_A = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'projects', 'broken-a')
-const PREFIX = /^verified: \d{4}-\d{2}-\d{2}\nsource: @bsv\/mcp v2\.0\.0\n\n/
+const PREFIX = /^verified: \d{4}-\d{2}-\d{2}\nsource: @bsv\/mcp v2\.0\.1\n\n/
 
 let client: Client
 beforeAll(async () => {
@@ -68,7 +68,7 @@ describe('resources', () => {
         const body = JSON.parse(text)
         expect(Object.keys(body).slice(0, 2), uri).toEqual(['verified', 'source'])
         expect(body.verified, uri).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-        expect(body.source, uri).toBe('@bsv/mcp v2.0.0')
+        expect(body.source, uri).toBe('@bsv/mcp v2.0.1')
       } else {
         expect(mimeType, uri).toBe('text/markdown')
         expect(text, uri).toMatch(PREFIX)

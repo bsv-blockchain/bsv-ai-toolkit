@@ -19,7 +19,7 @@
       "version": "v0.16.0",
       "verified": "2026-10-28",
       "hosts": {
-        "testnet": ["https://arcade-testnet-us-1.bsvblockchain.tech", "https://arcade-v2-testnet-us-1.bsvblockchain.tech"],
+        "testnet": ["https://arcade-v2-testnet-us-1.bsvblockchain.tech", "https://arcade-testnet-us-1.bsvblockchain.tech"],
         "mainnet": ["https://arcade-us-1.bsvblockchain.tech", "https://arcade-eu-1.bsvblockchain.tech", "https://arcade-ap-1.bsvblockchain.tech", "https://arcade-v2-us-1.bsvblockchain.tech"],
         "ttn": ["https://arcade-v2-ttn-us-1.bsvblockchain.tech"]
       },

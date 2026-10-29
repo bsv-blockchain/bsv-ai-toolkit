@@ -656,7 +656,7 @@ describe('gate run on testnet', () => {
 describe('the gate\'s BSV Broadcaster URL', () => {
   it('reads BSV_BROADCASTER_URL, then the deprecated ARCADE_URL with a warning, and refuses a mainnet host', () => {
     const warnings: string[] = []
-    expect(broadcasterUrlOf({}, l => warnings.push(l))).toBe('https://arcade-testnet-us-1.bsvblockchain.tech')
+    expect(broadcasterUrlOf({}, l => warnings.push(l))).toBe('https://arcade-v2-testnet-us-1.bsvblockchain.tech')
     expect(broadcasterUrlOf({ BSV_BROADCASTER_URL: 'http://localhost:8080', ARCADE_URL: 'http://localhost:9090' }, l => warnings.push(l))).toBe('http://localhost:8080')
     expect(warnings).toEqual([])
     expect(broadcasterUrlOf({ ARCADE_URL: 'http://localhost:9090' }, l => warnings.push(l))).toBe('http://localhost:9090')

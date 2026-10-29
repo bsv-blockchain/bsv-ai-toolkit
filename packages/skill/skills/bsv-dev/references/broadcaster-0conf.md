@@ -5,7 +5,7 @@ Guardrails: G-09, G-10, G-11, G-12, G-13, G-14, G-15, G-16
 
 BSV Broadcaster is the broadcaster and the source of truth for every transaction whose txid you know. The app has its own small BSV Broadcaster client: it submits with `POST /tx` and gates every money decision on its own `GET /tx/{txid}`. `@bsv/sdk` 3.2.1 has no BSV Broadcaster client that reads status (its `Teranode` broadcaster only posts, and the POST answer is provisional; verified 2026-10-28), and its `ARC` class posts to the legacy ARC API, which BSV Broadcaster does not serve, so never use it (verified 2026-10-22). The `bsv-mcp` tools `broadcaster_submit` and `broadcaster_status` are for development; app code does not call them. Endpoints, status values and ARC codes are in `facts.md` (section "BSV Broadcaster").
 
-`BSV_BROADCASTER_URL` is a setting, defaulting per `BSV_NETWORK`: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech` (verified 2026-10-22).
+`BSV_BROADCASTER_URL` is a setting, defaulting per `BSV_NETWORK`: testnet `https://arcade-v2-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech` (verified 2026-10-29).
 
 ## Submit
 

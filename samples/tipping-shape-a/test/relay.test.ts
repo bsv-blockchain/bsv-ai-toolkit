@@ -23,7 +23,7 @@ import { Broadcaster } from '../server/sse.js'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
 const VERSIONS = fileURLToPath(new URL('../../../content/versions.json', import.meta.url))
-const BROADCASTER = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const BROADCASTER = 'https://arcade-v2-testnet-us-1.bsvblockchain.tech'
 const PLACEHOLDER = 'a'.repeat(64)
 const COMPETITOR = 'b'.repeat(64)
 const HOUR = 60 * 60 * 1000

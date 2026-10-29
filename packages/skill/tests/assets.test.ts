@@ -92,7 +92,7 @@ describe('assets', () => {
     expect(claude[0]).toContain('https://bsv.writedocs.io/llms.txt')
     expect(claude[0]).toContain('open the same path on bsv.writedocs.io instead')
     expect(claude[1]).toMatch(/^When the `bsv-docs` and `bsv-mcp` MCP servers are connected, /)
-    expect(claude[2]).toContain('check that `wallet.getNetwork()` returns `testnet`')
+    expect(claude[2]).toContain('check that the `network` field returned by `wallet.getNetwork()` is `testnet`')
     expect(claude[3]).toMatch(/^For the user's wallet, .*from the browser or a local script\.$/)
     expect(claude[4]).toMatch(/shape A.*shape B/)
     expect(claude[5]).toMatch(/https:\/\/bsvfaucet\.com.*never work around either/)

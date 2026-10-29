@@ -4,16 +4,16 @@ import { loadConfig, resolveNetwork, KNOWN_HOSTS, DEFAULT_BROADCASTER } from '..
 describe('loadConfig', () => {
   it('defaults to testnet and the testnet BSV Broadcaster', () => {
     const c = loadConfig({})
-    expect(c.network).toBe('testnet'); expect(c.broadcasterUrl).toBe('https://arcade-testnet-us-1.bsvblockchain.tech'); expect(c.allowMainnetBroadcast).toBe(false)
+    expect(c.network).toBe('testnet'); expect(c.broadcasterUrl).toBe('https://arcade-v2-testnet-us-1.bsvblockchain.tech'); expect(c.allowMainnetBroadcast).toBe(false)
   })
   it('mainnet default host', () => { expect(loadConfig({ BSV_NETWORK: 'mainnet' }).broadcasterUrl).toBe('https://arcade-us-1.bsvblockchain.tech') })
   it('rejects other network values', () => { expect(() => loadConfig({ BSV_NETWORK: 'main' })).toThrow(/BSV_NETWORK/) })
-  it('reads the version from package.json', () => { expect(loadConfig({}).version).toBe('2.0.0') })
+  it('reads the version from package.json', () => { expect(loadConfig({}).version).toBe('2.0.1') })
   it('treats an empty BSV_BROADCASTER_URL as unset', () => {
-    expect(loadConfig({ BSV_BROADCASTER_URL: '' }).broadcasterUrl).toBe('https://arcade-testnet-us-1.bsvblockchain.tech')
+    expect(loadConfig({ BSV_BROADCASTER_URL: '' }).broadcasterUrl).toBe('https://arcade-v2-testnet-us-1.bsvblockchain.tech')
   })
   it('treats an unresolved plugin placeholder BSV_BROADCASTER_URL as unset', () => {
-    expect(loadConfig({ BSV_BROADCASTER_URL: '${user_config.broadcaster_url}' }).broadcasterUrl).toBe('https://arcade-testnet-us-1.bsvblockchain.tech')
+    expect(loadConfig({ BSV_BROADCASTER_URL: '${user_config.broadcaster_url}' }).broadcasterUrl).toBe('https://arcade-v2-testnet-us-1.bsvblockchain.tech')
   })
   it('treats an unresolved plugin placeholder BSV_NETWORK as unset', () => {
     expect(loadConfig({ BSV_NETWORK: '${user_config.bsv_network}' }).network).toBe('testnet')
@@ -54,7 +54,7 @@ describe('BSV_BROADCASTER_URL and the deprecated ARCADE_URL', () => {
   })
   it('treats an empty or unresolved-placeholder value as unset under either name', () => {
     const warn = vi.fn()
-    const testnet = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+    const testnet = 'https://arcade-v2-testnet-us-1.bsvblockchain.tech'
     expect(loadConfig({ ARCADE_URL: '${user_config.arcade_url}' }, warn).broadcasterUrl).toBe(testnet)
     expect(loadConfig({ ARCADE_URL: '' }, warn).broadcasterUrl).toBe(testnet)
     expect(loadConfig({ BSV_BROADCASTER_URL: '${user_config.broadcaster_url}', ARCADE_URL: '${user_config.arcade_url}' }, warn).broadcasterUrl).toBe(testnet)

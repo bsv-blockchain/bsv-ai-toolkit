@@ -1,7 +1,7 @@
 import { Transaction, type WalletInterface } from '@bsv/sdk'
 
 // Broadcast only through BSV Broadcaster: never the SDK ARC class or the legacy /v1/tx API.
-const BSV_BROADCASTER_URL = process.env.BSV_BROADCASTER_URL ?? 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const BSV_BROADCASTER_URL = process.env.BSV_BROADCASTER_URL ?? 'https://arcade-v2-testnet-us-1.bsvblockchain.tech'
 const TIMEOUT_MS = 10000
 
 export type TxStatus = 'SEEN_ON_NETWORK' | 'SEEN_MULTIPLE_NODES' | 'MINED' | 'REJECTED'

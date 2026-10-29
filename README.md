@@ -10,7 +10,7 @@ Tools and dated knowledge for building BSV applications with AI coding agents, t
 | --- | --- |
 | `content/` | The single source of facts and rules: dated facts (`facts/*.md`), the guardrails `G-01`..`G-38` (`guardrails.yaml`), pinned versions (`versions.json`), the docs index, custody shapes and the threat model. Facts are edited here and nowhere else. |
 | `packages/mcp/` | `@bsv/mcp` 2.0.0, the MCP server. `packages/mcp/content/` is a generated snapshot of `content/` that ships in the npm package. |
-| `packages/skill/` | The `bsv-dev` skill 0.1.0 and Claude Code plugin: `skills/bsv-dev/` (`SKILL.md`, the generated `references/`, assets and scripts), the commands `/bsv-review` and `/bsv-design`, and the plugin manifest, which bundles `bsv-mcp` and `bsv-docs`. Unreleased until v2.0.0 is tagged. |
+| `packages/skill/` | The `bsv-dev` skill 0.1.1 and Claude Code plugin: `skills/bsv-dev/` (`SKILL.md`, the generated `references/`, assets and scripts), the commands `/bsv-review` and `/bsv-design`, and the plugin manifest, which bundles `bsv-mcp` and `bsv-docs`. |
 | `packages/sync/` | Private build step: renders `content/` into `packages/mcp/content/` and the skill's references, and lints facts and links. |
 | `samples/` | Sample apps; see [`samples/README.md`](samples/README.md). |
 | `docs/` | The design spec and implementation plans (`docs/superpowers/`), the [phase-1 exit checklist](docs/evals/phase-1-exit-checklist.md) and agent evals (`docs/evals/`), the WriteChoice briefing (`docs/writechoice/`) and the `@bsv/simple-mcp` deprecation kit (`docs/deprecation/`). |
@@ -18,13 +18,13 @@ Tools and dated knowledge for building BSV applications with AI coding agents, t
 
 ## Install
 
-Skill (any agent that reads Agent Skills), available once v2.0.0 is released:
+Skill (any agent that reads Agent Skills):
 
 ```bash
 npx skills add bsv-blockchain/bsv-ai-toolkit
 ```
 
-Claude Code plugin (skill plus MCP), available once v2.0.0 is released:
+Claude Code plugin (skill plus MCP):
 
 ```bash
 claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv
@@ -115,7 +115,7 @@ For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [-
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BSV_NETWORK` | `testnet` | `testnet` or `mainnet`. Picks the default BSV Broadcaster and gates mainnet broadcast. Any other value stops the server at startup. |
-| `BSV_BROADCASTER_URL` | per network | BSV Broadcaster base URL. Defaults: testnet `https://arcade-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
+| `BSV_BROADCASTER_URL` | per network | BSV Broadcaster base URL. Defaults: testnet `https://arcade-v2-testnet-us-1.bsvblockchain.tech`, mainnet `https://arcade-us-1.bsvblockchain.tech`. Any URL is accepted, including `http://localhost:8080`, except a known host of the other network (or an unparseable URL), which stops the server at startup. |
 | `ARCADE_URL` | unset | Deprecated: the old name of `BSV_BROADCASTER_URL`. Read only when `BSV_BROADCASTER_URL` is unset, and then the server logs `ARCADE_URL is deprecated; use BSV_BROADCASTER_URL` on stderr. |
 | `BSV_MCP_ALLOW_MAINNET_BROADCAST` | unset | `1` lets `broadcaster_submit` broadcast on mainnet. |
 | `BSV_REPOS_DIR` | unset | Directory filled by `setup.sh`. Needed by `code_search` and `find_function_definition`; `brc_lookup` reads the `BRCs` clone there first. |

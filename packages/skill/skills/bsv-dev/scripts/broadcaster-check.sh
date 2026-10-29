@@ -46,7 +46,7 @@ fi
 if [ -z "$url" ]; then
   network="${BSV_NETWORK:-testnet}"
   case "$network" in
-    testnet) url="https://arcade-testnet-us-1.bsvblockchain.tech" ;;
+    testnet) url="https://arcade-v2-testnet-us-1.bsvblockchain.tech" ;;
     mainnet) url="https://arcade-us-1.bsvblockchain.tech" ;;
     *)
       printf 'BSV_NETWORK must be testnet or mainnet (got: %s)\n' "$network" >&2
