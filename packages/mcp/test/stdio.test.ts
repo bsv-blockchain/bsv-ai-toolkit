@@ -72,11 +72,11 @@ describe('stdio bootstrap', () => {
       await client.connect(transport)
       const info = client.getServerVersion()
       expect(info?.name).toBe('@bsv/mcp')
-      expect(info?.version).toBe('2.0.0')
+      expect(info?.version).toBe('2.0.1')
       const { tools } = await client.listTools()
       expect(tools.map((t) => t.name).sort()).toEqual(TOOLS)
       expect(stderr).toContain(
-        '@bsv/mcp v2.0.0 network=testnet broadcaster=https://arcade-testnet-us-1.bsvblockchain.tech repos=unset\n',
+        '@bsv/mcp v2.0.1 network=testnet broadcaster=https://arcade-v2-testnet-us-1.bsvblockchain.tech repos=unset\n',
       )
     } finally {
       await client.close()

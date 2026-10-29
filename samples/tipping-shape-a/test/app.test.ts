@@ -13,7 +13,7 @@ const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
 const MANIFEST_PATH = join(SAMPLE, 'public', 'manifest.json')
 const SKILL_GUARD = fileURLToPath(new URL('../../../packages/skill/skills/bsv-dev/scripts/network-guard.sh', import.meta.url))
 
-const TESTNET_BROADCASTER = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const TESTNET_BROADCASTER = 'https://arcade-v2-testnet-us-1.bsvblockchain.tech'
 const MAINNET_BROADCASTER = 'https://arcade-us-1.bsvblockchain.tech'
 // A curve point; mainnet refuses to boot without a fixed creator key.
 const CREATOR_KEY = `02${'ab'.repeat(32)}`

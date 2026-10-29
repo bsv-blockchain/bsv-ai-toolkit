@@ -1,7 +1,7 @@
 {
   "name": "bsv-dev",
   "displayName": "BSV Dev",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Official BSV Association skill, commands and MCP bundle for building BSV apps on BRC-100 wallets, BSV Broadcaster (formerly Arcade) and Rúnar",
   "author": { "name": "BSV Association", "url": "https://bsvblockchain.org" },
   "homepage": "https://github.com/bsv-blockchain/bsv-ai-toolkit",
@@ -13,7 +13,7 @@
   "mcpServers": {
     "bsv-mcp": {
       "command": "npx",
-      "args": ["-y", "@bsv/mcp@2.0.0"],
+      "args": ["-y", "@bsv/mcp@2.0.1"],
       "env": { "BSV_NETWORK": "${user_config.bsv_network}", "BSV_BROADCASTER_URL": "${user_config.broadcaster_url}" }
     },
     "bsv-docs": { "type": "http", "url": "https://bsv.writedocs.io/mcp" }

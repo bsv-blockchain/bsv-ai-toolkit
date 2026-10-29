@@ -1,7 +1,7 @@
 import { ARC, Transaction, type WalletInterface } from '@bsv/sdk'
 
 // Deliberate violations for the broadcast and money guardrail tests (G-09 to G-21).
-const BSV_BROADCASTER_URL = process.env.BSV_BROADCASTER_URL ?? 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const BSV_BROADCASTER_URL = process.env.BSV_BROADCASTER_URL ?? 'https://arcade-v2-testnet-us-1.bsvblockchain.tech'
 
 export const arc = new ARC('https://arc.taal.com', { deploymentId: 'tipjar' })
 

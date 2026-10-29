@@ -5,7 +5,7 @@ import type { Network } from './types.js'
 
 // Public BSV Broadcaster (formerly Arcade) instances; the hostnames keep the old name.
 export const DEFAULT_BROADCASTER: Record<Network, string> = {
-  testnet: 'https://arcade-testnet-us-1.bsvblockchain.tech',
+  testnet: 'https://arcade-v2-testnet-us-1.bsvblockchain.tech',
   mainnet: 'https://arcade-us-1.bsvblockchain.tech',
 }
 
@@ -19,7 +19,7 @@ export const KNOWN_HOSTS: { mainnet: string[]; testnet: string[]; ttn: string[] 
     'arcade-v2-us-1.bsvblockchain.tech',
     'arcade.gorillapool.io',
   ],
-  testnet: ['arcade-testnet-us-1.bsvblockchain.tech', 'arcade-v2-testnet-us-1.bsvblockchain.tech'],
+  testnet: ['arcade-v2-testnet-us-1.bsvblockchain.tech', 'arcade-testnet-us-1.bsvblockchain.tech'],
   ttn: ['arcade-v2-ttn-us-1.bsvblockchain.tech'],
 }
 

@@ -31,7 +31,7 @@ Phase 1 is done when every box below is ticked and its evidence is filled in. Ow
   Evidence: date, OS, Node version, the command's output.
 
 - [ ] **2. `claude plugin marketplace add bsv-blockchain/bsv-ai-toolkit && claude plugin install bsv-dev@bsv` works.**
-  Owner: HUMAN: Connor. After item 3: the plugin pins `@bsv/mcp@2.0.0`, so it installs only once v2.0.0 is released.
+  Owner: HUMAN: Connor. After item 3: the plugin pins `@bsv/mcp@2.0.1`, so it installs only once v2.0.1 is released.
   Run it in Claude Code, then check that the skill, the commands `/bsv-review` and `/bsv-design`, and both MCP servers (`bsv-mcp`, `bsv-docs`) are present.
   Evidence: date, `claude --version`, `claude mcp list` output.
 

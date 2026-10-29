@@ -2,7 +2,15 @@
 
 The skill and plugin release with `@bsv/mcp` from the same `v*` tag; the repository-wide entry is in the root [`CHANGELOG.md`](../../CHANGELOG.md).
 
-## 0.1.0 (unreleased)
+## 0.1.1 (unreleased)
+
+### Changed
+
+- Project rule 3 (in `CLAUDE.md.snippet`, `AGENTS.md.snippet` and `bsv.mdc`) now says to check that the `network` field returned by `wallet.getNetwork()` is `testnet`.
+- `scripts/broadcaster-check.sh` and the references default to the testnet host `https://arcade-v2-testnet-us-1.bsvblockchain.tech`.
+- The plugin pins `@bsv/mcp@2.0.1`.
+
+## 0.1.0 (2026-10-29)
 
 ### Changed
 

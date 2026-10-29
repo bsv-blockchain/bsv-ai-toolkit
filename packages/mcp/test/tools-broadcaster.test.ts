@@ -20,7 +20,7 @@ const REAL_TXID: string = EF_STATUS.txid
 const RAW_HEX = Transaction.fromHexEF(EF_HEX).toHex()
 const TXID = 'a'.repeat(64)
 const BEEF_HEX = '0100beef' + 'aa'.repeat(40)
-const TESTNET_TX = 'https://arcade-testnet-us-1.bsvblockchain.tech/tx'
+const TESTNET_TX = 'https://arcade-v2-testnet-us-1.bsvblockchain.tech/tx'
 const R15 = 'may not be final for a tx the network already accepted; re-read status'
 
 const testnet = () => loadConfig({})
@@ -199,7 +199,7 @@ describe('broadcasterPolicy and broadcasterHealth', () => {
     const f = mockFetch([{ method: 'GET', path: /^\/policy$/, status: 200, body: fixture('policy.json') }])
     const r = await broadcasterPolicy({}, testnet(), f)
     expect(r.satPerKb).toBe(1)
-    expect(f.calls[0].url).toBe('https://arcade-testnet-us-1.bsvblockchain.tech/policy')
+    expect(f.calls[0].url).toBe('https://arcade-v2-testnet-us-1.bsvblockchain.tech/policy')
   })
 
   it('health returns version', async () => {
@@ -220,7 +220,7 @@ describe('createServer', () => {
 
   it('reports @bsv/mcp with the package version and lists the broadcaster tools', async () => {
     const client = await connect([])
-    expect(client.getServerVersion()).toMatchObject({ name: '@bsv/mcp', version: '2.0.0' })
+    expect(client.getServerVersion()).toMatchObject({ name: '@bsv/mcp', version: '2.0.1' })
     const names = (await client.listTools()).tools.map((t) => t.name)
     expect(names).toEqual(expect.arrayContaining(['broadcaster_submit', 'broadcaster_status', 'broadcaster_policy', 'broadcaster_health']))
   })

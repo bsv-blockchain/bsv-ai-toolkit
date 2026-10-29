@@ -43,7 +43,7 @@ import { forgetQuestion, forgetTip, forgetWithConsent, pendingTips, postPending,
 import { assertNetwork, login, TIPS_PROTOCOL } from '../web/wallet'
 
 const SAMPLE = fileURLToPath(new URL('..', import.meta.url))
-const BROADCASTER = 'https://arcade-testnet-us-1.bsvblockchain.tech'
+const BROADCASTER = 'https://arcade-v2-testnet-us-1.bsvblockchain.tech'
 const ORIGIN = 'http://localhost:5173' // PUBLIC_ORIGIN's development default
 const quiet = () => {}
 
