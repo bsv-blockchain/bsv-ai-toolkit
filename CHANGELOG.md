@@ -8,6 +8,7 @@ One changelog for the repository: `@bsv/mcp` and the `bsv-dev` skill move togeth
 
 - The testnet BSV Broadcaster default is now `https://arcade-v2-testnet-us-1.bsvblockchain.tech`, the testnet host in the BSV docs broadcasting guide. `https://arcade-testnet-us-1.bsvblockchain.tech`, the 2.0.0 default, still works and is still known to belong to testnet. The change applies to `@bsv/mcp`, the tipping sample and the skill's `broadcaster-check.sh`.
 - Project rule 3 now says to check that the `network` field returned by `wallet.getNetwork()` is `testnet`. `getNetwork()` returns `{ network }`, so the 2.0.0 wording read as if it returned a string.
+- Project rule 1 now points at `https://bsvblockchain.com/docs/llms.txt`, the docs at their final address. Its page links point at the same host, so the rule no longer says to swap hosts. The nightly `llms.txt` check reads the same file.
 - The `bsv-dev` plugin 0.1.1 pins `@bsv/mcp@2.0.1`.
 
 ## 2.0.0 (2026-10-29)
