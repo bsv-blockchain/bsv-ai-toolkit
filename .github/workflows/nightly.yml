@@ -65,7 +65,7 @@ jobs:
           node --input-type=module - <<'JS'
           import { readFileSync, writeFileSync, appendFileSync } from 'node:fs'
           const out = process.env.OUT
-          const source = 'https://bsv.writedocs.io/llms.txt'
+          const source = 'https://bsvblockchain.com/docs/llms.txt'
           // drift: docs-index ids missing from llms.txt (likely broken links). info: llms.txt pages the curated
           // index does not list; report-only, never drift on its own.
           const lines = []
