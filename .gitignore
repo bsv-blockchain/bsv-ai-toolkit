@@ -161,5 +161,7 @@ samples/**/data/
 # LICENSE / NOTICE copied into nested npm packages by their prepack script
 /packages/mcp/LICENSE
 /packages/mcp/NOTICE
+/packages/mcp/PATENTS
 /docs/deprecation/simple-mcp/files/LICENSE
 /docs/deprecation/simple-mcp/files/NOTICE
+/docs/deprecation/simple-mcp/files/PATENTS

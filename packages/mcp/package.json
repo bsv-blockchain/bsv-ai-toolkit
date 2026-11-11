@@ -8,6 +8,7 @@
     "bsv-mcp": "build/index.js"
   },
   "files": [
+    "PATENTS",
     "NOTICE",
     "build",
     "content",
@@ -34,7 +35,7 @@
   ],
   "author": "BSV Association",
   "scripts": {
-    "prepack": "node -e \"const fs=require('fs');for(const f of ['LICENSE','NOTICE'])fs.copyFileSync('../../'+f,f)\"",
+    "prepack": "node -e \"const fs=require('fs');for(const f of ['LICENSE','NOTICE','PATENTS'])fs.copyFileSync('../../'+f,f)\"",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "start": "node build/index.js"
