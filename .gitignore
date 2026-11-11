@@ -157,3 +157,9 @@ build/
 samples/**/data/
 .bsv-gate/
 *.key
+
+# LICENSE / NOTICE copied into nested npm packages by their prepack script
+/packages/mcp/LICENSE
+/packages/mcp/NOTICE
+/docs/deprecation/simple-mcp/files/LICENSE
+/docs/deprecation/simple-mcp/files/NOTICE

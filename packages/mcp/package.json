@@ -8,10 +8,11 @@
     "bsv-mcp": "build/index.js"
   },
   "files": [
+    "NOTICE",
     "build",
     "content",
     "README.md",
-    "LICENSE.md"
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
@@ -24,7 +25,7 @@
   "engines": {
     "node": ">=22"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -33,6 +34,7 @@
   ],
   "author": "BSV Association",
   "scripts": {
+    "prepack": "node -e \"const fs=require('fs');for(const f of ['LICENSE','NOTICE'])fs.copyFileSync('../../'+f,f)\"",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "start": "node build/index.js"

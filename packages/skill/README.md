@@ -55,4 +55,4 @@ bash scripts/anti-goals.sh packages/skill/skills  # forbidden phrasings appear o
 
 ## Licence
 
-MIT; see [`LICENSE.md`](../../LICENSE.md).
+MIT; see [`LICENSE.md`](../../LICENSE).

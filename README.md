@@ -1,6 +1,6 @@
 # BSV AI DevKit
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Tools and dated knowledge for building BSV applications with AI coding agents, testnet first. This repository holds the `@bsv/mcp` server, the `bsv-dev` agent skill, the content both of them serve, and sample apps.
 
@@ -162,4 +162,4 @@ What must be true before and after the first release is tracked in the [phase-1 
 
 ## License
 
-MIT; see [`LICENSE.md`](LICENSE.md).
+MIT; see [`LICENSE.md`](LICENSE).
