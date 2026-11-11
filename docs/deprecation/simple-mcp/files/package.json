@@ -7,9 +7,12 @@
     "simple-mcp": "dist/index.js"
   },
   "files": [
+    "LICENSE",
+    "NOTICE",
     "dist"
   ],
   "scripts": {
+    "prepack": "node -e \"const fs=require('fs');for(const f of ['LICENSE','NOTICE'])fs.copyFileSync('../../../../'+f,f)\"",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
@@ -24,7 +27,7 @@
     "claude",
     "bitcoin"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bsv-blockchain/simple-mcp.git"

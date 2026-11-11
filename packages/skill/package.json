@@ -7,7 +7,7 @@
   "engines": {
     "node": ">=22"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "test": "vitest run",
     "validate": "npx -y skills-ref@0.1.5 validate skills/bsv-dev"
