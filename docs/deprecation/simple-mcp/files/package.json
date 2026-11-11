@@ -8,11 +8,12 @@
   },
   "files": [
     "LICENSE",
+    "PATENTS",
     "NOTICE",
     "dist"
   ],
   "scripts": {
-    "prepack": "node -e \"const fs=require('fs');for(const f of ['LICENSE','NOTICE'])fs.copyFileSync('../../../../'+f,f)\"",
+    "prepack": "node -e \"const fs=require('fs');for(const f of ['LICENSE','NOTICE','PATENTS'])fs.copyFileSync('../../../../'+f,f)\"",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
