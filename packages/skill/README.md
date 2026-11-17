@@ -55,4 +55,4 @@ bash scripts/anti-goals.sh packages/skill/skills  # forbidden phrasings appear o
 
 ## Licence
 
-MIT; see [`LICENSE.md`](../../LICENSE).
+Apache License 2.0; see [`LICENSE`](../../LICENSE), [`NOTICE`](../../NOTICE) and [`PATENTS`](../../PATENTS).

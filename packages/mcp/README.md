@@ -94,4 +94,4 @@ An empty value, or an unresolved plugin placeholder such as `${user_config.broad
 
 ## License
 
-MIT
+Apache License 2.0; see [LICENSE](https://github.com/bsv-blockchain/bsv-ai-toolkit/blob/main/LICENSE), [NOTICE](https://github.com/bsv-blockchain/bsv-ai-toolkit/blob/main/NOTICE) and [PATENTS](https://github.com/bsv-blockchain/bsv-ai-toolkit/blob/main/PATENTS). Versions up to and including 2.0.1 were published under the MIT license.

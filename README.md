@@ -1,6 +1,6 @@
-# BSV AI DevKit
+# BSV AI Toolkit
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@bsv/mcp.svg)](https://www.npmjs.com/package/@bsv/mcp) [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 Tools and dated knowledge for building BSV applications with AI coding agents, testnet first. This repository holds the `@bsv/mcp` server, the `bsv-dev` agent skill, the content both of them serve, and sample apps.
 
@@ -9,7 +9,7 @@ Tools and dated knowledge for building BSV applications with AI coding agents, t
 | Path | What it is |
 | --- | --- |
 | `content/` | The single source of facts and rules: dated facts (`facts/*.md`), the guardrails `G-01`..`G-38` (`guardrails.yaml`), pinned versions (`versions.json`), the docs index, custody shapes and the threat model. Facts are edited here and nowhere else. |
-| `packages/mcp/` | `@bsv/mcp` 2.0.0, the MCP server. `packages/mcp/content/` is a generated snapshot of `content/` that ships in the npm package. |
+| `packages/mcp/` | `@bsv/mcp` 2.0.1, the MCP server, published to npm. `packages/mcp/content/` is a generated snapshot of `content/` that ships in the npm package. |
 | `packages/skill/` | The `bsv-dev` skill 0.1.1 and Claude Code plugin: `skills/bsv-dev/` (`SKILL.md`, the generated `references/`, assets and scripts), the commands `/bsv-review` and `/bsv-design`, and the plugin manifest, which bundles `bsv-mcp` and `bsv-docs`. |
 | `packages/sync/` | Private build step: renders `content/` into `packages/mcp/content/` and the skill's references, and lints facts and links. |
 | `samples/` | Sample apps; see [`samples/README.md`](samples/README.md). |
@@ -36,7 +36,7 @@ MCP server only, in Claude Code:
 claude mcp add bsv-mcp -e BSV_NETWORK=testnet -- npx -y @bsv/mcp
 ```
 
-`@bsv/mcp` 2.0.0 is not released yet. Until it is, `npx @bsv/mcp` resolves the 1.x release, which this README does not describe; run 2.0.0 from a clone instead (see [Development](#development)).
+`npx -y @bsv/mcp` runs the latest release from npm, and the plugin pins the exact version it ships with (`@bsv/mcp@2.0.1` in `bsv-dev` 0.1.1). `@bsv/mcp` 2.x replaces both the 1.x server and `@bsv/simple-mcp`; an older configuration that pins either should move to 2.x. To run an unreleased change, build from a clone (see [Development](#development)).
 
 Other MCP clients take the same command in their JSON configuration:
 
@@ -81,7 +81,7 @@ The server starts without `BSV_REPOS_DIR`; the two search tools then answer with
 
 A transaction is final for an app at `SEEN_ON_NETWORK` or later with no `competingTxs`; `broadcaster_status` reports exactly that as `isFinalForApp`. Nothing in the kit waits for `MINED`.
 
-Suppress a `check_guardrails` finding with `// bsv-guardrail-ignore G-xx reason` (or the `#`, `<!--`, `/*` comment forms) on the flagged line or the line above.
+Suppress a `check_guardrails` finding with `// bsv-guardrail-ignore GUARDRAIL_ID REASON` (or the `#`, `<!--`, `/*` comment forms) on the flagged line or the line above, where `GUARDRAIL_ID` is an id such as `G-09` and `REASON` says why you accept the finding.
 
 For repo maintainers, `node packages/mcp/build/cli/versions-check.js [--json] [--max-age-days N]` (after `pnpm build`) prints the `versions_check` table and exits 1 on drift or on a verified date older than N days (default 60). With `GITHUB_TOKEN` set, it sends that token to `api.github.com` (and nowhere else) to lift GitHub's unauthenticated rate limit.
 
@@ -156,10 +156,10 @@ claude mcp add bsv-mcp-dev -e BSV_NETWORK=testnet -- node "$PWD/packages/mcp/bui
 
 ## Release
 
-Releases are cut by pushing a tag `v<version>` that matches `packages/mcp/package.json`. The `release.yml` workflow runs on `v*` tags only: it builds, tests, checks that generated content is current, and publishes `@bsv/mcp` with npm trusted publishing (GitHub OIDC, with provenance), so no long-lived npm token exists anywhere. Pushing to `main` never publishes. Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
+Releases are cut by pushing a tag `v<version>` that matches `packages/mcp/package.json`. The `release.yml` workflow runs on `v*` tags only: it builds, tests, checks that generated content is current, and publishes `@bsv/mcp` with npm trusted publishing (GitHub OIDC, with provenance), so no long-lived npm token exists anywhere. Pushing to `main` never publishes. Each [GitHub release](https://github.com/bsv-blockchain/bsv-ai-toolkit/releases) also attaches `bsv-dev-skill.zip`, the plugin root with `skills/bsv-dev/SKILL.md` inside. The plugin pins `@bsv/mcp` to an exact version, so a release that bumps it is tagged straight after its PR merges. Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
 
-What must be true before and after the first release is tracked in the [phase-1 exit checklist](docs/evals/phase-1-exit-checklist.md).
+The remaining phase-1 steps, which need people rather than code, are tracked in the [phase-1 exit checklist](docs/evals/phase-1-exit-checklist.md).
 
 ## License
 
-MIT; see [`LICENSE.md`](LICENSE).
+Apache License 2.0; see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE) and [`PATENTS`](PATENTS). Releases up to and including `@bsv/mcp` 2.0.1 were published under the MIT license.
