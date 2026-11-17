@@ -6,7 +6,7 @@
   "author": { "name": "BSV Association", "url": "https://bsvblockchain.org" },
   "homepage": "https://github.com/bsv-blockchain/bsv-ai-toolkit",
   "repository": "https://github.com/bsv-blockchain/bsv-ai-toolkit",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["bsv", "bitcoin-sv", "brc-100", "bsv-broadcaster", "arcade", "runar"],
   "skills": ["./skills/"],
   "commands": ["./commands/"],
