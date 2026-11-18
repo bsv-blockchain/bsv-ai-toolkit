@@ -7,4 +7,9 @@
 #   commit:      the full 40-character commit SHA that was reviewed
 #   description: one sentence on what the skill covers
 #   maintainer:  GitHub handle of the person who answers issues
-skills: []
+skills:
+  - name: petasats-buy-bsv
+    repo: https://github.com/BSVanon/petasats-mcp
+    commit: 96c9c76b7dda6113a2beb2b7a0427b4bbf342c53
+    description: Buy BSV with USDC on Base through a local, non-custodial cross-chain atomic swap, using the petasats MCP server (npm petasats-mcp).
+    maintainer: BSVanon
