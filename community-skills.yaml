@@ -7,4 +7,9 @@
 #   commit:      the full 40-character commit SHA that was reviewed
 #   description: one sentence on what the skill covers
 #   maintainer:  GitHub handle of the person who answers issues
-skills: []
+skills:
+  - name: bwalletx-connect
+    repo: https://github.com/bitcoin-corp/bwalletx-connect
+    commit: 3e57500804de78e750b7d5ebe5213f4de7347cce
+    description: Add Sign in with bWalletX, or any BRC-100 wallet, to a website or Next.js/React app, with server-side signature checks and phone pairing by QR.
+    maintainer: b0ase
